@@ -1,0 +1,670 @@
+@page "/battle"
+@using RuckR.Shared.Models
+@using RuckR.Client.Store.InventoryFeature
+@inject ApiClientService ApiClient
+@inject SignalRClientService SignalRClient
+@inject IState<BattleState> BattleState
+@inject IState<InventoryState> InventoryState
+@inject IDispatcher Dispatcher
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Battle Arena</PageTitle>
+
+<h1>⚔️ Battle Arena</h1>
+
+@* --- AUTH CHECK --- *@
+@if (_requiresAuth)
+{
+    <p><em>Checking authentication...</em></p>
+    return;
+}
+
+@* --- LOADING --- *@
+@if (_isLoading)
+{
+    <div class="d-flex justify-content-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <span class="ms-3 align-self-center"><em>Loading battle arena...</em></span>
+    </div>
+    return;
+}
+
+@* --- ERROR --- *@
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <span>@_errorMessage</span>
+        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadBattlesAsync">Retry</button>
+    </div>
+    return;
+}
+
+@* --- SUCCESS TOAST --- *@
+@if (!string.IsNullOrEmpty(_successMessage))
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        @_successMessage
+        <button type="button" class="btn-close" @onclick="() => _successMessage = null"></button>
+    </div>
+}
+
+@* --- TABS --- *@
+<ul class="nav nav-tabs mb-4">
+    <li class="nav-item">
+        <a class="nav-link @(_activeTab == "new" ? "active" : "")" href="#"
+           @onclick='() => SwitchTab("new")' @onclick:preventDefault>
+            🆕 New Challenge
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link @(_activeTab == "active" ? "active" : "")" href="#"
+           @onclick='() => SwitchTab("active")' @onclick:preventDefault>
+            ⚡ Active Challenges
+            @{
+                var totalActive = _incomingChallenges.Count + _outgoingChallenges.Count;
+            }
+            @if (totalActive > 0)
+            {
+                <span class="badge bg-danger ms-1">@totalActive</span>
+            }
+        </a>
+    </li>
+</ul>
+
+@* ---------- TAB 1: NEW CHALLENGE ---------- *@
+@if (_activeTab == "new")
+{
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Send a Challenge</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Your Player</label>
+                        @if (_collectedPlayers.Count == 0)
+                        {
+                            <div class="alert alert-warning">
+                                You don&apos;t have any players to send! Head to the
+                                <a href="map">map</a> to collect some first.
+                            </div>
+                        }
+                        else
+                        {
+                            <select class="form-select" @bind="_selectedPlayerId">
+                                <option value="">-- Select your fighter --</option>
+                                @foreach (var c in _collectedPlayers)
+                                {
+                                    if (c.Player is not null)
+                                    {
+                                        <option value="@c.Player.Id">
+                                            @c.Player.Name — @c.Player.Position, @c.Player.Rarity
+                                        </option>
+                                    }
+                                }
+                            </select>
+                        }
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Opponent Username</label>
+                        <input type="text" class="form-control" @bind="_opponentUsername"
+                               placeholder="Enter opponent&apos;s username" />
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            @_challengesSentThisHour of 10 challenges sent this hour
+                        </small>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <div class="alert alert-danger">@_formError</div>
+                    }
+                    <button class="btn btn-primary w-100"
+                            @onclick="SendChallengeAsync"
+                            disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)">
+                        @if (_isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        }
+                        Send Challenge ⚔️
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ---------- TAB 2: ACTIVE CHALLENGES ---------- *@
+@if (_activeTab == "active")
+{
+    @* --- EMPTY STATE --- *@
+    @if (_incomingChallenges.Count == 0 && _outgoingChallenges.Count == 0)
+    {
+        <div class="text-center py-5">
+            <div style="font-size: 4rem;">⚔️</div>
+            <h4 class="mt-3">No active challenges</h4>
+            <p class="text-muted">
+                Head to <a href="/players/nearby">/players/nearby</a> to find opponents!
+            </p>
+        </div>
+    }
+    else
+    {
+        @* --- INCOMING CHALLENGES --- *@
+        @if (_incomingChallenges.Count > 0)
+        {
+            <h4>Incoming Challenges</h4>
+            <p class="text-muted small">
+                @_incomingChallenges.Count of 3 pending
+            </p>
+            <div class="row g-3 mb-4">
+                @foreach (var challenge in _incomingChallenges)
+                {
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100 @(challenge.Status == BattleStatus.Declined ? "border-secondary" : "")">
+                            <div class="card-body">
+                                <h6 class="card-title">@challenge.ChallengerId</h6>
+                                <p class="card-text small mb-1">
+                                    <span class="text-muted">Player:</span>
+                                    @GetPlayerDisplay(challenge.ChallengerPlayerId)
+                                </p>
+                                <p class="card-text">
+                                    <small class="text-muted">@GetRelativeTime(challenge.CreatedAt)</small>
+                                </p>
+                                @if (challenge.Status == BattleStatus.Pending)
+                                {
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-success btn-sm"
+                                                @onclick="() => OpenAcceptModal(challenge)">
+                                            Accept
+                                        </button>
+                                        <button class="btn btn-outline-danger btn-sm"
+                                                @onclick="() => DeclineChallengeAsync(challenge.Id)">
+                                            Decline
+                                        </button>
+                                    </div>
+                                }
+                                else if (challenge.Status == BattleStatus.Declined)
+                                {
+                                    <span class="badge bg-secondary">Declined</span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @* --- OUTGOING CHALLENGES --- *@
+        @if (_outgoingChallenges.Count > 0)
+        {
+            <h4>Outgoing Challenges</h4>
+            <div class="row g-3">
+                @foreach (var challenge in _outgoingChallenges)
+                {
+                    <div class="col-md-6 col-lg-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">@challenge.OpponentId</h6>
+                                <p class="card-text small mb-1">
+                                    <span class="text-muted">Your player:</span>
+                                    @GetPlayerDisplay(challenge.ChallengerPlayerId)
+                                </p>
+                                <p class="card-text">
+                                    <small class="text-muted">@GetRelativeTime(challenge.CreatedAt)</small>
+                                </p>
+                                <span class="badge @StatusBadgeClass(challenge.Status)">
+                                    @StatusLabel(challenge.Status)
+                                </span>
+                                @if (challenge.Status == BattleStatus.Pending)
+                                {
+                                    <small class="text-muted ms-2">Waiting for response...</small>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@* ---------- ACCEPT MODAL ---------- *@
+@if (_showAcceptModal && _acceptTargetBattle is not null)
+{
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Pick Your Fighter</h5>
+                    <button type="button" class="btn-close" @onclick="CloseAcceptModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Choose a player to face <strong>@_acceptTargetBattle.ChallengerId</strong>:</p>
+                    @if (_collectedPlayers.Count == 0)
+                    {
+                        <div class="alert alert-warning">
+                            You don&apos;t have any players in your collection.
+                        </div>
+                    }
+                    else
+                    {
+                        <select class="form-select" @bind="_selectedPlayerForAccept">
+                            <option value="">-- Select your player --</option>
+                            @foreach (var c in _collectedPlayers)
+                            {
+                                if (c.Player is not null)
+                                {
+                                    <option value="@c.Player.Id">@c.Player.Name (@c.Player.Position, @c.Player.Rarity)</option>
+                                }
+                            }
+                        </select>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseAcceptModal">Cancel</button>
+                    <button type="button" class="btn btn-success"
+                            @onclick="ConfirmAcceptAsync"
+                            disabled="@(!_selectedPlayerForAccept.HasValue || _isAccepting)">
+                        @if (_isAccepting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        }
+                        Fight! ⚔️
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ---------- BATTLE RESULT MODAL ---------- *@
+@if (_showResultModal && _resultToShow is { } result)
+{
+    var isWinner = string.Equals(result.WinnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header @(isWinner ? "bg-success text-white" : "bg-danger text-white")">
+                    <h5 class="modal-title">
+                        @(isWinner ? "🏆 Victory!" : "💔 Defeat")
+                    </h5>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="row mb-3">
+                        <div class="col-5">
+                            <div class="p-2 rounded @(result.WinnerUsername == _currentUsername ? "bg-success bg-opacity-10" : "bg-danger bg-opacity-10")">
+                                <h6>@result.WinnerUsername</h6>
+                                <p class="mb-0 small">@result.WinnerPlayerName</p>
+                                <span class="badge bg-success">Winner</span>
+                            </div>
+                        </div>
+                        <div class="col-2 d-flex align-items-center justify-content-center">
+                            <span class="fs-3 fw-bold">VS</span>
+                        </div>
+                        <div class="col-5">
+                            <div class="p-2 rounded @(result.LoserUsername == _currentUsername ? "bg-danger bg-opacity-10" : "bg-success bg-opacity-10")">
+                                <h6>@result.LoserUsername</h6>
+                                <p class="mb-0 small">@result.LoserPlayerName</p>
+                                <span class="badge bg-danger">Loser</span>
+                            </div>
+                        </div>
+                    </div>
+                    <hr />
+                    <p class="mb-0">
+                        <strong>Method of Victory:</strong>
+                        <span class="badge bg-info ms-2">@result.Method</span>
+                    </p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" @onclick="DismissResultModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _requiresAuth = true;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private string? _successMessage;
+    private string? _formError;
+    private bool _isSubmitting;
+    private bool _isAccepting;
+    private string _currentUsername = string.Empty;
+    private string _activeTab = "new";
+
+    // New challenge form
+    private string _opponentUsername = string.Empty;
+    private int? _selectedPlayerId;
+
+    // Accept modal
+    private bool _showAcceptModal;
+    private BattleModel? _acceptTargetBattle;
+    private int? _selectedPlayerForAccept;
+
+    // Result modal
+    private bool _showResultModal;
+    private BattleResult? _resultToShow;
+
+    // Rate limit tracking (local, per-session)
+    private int _challengesSentThisHour;
+    private DateTime _rateLimitWindowStart = DateTime.UtcNow;
+
+    // Player name lookup from inventory
+    private IReadOnlyList<CollectionModel> _collectedPlayers = Array.Empty<CollectionModel>();
+
+    // Computed from BattleState
+    private List<BattleModel> _incomingChallenges => BattleState.Value.ActiveChallenges
+        .Where(b => string.Equals(b.OpponentId, _currentUsername, StringComparison.OrdinalIgnoreCase)
+                    && b.Status == BattleStatus.Pending)
+        .ToList();
+
+    private List<BattleModel> _outgoingChallenges => BattleState.Value.ActiveChallenges
+        .Where(b => string.Equals(b.ChallengerId, _currentUsername, StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    // Track previously shown result to avoid duplicate modals
+    private BattleResult? _lastShownResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+            Navigation.NavigateTo($"/Identity/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+            return;
+        }
+
+        _requiresAuth = false;
+        _currentUsername = user.Identity.Name ?? string.Empty;
+
+        // Parse query params
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var opponentParam = query["opponent"];
+        if (!string.IsNullOrWhiteSpace(opponentParam))
+        {
+            _opponentUsername = opponentParam;
+            _activeTab = "new";
+        }
+
+        // Load collected players from inventory
+        _collectedPlayers = InventoryState.Value.CollectedPlayers;
+
+        // If inventory is empty, try fetching from API
+        if (_collectedPlayers.Count == 0)
+        {
+            try
+            {
+                var collection = await ApiClient.GetCollectionAsync();
+                _collectedPlayers = collection;
+                Dispatcher.Dispatch(new FetchInventoryResultAction(collection));
+            }
+            catch
+            {
+                // Non-critical; user can still view challenges
+            }
+        }
+
+        await LoadBattlesAsync();
+
+        // Subscribe to BattleState changes for real-time updates
+        BattleState.StateChanged += OnBattleStateChanged;
+
+        // Subscribe to SignalR events for result modal (has richer data than BattleModel)
+        SignalRClient.BattleResolved += OnBattleResolved;
+        SignalRClient.ChallengeReceived += OnChallengeReceived;
+    }
+
+    private async Task LoadBattlesAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var pending = await ApiClient.GetPendingBattlesAsync();
+            var history = await ApiClient.GetBattleHistoryAsync();
+
+            Dispatcher.Dispatch(new FetchBattlesResultAction(pending, history));
+
+            _isLoading = false;
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to load battles: {ex.Message}";
+            _isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An unexpected error occurred: {ex.Message}";
+            _isLoading = false;
+        }
+    }
+
+    private async Task SendChallengeAsync()
+    {
+        if (!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername))
+        {
+            _formError = "Please select a player and enter an opponent username.";
+            return;
+        }
+
+        // Reset rate limit window if hour has passed
+        if (DateTime.UtcNow - _rateLimitWindowStart > TimeSpan.FromHours(1))
+        {
+            _rateLimitWindowStart = DateTime.UtcNow;
+            _challengesSentThisHour = 0;
+        }
+
+        _isSubmitting = true;
+        _formError = null;
+
+        try
+        {
+            var battle = await ApiClient.SendChallengeAsync(_opponentUsername.Trim(), _selectedPlayerId.Value);
+
+            if (battle is not null)
+            {
+                Dispatcher.Dispatch(new ChallengeSentAction(battle));
+                _challengesSentThisHour++;
+                _successMessage = $"Challenge sent to {_opponentUsername}!";
+                _opponentUsername = string.Empty;
+                _selectedPlayerId = null;
+                _formError = null;
+            }
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            _formError = "Invalid request. Check the opponent username and try again.";
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            _formError = "You have too many pending challenges. Wait for responses or cancel some.";
+        }
+        catch (HttpRequestException ex) when ((int?)ex.StatusCode == 429)
+        {
+            _formError = "Rate limit exceeded. You can send 10 challenges per hour.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _formError = $"Failed to send challenge: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _formError = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private void OpenAcceptModal(BattleModel challenge)
+    {
+        _acceptTargetBattle = challenge;
+        _selectedPlayerForAccept = null;
+        _showAcceptModal = true;
+    }
+
+    private void CloseAcceptModal()
+    {
+        _showAcceptModal = false;
+        _acceptTargetBattle = null;
+        _selectedPlayerForAccept = null;
+    }
+
+    private async Task ConfirmAcceptAsync()
+    {
+        if (_acceptTargetBattle is null || !_selectedPlayerForAccept.HasValue)
+            return;
+
+        _isAccepting = true;
+
+        try
+        {
+            var battle = await ApiClient.AcceptChallengeAsync(_acceptTargetBattle.Id, _selectedPlayerForAccept.Value);
+
+            if (battle is not null)
+            {
+                Dispatcher.Dispatch(new ChallengeRespondedAction(_acceptTargetBattle.Id, BattleStatus.Accepted));
+                _successMessage = "Challenge accepted! Battle is underway...";
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to accept challenge: {ex.Message}";
+        }
+        finally
+        {
+            _isAccepting = false;
+            CloseAcceptModal();
+        }
+    }
+
+    private async Task DeclineChallengeAsync(int battleId)
+    {
+        try
+        {
+            await ApiClient.DeclineChallengeAsync(battleId);
+            Dispatcher.Dispatch(new ChallengeRespondedAction(battleId, BattleStatus.Declined));
+            _successMessage = "Challenge declined.";
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to decline challenge: {ex.Message}";
+        }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        _activeTab = tab;
+        _formError = null;
+
+        if (tab == "active")
+        {
+            _ = LoadBattlesAsync();
+        }
+    }
+
+    // --- REAL-TIME HANDLERS ---
+
+    private void OnBattleStateChanged(object? sender, EventArgs e)
+    {
+        // State changes trigger re-render via IState subscription
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnBattleResolved(BattleResult result)
+    {
+        // Check for duplicate (same result might fire twice from SignalR + state change)
+        if (_lastShownResult is { } last &&
+            last.WinnerUsername == result.WinnerUsername &&
+            last.LoserUsername == result.LoserUsername &&
+            last.CreatedAt == result.CreatedAt)
+        {
+            return;
+        }
+
+        _lastShownResult = result;
+        _resultToShow = result;
+        _showResultModal = true;
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnChallengeReceived(ChallengeNotification notification)
+    {
+        _successMessage = $"{notification.ChallengerUsername} challenged you with {notification.PlayerName}!";
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void DismissResultModal()
+    {
+        _showResultModal = false;
+        _resultToShow = null;
+    }
+
+    // --- DISPLAY HELPERS ---
+
+    private string GetPlayerDisplay(int playerId)
+    {
+        // Look up in inventory first
+        var collection = _collectedPlayers.FirstOrDefault(c => c.PlayerId == playerId);
+        if (collection?.Player is not null)
+        {
+            return $"{collection.Player.Name} ({collection.Player.Position}, {collection.Player.Rarity})";
+        }
+
+        return $"Player #{playerId}";
+    }
+
+    private static string GetRelativeTime(DateTime utcTime)
+    {
+        var elapsed = DateTime.UtcNow - utcTime;
+
+        if (elapsed.TotalSeconds < 60) return "just now";
+        if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes} min ago";
+        if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
+        if (elapsed.TotalDays < 7) return $"{(int)elapsed.TotalDays}d ago";
+        return utcTime.ToString("MMM d");
+    }
+
+    private static string StatusBadgeClass(BattleStatus status) => status switch
+    {
+        BattleStatus.Pending => "bg-warning text-dark",
+        BattleStatus.Accepted => "bg-info",
+        BattleStatus.Completed => "bg-success",
+        BattleStatus.Declined => "bg-secondary",
+        BattleStatus.Expired => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private static string StatusLabel(BattleStatus status) => status switch
+    {
+        BattleStatus.Pending => "Pending",
+        BattleStatus.Accepted => "Accepted",
+        BattleStatus.Completed => "Completed",
+        BattleStatus.Declined => "Declined",
+        BattleStatus.Expired => "Expired",
+        _ => status.ToString()
+    };
+
+    public void Dispose()
+    {
+        BattleState.StateChanged -= OnBattleStateChanged;
+        SignalRClient.BattleResolved -= OnBattleResolved;
+        SignalRClient.ChallengeReceived -= OnChallengeReceived;
+    }
+}

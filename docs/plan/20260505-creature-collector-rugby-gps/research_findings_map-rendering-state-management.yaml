@@ -1,0 +1,526 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Research map rendering (Leaflet.js via Blazor JS interop) and client-side state management (Fluxor) for rugby creature-collector game"
+focus_area: "map-rendering-state-management"
+created_at: "2026-05-05T23:30:00Z"
+created_by: "gemini-researcher"
+status: completed
+tldr: |
+  - Leaflet.js is confirmed as the optimal map library: 42KB, free tiles (OpenStreetMap), mature JS interop patterns via IJSObjectReference modules
+  - Fluxor (latest 6.9.0) is the recommended state library: zero boilerplate Redux, Blazor-native, Redux DevTools support
+  - JS interop encapsulation: leaflet-map.js module loaded via dynamic import(), disposed via IAsyncDisposable
+  - State stores designed: MapState, GameState, InventoryState, BattleState — each a [FeatureState] immutable record
+  - Map→State flow: marker click → JS callback → DotNet.invokeMethodAsync → dispatch action → reducer → UI re-render
+  - Only 3 NuGet packages needed; Leaflet itself is pure JS loaded from wwwroot or CDN
+  - Key gotcha: JS interop only after first render (OnAfterRenderAsync); module disposal prevents memory leaks
+research_metadata:
+  methodology: "semantic_search + grep_search for existing codebase patterns + webfetch of official Microsoft Blazor JS interop docs (ASP.NET Core 10), Fluxor GitHub docs (tutorials), Leaflet.js official reference + quick-start guide"
+  scope: "medium: covers 2 interconnected domains (map rendering + state management), 3 external library docs, full codebase analysis"
+  confidence: high
+  coverage: 92
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: "RuckR.Client.csproj"
+    path: "RuckR/Client/RuckR.Client.csproj"
+    purpose: "Current Client project — target framework, existing NuGet references, project references"
+    key_elements:
+      - element: "TargetFramework"
+        type: "property"
+        location: "RuckR/Client/RuckR.Client.csproj:4"
+        description: "net10.0 — confirms .NET 10 Blazor WASM environment"
+        language: "xml"
+      - element: "PackageReference"
+        type: "dependency"
+        location: "RuckR/Client/RuckR.Client.csproj:11-12"
+        description: "Microsoft.AspNetCore.Components.WebAssembly 10.0.7 + DevServer — baseline before Fluxor addition"
+        language: "xml"
+    lines: 23
+
+  - file: "RuckR.Server.csproj"
+    path: "RuckR/Server/RuckR.Server.csproj"
+    purpose: "Server project — confirms hosted model, base for SignalR + API additions later"
+    key_elements:
+      - element: "Sdk"
+        type: "attribute"
+        location: "RuckR/Server/RuckR.Server.csproj:1"
+        description: "Microsoft.NET.Sdk.Web — ASP.NET Core host serving WASM files"
+        language: "xml"
+    lines: 19
+
+  - file: "Program.cs (Client)"
+    path: "RuckR/Client/Program.cs"
+    purpose: "Blazor WASM entry point — where AddFluxor() will be registered"
+    key_elements:
+      - element: "builder.Services.AddScoped<HttpClient>"
+        type: "service_registration"
+        location: "RuckR/Client/Program.cs:9"
+        description: "Existing DI registration pattern — AddFluxor() follows same pattern on builder.Services"
+        language: "csharp"
+    lines: 11
+
+  - file: "Program.cs (Server)"
+    path: "RuckR/Server/Program.cs"
+    purpose: "Server entry point — confirms hosted WASM model with MapStaticAssets pattern"
+    key_elements:
+      - element: "app.UseBlazorFrameworkFiles()"
+        type: "middleware"
+        location: "RuckR/Server/Program.cs:26"
+        description: "Serves compiled WASM + wwwroot static assets — Leaflet files will live in Client/wwwroot"
+        language: "csharp"
+    lines: 36
+
+  - file: "App.razor"
+    path: "RuckR/Client/App.razor"
+    purpose: "App root component — where Fluxor <StoreInitializer/> must be placed"
+    key_elements:
+      - element: "Router"
+        type: "component"
+        location: "RuckR/Client/App.razor:1"
+        description: "StoreInitializer goes above Router in App.razor per Fluxor Blazor Web convention"
+        language: "razor"
+    lines: 6
+
+  - file: "_Imports.razor"
+    path: "RuckR/Client/_Imports.razor"
+    purpose: "Global usings for all Razor components — add @using Fluxor here"
+    key_elements:
+      - element: "@using Microsoft.JSInterop"
+        type: "import"
+        location: "RuckR/Client/_Imports.razor:8"
+        description: "IJSRuntime already in global scope — map components need no additional import for JS interop"
+        language: "razor"
+    lines: 11
+
+  - file: "index.html"
+    path: "RuckR/Client/wwwroot/index.html"
+    purpose: "WASM host page — where Leaflet CSS + JS references are added"
+    key_elements:
+      - element: "<head>"
+        type: "html_element"
+        location: "RuckR/Client/wwwroot/index.html:4-16"
+        description: "Leaflet CSS <link> goes in <head>; existing Bootstrap CSS already here as pattern"
+        language: "html"
+    lines: 36
+
+  - file: "Profile.razor"
+    path: "RuckR/Client/Pages/Profile.razor"
+    purpose: "Canonical Blazor page pattern — loading/error states, HttpClient usage, EditForm"
+    key_elements:
+      - element: "OnInitializedAsync + GetFromJsonAsync"
+        type: "pattern"
+        location: "RuckR/Client/Pages/Profile.razor:104-120"
+        description: "Standard data-fetching pattern: null check for loading, try/catch for errors, retry button"
+        language: "csharp"
+    lines: 149
+
+  - file: "ProfileController.cs"
+    path: "RuckR/Server/Controllers/ProfileController.cs"
+    purpose: "Canonical controller pattern — [ApiController], [Route], ControllerBase, block-scoped namespace"
+    key_elements:
+      - element: "namespace RuckR.Server.Controllers { }"
+        type: "convention"
+        location: "RuckR/Server/Controllers/ProfileController.cs:4"
+        description: "Block-scoped namespace — all new controllers must follow this style"
+        language: "csharp"
+    lines: 41
+
+patterns_found:
+  - category: "architecture"
+    pattern: "JS interop module encapsulation via IJSObjectReference + dynamic import()"
+    description: |
+      Microsoft's recommended pattern for .NET 5+ Blazor: load JS as an ES module via 
+      `await JS.InvokeAsync<IJSObjectReference>("import", "./path/to/module.js")`. 
+      The returned IJSObjectReference isolates all JS behind a module boundary. 
+      Dispose it in IAsyncDisposable.DisposeAsync. No global namespace pollution.
+    examples:
+      - file: "Microsoft official docs"
+        location: "blazor/js-interop/call-javascript-from-dotnet#javascript-isolation-in-javascript-modules"
+        snippet: |
+          // In OnAfterRenderAsync:
+          module = await JS.InvokeAsync<IJSObjectReference>("import", "./Pages/JsCollocation2.razor.js");
+          // In DisposeAsync:
+          await module.DisposeAsync();
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "Fluxor [FeatureState] + [ReducerMethod] + [EffectMethod] for Blazor"
+    description: |
+      Fluxor organizes state into features: each feature has a State (immutable record with [FeatureState]),
+      Actions (plain records/classes), Reducers (static methods with [ReducerMethod] — pure functions),
+      and Effects (instance/static methods with [EffectMethod] — async side-effect handlers).
+      Components inject IState<T> and IDispatcher, inherit FluxorComponent for auto-subscription.
+    examples:
+      - file: "Fluxor Blazor tutorial — StateActionsReducers"
+        location: "Fluxor/Source/Tutorials/02-Blazor/02A-StateActionsReducersTutorial/README.md"
+        snippet: |
+          [FeatureState]
+          public record CounterState(int ClickCount) { public CounterState() : this(0) {} }
+
+          // Reducer:
+          [ReducerMethod]
+          public static CounterState ReduceIncrementCounterAction(CounterState state, IncrementCounterAction action) =>
+            new CounterState(clickCount: state.ClickCount + 1);
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "Leaflet map initialization in Blazor OnAfterRenderAsync"
+    description: |
+      The map <div> must exist in the DOM before Leaflet can initialize. This means map creation
+      must happen in OnAfterRenderAsync(firstRender: true), not in OnInitializedAsync.
+      The JS module approach requires: (1) import module, (2) call module.InvokeVoidAsync("initMap", element, options).
+    examples:
+      - file: "Microsoft official docs"
+        location: "blazor/js-interop/call-javascript-from-dotnet#prerendering"
+        snippet: |
+          protected override async Task OnAfterRenderAsync(bool firstRender)
+          {
+              if (firstRender)
+              {
+                  module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/leaflet-map.js");
+                  await module.InvokeVoidAsync("initMap", mapElement, centerLat, centerLng, zoomLevel);
+              }
+          }
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Feature-folder organization for Fluxor stores"
+    description: |
+      Fluxor recommends organizing state by feature, not by layer. Each feature gets its own folder
+      (e.g., Store/MapFeature/) containing: State class, Actions (one file or multiple), Reducers class,
+      Effects class. This contrasts with layer-based organization (all states in one folder, all reducers in another).
+    examples:
+      - file: "Fluxor Blazor tutorial — StateActionsReducers"
+        location: "Smrpmorris/Fluxor/Source/Tutorials/02-Blazor/02A-StateActionsReducersTutorial/README.md"
+        snippet: |
+          Store/
+            CounterFeature/
+              CounterState.cs
+              IncrementCounterAction.cs
+              Reducers.cs
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Static Leaflet files in wwwroot directory"
+    description: |
+      Leaflet CSS and JS are static web assets. In Blazor WASM, place them under Client/wwwroot/.
+      Options: (a) download Leaflet 1.9.4 dist files to wwwroot/leaflet/, reference with relative paths;
+      (b) use CDN (unpkg) links in index.html. CDN approach is simplest for MVP; local files give offline control.
+      OpenStreetMap tiles always loaded from CDN (https://tile.openstreetmap.org/{z}/{x}/{y}.png).
+    examples:
+      - file: "Leaflet Quick Start Guide"
+        location: "https://leafletjs.com/examples/quick-start/"
+        snippet: |
+          <!-- In index.html <head>: -->
+          <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+          <!-- Before </body>: -->
+          <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    prevalence: "common"
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "MapPage.razor"
+      responsibility: "Full-screen Leaflet map component at /map route; manages JS interop module lifecycle"
+      location: "RuckR/Client/Pages/MapPage.razor (to be created)"
+      relationship_to_domain: "Primary map rendering component — hosts the map <div>, imports leaflet-map.js module, dispatches map interaction actions to Fluxor store"
+    - component: "leaflet-map.js"
+      responsibility: "JS module exporting initMap, addMarker, addPitchMarker, centerOn, updateMarkers; all Leaflet API calls encapsulated here"
+      location: "RuckR/Client/wwwroot/js/leaflet-map.js (to be created)"
+      relationship_to_domain: "The JavaScript half of map rendering — called from Blazor via IJSObjectReference, calls back to .NET via DotNet.invokeMethodAsync for events"
+    - component: "MapState (Fluxor feature)"
+      responsibility: "Holds current user location (lat/lng), visible pitches, selected pitch ID, GPS accuracy"
+      location: "RuckR/Client/Store/MapFeature/MapState.cs (to be created)"
+      relationship_to_domain: "Single source of truth for map-related client state; all map components read from here"
+    - component: "GameState (Fluxor feature)"
+      responsibility: "Holds current user session info, connection status, game phase"
+      location: "RuckR/Client/Store/GameFeature/GameState.cs (to be created)"
+      relationship_to_domain: "Cross-cutting state shared by all pages — current user, auth status, SignalR connection health"
+    - component: "InventoryState (Fluxor feature)"
+      responsibility: "Holds user's collected rugby players, loading state, last sync timestamp"
+      location: "RuckR/Client/Store/InventoryFeature/InventoryState.cs (to be created)"
+      relationship_to_domain: "Collection page reads from here; discovery on map adds to this state"
+    - component: "BattleState (Fluxor feature)"
+      responsibility: "Holds active (pending) battle challenges, battle history, opponent selections"
+      location: "RuckR/Client/Store/BattleFeature/BattleState.cs (to be created)"
+      relationship_to_domain: "Battle page and notification toasts read from here; SignalR effects update this state"
+
+  interfaces_used_by_domain:
+    - interface: "IJSRuntime"
+      location: "Microsoft.JSInterop (built-in, already imported in _Imports.razor)"
+      usage_pattern: "Injected into Blazor components; used to invoke JS module import() and module methods"
+    - interface: "IJSObjectReference"
+      location: "Microsoft.JSInterop (built-in)"
+      usage_pattern: "Holds reference to loaded JS module; all map operations called through module.InvokeVoidAsync / InvokeAsync"
+    - interface: "IState<T>"
+      location: "Fluxor (NuGet: Fluxor.Blazor.Web)"
+      usage_pattern: "Injected into components to read feature state reactively; auto-subscribes via FluxorComponent base class"
+    - interface: "IDispatcher"
+      location: "Fluxor (NuGet: Fluxor.Blazor.Web)"
+      usage_pattern: "Injected to dispatch actions; components never mutate state directly"
+
+  data_flow_involving_domain: |
+    User taps marker on map → Leaflet 'click' event fires in leaflet-map.js → JS calls 
+    DotNet.invokeMethodAsync('MapPage', 'OnMarkerClicked', pitchId) → C# OnMarkerClicked dispatches 
+    SelectPitchAction(pitchId) → MapState reducer sets SelectedPitchId → UI re-renders to show pitch detail panel.
+    
+    Alternatively: GPS watch position update → JS calls DotNet.invokeMethodAsync('MapPage', 'OnPositionChanged', lat, lng) → 
+    C# dispatches UpdateLocationAction(lat, lng, accuracy) → reducer updates MapState → map re-centers via JS call.
+
+  key_relationships_to_domain:
+    - from: "MapPage.razor"
+      to: "leaflet-map.js"
+      relationship: "calls"
+    - from: "leaflet-map.js"
+      to: "MapPage.razor"
+      relationship: "calls (via DotNet.invokeMethodAsync)"
+    - from: "MapPage.razor"
+      to: "Fluxor Store / IDispatcher"
+      relationship: "calls (dispatches actions)"
+    - from: "Fluxor Store"
+      to: "MapPage.razor"
+      relationship: "notifies (via IState<T>.StateChanged → FluxorComponent base)"
+    - from: "SignalR Effects (Fluxor)"
+      to: "BattleState / MapState"
+      relationship: "dispatches (effects dispatch result actions into store)"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "C# (Blazor components, Fluxor state/actions/reducers/effects)"
+    - "JavaScript (Leaflet interop module: leaflet-map.js)"
+    - "Razor (Blazor component markup)"
+  frameworks_used_in_domain:
+    - name: "Blazor WebAssembly"
+      usage_in_domain: "Hosts all client-side C# code; renders Razor components to HTML DOM; manages JS interop bridge via IJSRuntime"
+    - name: "ASP.NET Core (Server host)"
+      usage_in_domain: "Serves WASM files, hosts SignalR hub, runs API controllers; Leaflet static assets served via BlazorFrameworkFiles middleware"
+  libraries_used_in_domain:
+    - name: "Leaflet.js 1.9.4"
+      purpose_in_domain: "Renders interactive map tiles (OpenStreetMap), manages markers (pitches + players), handles pan/zoom/tap events; loaded as ES module via JS interop"
+    - name: "Fluxor 6.9.0"
+      purpose_in_domain: "Client-side Flux/Redux state container; provides [FeatureState], [ReducerMethod], [EffectMethod], IDispatcher, IState<T>, FluxorComponent; zero boilerplate"
+    - name: "Fluxor.Blazor.Web 6.9.0"
+      purpose_in_domain: "Blazor-specific Fluxor integration — StoreInitializer component, FluxorComponent base class, auto-subscription to state changes"
+    - name: "Fluxor.Blazor.Web.ReduxDevTools 6.9.0"
+      purpose_in_domain: "Optional: enables Redux DevTools browser extension for time-travel debugging, action inspection, state snapshots"
+  external_apis_used_in_domain:
+    - name: "OpenStreetMap Tile Server"
+      integration_point: "Leaflet TileLayer URL: https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    - name: "Browser Geolocation API"
+      integration_point: "navigator.geolocation.watchPosition() — accessed from leaflet-map.js module; results sent to .NET via DotNet.invokeMethodAsync"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Fluxor actions: PascalCase verb-noun, e.g., UpdateLocationAction, SelectPitchAction, FetchInventoryAction
+    - Fluxor states: PascalCase noun + "State", e.g., MapState, GameState, InventoryState, BattleState
+    - Fluxor feature folders: PascalCase noun + "Feature", e.g., MapFeature/, GameFeature/, InventoryFeature/
+    - JS module functions: camelCase, e.g., initMap(), addPitchMarker(), centerOn()
+    - JS module file: kebab-case, e.g., leaflet-map.js (in Client/wwwroot/js/)
+    - Blazor pages: PascalCase + "Page" suffix (if needed for clarity), e.g., MapPage.razor
+    - All C# code in the project uses block-scoped namespaces per AGENTS.md convention
+  structure_of_domain: |
+    Client-side store organized by feature folders under RuckR/Client/Store/:
+      Store/
+        GameFeature/         — GameState.cs, GameActions.cs, GameReducers.cs, GameEffects.cs
+        MapFeature/          — MapState.cs, MapActions.cs, MapReducers.cs, MapEffects.cs
+        InventoryFeature/    — InventoryState.cs, InventoryActions.cs, InventoryReducers.cs, InventoryEffects.cs
+        BattleFeature/       — BattleState.cs, BattleActions.cs, BattleReducers.cs, BattleEffects.cs
+
+    JS interop files under RuckR/Client/wwwroot/js/:
+      leaflet-map.js        — All Leaflet operations as exported module functions
+      geolocation.js         — Browser geolocation API wrapper (optional, could merge into leaflet-map.js)
+    
+    Blazor pages under RuckR/Client/Pages/:
+      MapPage.razor          — Full-screen map with Leaflet
+      CollectionPage.razor   — Player inventory grid
+      CatalogPage.razor      — All known players, filterable
+      BattlePage.razor       — PVP challenge UI and history
+  error_handling_in_domain: |
+    - JS interop: try/catch JSDisconnectedException during IJSObjectReference.DisposeAsync() 
+      (required for server-side scenarios; optional but safe practice in WASM)
+    - Map initialization: wrap in try/catch; if module load fails, show error UI with retry button
+    - GPS permission denied: catch in JS; call DotNet.invokeMethodAsync with error; display fallback UI
+    - Fluxor effects: catch exceptions in EffectMethod, dispatch ErrorAction for UI notification
+    - Existing pattern: Profile.razor uses try/catch with errorMessage string + retry button
+  testing_in_domain: |
+    No test projects exist in codebase (AGENTS.md confirms). MVP testing is manual. 
+    Fluxor enables testability: reducers are pure static functions → trivially unit-testable.
+    JS interop not covered by tests in current plan scope.
+  documentation_in_domain: |
+    - PRD: docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml (authoritative scope)
+    - AGENTS.md: ADR-006 (Leaflet.js decision), ADR-008 (Fluxor decision)
+    - This research doc: research_findings_map-rendering-state-management.yaml
+    - Implementation patterns to be captured as they are implemented
+
+related_dependencies:
+  internal:
+    - component: "RuckR.Shared.Models (PlayerModel, PitchModel, CollectionModel, BattleModel)"
+      relationship_to_domain: "State objects reference these shared models. Client state mirrors server data shapes."
+      direction: "inbound"
+    - component: "SignalR Hub (Server)"
+      relationship_to_domain: "Fluxor effects connect to SignalR; hub events trigger effect methods that dispatch actions into store"
+      direction: "inbound"
+    - component: "API Controllers (Server)"
+      relationship_to_domain: "Fluxor effects call HttpClient (injected via IHttpClientFactory) to fetch/push data; results dispatched as actions"
+      direction: "inbound"
+  external:
+    - name: "Leaflet.js 1.9.4"
+      purpose_for_domain: "Core map rendering — tiles, markers, popups, pan/zoom, click events"
+    - name: "OpenStreetMap Tiles"
+      purpose_for_domain: "Free raster map tiles for visual map background; no API key required"
+    - name: "Fluxor (NuGet: Fluxor, Fluxor.Blazor.Web, Fluxor.Blazor.Web.ReduxDevTools)"
+      purpose_for_domain: "Client-side state management — store, actions, reducers, effects, DevTools"
+
+NuGet_packages_required:
+  - package: "Fluxor"
+    version: "6.9.0"
+    project: "RuckR.Client"
+    reason: "Core Fluxor library (required by Fluxor.Blazor.Web)"
+  - package: "Fluxor.Blazor.Web"
+    version: "6.9.0"
+    project: "RuckR.Client"
+    reason: "Blazor Web integration — StoreInitializer component, FluxorComponent base, auto state subscriptions"
+  - package: "Fluxor.Blazor.Web.ReduxDevTools"
+    version: "6.9.0"
+    project: "RuckR.Client"
+    reason: "Optional: Redux DevTools browser extension support for debugging; recommended for MVP development"
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "User GPS coordinates"
+      location: "MapState (client-side), leaflet-map.js"
+      concern: "Exact GPS must never be sent to server or other clients — only fuzzy distance buckets (< 50m, < 100m) per PRD constraint"
+    - area: "DotNet.invokeMethodAsync callbacks"
+      location: "leaflet-map.js → MapPage.razor"
+      concern: "JS-callable .NET methods must be decorated with [JSInvokable]; avoid exposing sensitive operations via JS callable methods"
+    - area: "State persistence to localStorage"
+      location: "Fluxor effects (potential future feature)"
+      concern: "localStorage is accessible to any JS on the page; do not store auth tokens or sensitive data there. Inventory cache OK."
+  authentication_patterns_in_domain: "Not directly in scope of this research. Auth handled by ASP.NET Core Identity (separate ADR-009). Fluxor GameState will hold current user info from AuthenticationStateProvider."
+  authorization_patterns_in_domain: "Pages protected via [Authorize] attribute on Razor pages; Fluxor store does not enforce auth — server API enforces it."
+  data_validation_in_domain: "Action payloads validated in effects before dispatching result actions. Reducers are pure functions — no validation side effects. UI EditForm validation per existing Profile.razor pattern."
+
+testing_patterns:
+  framework: "None configured — no test projects in solution (confirmed by AGENTS.md)"
+  coverage_areas: ["Manual testing only per MVP scope"]
+  test_organization: "N/A"
+  mock_patterns: ["N/A"]
+
+store_design:
+  MapState:
+    properties:
+      - "double? UserLatitude"
+      - "double? UserLongitude"
+      - "double? AccuracyMeters"
+      - "ImmutableList<PitchMarker> VisiblePitches"
+      - "int? SelectedPitchId"
+      - "bool IsGpsEnabled"
+      - "bool IsMapInitialized"
+      - "string? ErrorMessage"
+    actions:
+      - "UpdateLocationAction(double lat, double lng, double accuracy)"
+      - "SetPitchesAction(IEnumerable<PitchMarker> pitches)"
+      - "SelectPitchAction(int pitchId)"
+      - "ClearSelectionAction"
+      - "SetGpsEnabledAction(bool enabled)"
+      - "MapInitializedAction"
+      - "MapErrorAction(string message)"
+
+  GameState:
+    properties:
+      - "bool IsAuthenticated"
+      - "string? Username"
+      - "bool IsConnected (SignalR)"
+      - "string? ConnectionError"
+    actions:
+      - "SetAuthStateAction(bool isAuthenticated, string username)"
+      - "SetConnectionStateAction(bool isConnected, string? error)"
+
+  InventoryState:
+    properties:
+      - "bool IsLoading"
+      - "ImmutableList<PlayerModel> CollectedPlayers"
+      - "DateTime? LastSynced"
+      - "string? ErrorMessage"
+    actions:
+      - "FetchInventoryAction"
+      - "FetchInventoryResultAction(IEnumerable<PlayerModel> players)"
+      - "AddPlayerAction(PlayerModel player)"
+      - "InventoryErrorAction(string message)"
+
+  BattleState:
+    properties:
+      - "ImmutableList<BattleChallenge> ActiveChallenges"
+      - "ImmutableList<BattleResult> BattleHistory"
+      - "bool IsLoading"
+    actions:
+      - "ChallengeReceivedAction(BattleChallenge challenge)"
+      - "ChallengeRespondedAction(int challengeId, BattleStatus status)"
+      - "BattleCompletedAction(BattleResult result)"
+      - "FetchBattlesResultAction(IEnumerable<BattleResult> history)"
+
+map_to_state_flow: |
+  1. User taps pitch marker on map
+  2. Leaflet 'click' event fires in leaflet-map.js
+  3. JS calls: DotNet.invokeMethodAsync('RuckR.Client', 'OnPitchMarkerClicked', pitchId)
+  4. C# method in MapPage.razor dispatches: Dispatcher.Dispatch(new SelectPitchAction(pitchId))
+  5. Fluxor calls MapReducers.ReduceSelectPitchAction(state, action)
+  6. New MapState returned with SelectedPitchId = pitchId
+  7. FluxorComponent base class detects IState<MapState>.Value change
+  8. StateHasChanged() called → MapPage re-renders
+  9. MapPage @code section reads MapState.Value.SelectedPitchId
+  10. If pitchId is set, pitch detail panel slides up / navigates to detail view
+
+Blazor_WASM_gotchas:
+  - gotcha: "JS interop only available after first render — map initialization MUST be in OnAfterRenderAsync(firstRender: true), never in OnInitializedAsync"
+    impact: "Map will fail silently if initialized too early — no DOM element exists yet"
+    mitigation: "Use OnAfterRenderAsync bool firstRender guard; set a bool _isMapInitialized flag"
+  - gotcha: "IJSObjectReference must be disposed — memory leak if JS module references are not released"
+    impact: "Multiple page navigations accumulate unreleased JS handles; WASM heap grows"
+    mitigation: "Implement IAsyncDisposable; call await module.DisposeAsync() in DisposeAsync(); trap JSDisconnectedException"
+  - gotcha: "Leaflet div needs explicit height — Leaflet requires a non-zero height container; CSS `height: 100%` won't work unless parent chain has heights set"
+    impact: "Map renders as 0px tall strip (common first-time issue)"
+    mitigation: "Set CSS: `#map { height: calc(100vh - var(--navbar-height)); }` or use `position: fixed; top; bottom; left; right;` for full-screen map"
+  - gotcha: "DotNet.invokeMethodAsync requires assembly-qualified name or the component must be rendered"
+    impact: "JS callback to .NET may fail with 'No call dispatcher' if component is disposed or Blazor isn't running"
+    mitigation: "Check component lifecycle; pass DotNetObjectReference to JS rather than relying on static method dispatch for per-component instances"
+  - gotcha: "Fluxor.Effects are singletons — injected services share store lifetime, not scoped lifetime"
+    impact: "HttpClient injected into effects lives for the entire browser session; DNS changes won't be picked up"
+    mitigation: "Use IHttpClientFactory in effects to create fresh HttpClient per request instead of injecting HttpClient directly"
+  - gotcha: "FluxorComponent.OnInitialized must call base.OnInitialized() — if overridden without base call, state subscriptions won't register"
+    impact: "Component won't react to state changes; appears 'stuck' with initial values"
+    mitigation: "Always call base.OnInitialized() or base.OnInitializedAsync() first in overrides"
+  - gotcha: "WASM payload size: adding Leaflet.js (~42KB) + Fluxor assemblies (~150KB) increases initial download"
+    impact: "Slower first load, especially on mobile connections"
+    mitigation: "Leaflet is small (42KB); Fluxor assemblies are AOT-compiled to WASM. Acceptable for MVP. Brotli compression helps."
+
+open_questions:
+  - question: "Should Leaflet CSS/JS be loaded from CDN (unpkg) or downloaded as local static assets in wwwroot?"
+    context: "CDN is simpler — two lines in index.html. Local files give offline control and no external dependency at runtime. CDN uses subresource integrity hashes for security. For MVP, CDN is recommended for speed of implementation."
+    type: "research"
+    affects: ["index.html setup", "CSP headers"]
+  - question: "Should geolocation watching be in the leaflet-map.js module or a separate geolocation.js module?"
+    context: "Leaflet itself has map.locate() for one-shot positioning, but continuous watching requires navigator.geolocation.watchPosition(). Separation of concerns suggests a dedicated module; simplicity suggests one module. One module is simpler for MVP."
+    type: "nice_to_know"
+    affects: ["JS module structure"]
+  - question: "When should the Fluxor store hydrate from server vs from localStorage cache?"
+    context: "On app startup, should InventoryState load from localStorage first (instant), then fetch from server (eventual consistency)? Or always fetch from server? PRD says 'Syncing with server on reconnect' but localStorage cache is out of MVP scope."
+    type: "research"
+    affects: ["InventoryEffects", "user experience on slow connections"]
+  - question: "Should map markers be managed entirely by Fluxor state or by direct JS interop calls for performance?"
+    context: "Updating 50+ marker positions via state → JS interop round-trip per marker is slow. Better approach: send the full list to JS in one call (addMarkers(markerData[])), and only track which pitch is selected in Fluxor state. Bulk operations preferred over per-marker state."
+    type: "decision_blocker"
+    affects: ["MapState design", "leaflet-map.js API", "performance with many markers"]
+
+gaps:
+  - area: "Blazor WASM performance profiling with real GPS data"
+    description: "No empirical data on how many markers Leaflet can handle with JS interop latency before UI feels sluggish. Leaflet itself handles 1000s of markers, but each interop call adds ~1-5ms WASM→JS bridge overhead."
+    impact: "nice_to_know"
+    affects: ["marker update strategy", "clustering plugin decision"]
+  - area: "Fluxor middleware chain for SignalR integration"
+    description: "Exact middleware pattern for connecting SignalR hub events to Fluxor effect dispatch not yet designed. Need to determine: (a) effects connect to hub in constructor, or (b) middleware listens to hub events, or (c) a service bridges hub → IDispatcher."
+    impact: "research_blocker"
+    affects: ["SignalR integration design", "GameState.Effects architecture"]
+  - area: "Custom marker icon assets"
+    description: "Rugby ball, player jersey, pitch marker icons need graphic design or free icon sourcing. No assets exist in project yet. Leaflet custom icons need PNG/SVG files with defined iconSize and iconAnchor."
+    impact: "nice_to_know"
+    affects: ["marker visual design", "wwwroot asset organization"]

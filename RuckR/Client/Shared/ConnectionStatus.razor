@@ -1,0 +1,135 @@
+@using Fluxor
+@using RuckR.Client.Services
+@using RuckR.Client.Store.GameFeature
+@implements IDisposable
+@inject IState<GameState> GameState
+@inject SignalRClientService SignalRClient
+
+<div class="connection-status @StatusClass">
+    <span class="status-dot @DotClass"></span>
+    <span class="status-text">@StatusText</span>
+    @if (_connectionStatus == ConnectionStatusEnum.Disconnected)
+    {
+        <button class="btn btn-sm btn-outline-light ms-2" @onclick="ReconnectAsync">Reconnect</button>
+    }
+</div>
+
+<style>
+    .connection-status {
+        display: flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+    .status-dot {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+        flex-shrink: 0;
+    }
+    .status-dot.connected {
+        background-color: #28a745;
+        box-shadow: 0 0 6px #28a745;
+    }
+    .status-dot.reconnecting {
+        background-color: #ffc107;
+        box-shadow: 0 0 6px #ffc107;
+        animation: pulse 1.5s infinite;
+    }
+    .status-dot.disconnected {
+        background-color: #dc3545;
+    }
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+</style>
+
+@code {
+    private enum ConnectionStatusEnum { Connected, Reconnecting, Disconnected }
+
+    private ConnectionStatusEnum _connectionStatus = ConnectionStatusEnum.Disconnected;
+    private string _statusText = "Disconnected";
+
+    private string StatusClass => _connectionStatus switch
+    {
+        ConnectionStatusEnum.Connected => "text-success",
+        ConnectionStatusEnum.Reconnecting => "text-warning",
+        _ => "text-danger"
+    };
+
+    private string DotClass => _connectionStatus switch
+    {
+        ConnectionStatusEnum.Connected => "connected",
+        ConnectionStatusEnum.Reconnecting => "reconnecting",
+        _ => "disconnected"
+    };
+
+    private string StatusText => _statusText;
+
+    protected override void OnInitialized()
+    {
+        SignalRClient.ConnectionStateChanged += OnConnectionStateChanged;
+        GameState.StateChanged += OnGameStateChanged;
+
+        UpdateFromConnectionState(GameState.Value.IsSignalRConnected, GameState.Value.ConnectionError);
+    }
+
+    private void OnConnectionStateChanged(bool isConnected, string? error)
+    {
+        UpdateFromConnectionState(isConnected, error);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnGameStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<GameState>)sender!).Value;
+        UpdateFromConnectionState(state.IsSignalRConnected, state.ConnectionError);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void UpdateFromConnectionState(bool isConnected, string? error)
+    {
+        if (isConnected)
+        {
+            _connectionStatus = ConnectionStatusEnum.Connected;
+            _statusText = "Connected";
+        }
+        else if (!string.IsNullOrEmpty(error) && error.Contains("Reconnect", StringComparison.OrdinalIgnoreCase))
+        {
+            _connectionStatus = ConnectionStatusEnum.Reconnecting;
+            _statusText = "Reconnecting...";
+        }
+        else
+        {
+            _connectionStatus = ConnectionStatusEnum.Disconnected;
+            _statusText = "Disconnected";
+        }
+    }
+
+    private async Task ReconnectAsync()
+    {
+        _connectionStatus = ConnectionStatusEnum.Reconnecting;
+        _statusText = "Reconnecting...";
+        StateHasChanged();
+
+        try
+        {
+            await SignalRClient.StartAsync();
+        }
+        catch
+        {
+            _connectionStatus = ConnectionStatusEnum.Disconnected;
+            _statusText = "Disconnected";
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        SignalRClient.ConnectionStateChanged -= OnConnectionStateChanged;
+        GameState.StateChanged -= OnGameStateChanged;
+    }
+}

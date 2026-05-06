@@ -1,0 +1,156 @@
+@using Fluxor
+@using RuckR.Client.Services
+@using RuckR.Client.Store.BattleFeature
+@using RuckR.Shared.Models
+@implements IDisposable
+@inject IState<BattleState> BattleState
+@inject IDispatcher Dispatcher
+@inject SignalRClientService SignalRClient
+@inject NavigationManager Navigation
+
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+    @foreach (var toast in _activeToasts.OrderBy(t => t.CreatedAt).Take(3))
+    {
+        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header">
+                <strong class="me-auto">@toast.Title</strong>
+                <small>@FormatTimeAgo(toast.CreatedAt)</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close" @onclick="() => DismissToast(toast.Id)"></button>
+            </div>
+            <div class="toast-body">
+                @toast.Message
+                @if (toast.Type == ToastType.Challenge && toast.ChallengeId.HasValue)
+                {
+                    <div class="mt-2 pt-2 border-top">
+                        <button class="btn btn-success btn-sm me-1" @onclick="() => AcceptChallengeAsync(toast.ChallengeId!.Value)">
+                            Accept
+                        </button>
+                        <button class="btn btn-outline-danger btn-sm" @onclick="() => DeclineChallengeAsync(toast.ChallengeId!.Value)">
+                            Decline
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private enum ToastType { Challenge, Result }
+
+    private sealed record ToastItem(
+        Guid Id,
+        string Title,
+        string Message,
+        ToastType Type,
+        DateTime CreatedAt,
+        TimeSpan Duration,
+        int? ChallengeId = null
+    );
+
+    private readonly List<ToastItem> _activeToasts = new();
+    private int _previousChallengeCount;
+    private Timer? _cleanupTimer;
+
+    protected override void OnInitialized()
+    {
+        BattleState.StateChanged += OnBattleStateChanged;
+        SignalRClient.ChallengeReceived += OnChallengeReceived;
+        SignalRClient.BattleResolved += OnBattleResolved;
+
+        _previousChallengeCount = BattleState.Value.ActiveChallenges.Count;
+
+        _cleanupTimer = new Timer(_ =>
+        {
+            _ = InvokeAsync(CleanupExpiredToasts);
+        }, null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void OnBattleStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<BattleState>)sender!).Value;
+        _previousChallengeCount = state.ActiveChallenges.Count;
+    }
+
+    private void OnChallengeReceived(ChallengeNotification notification)
+    {
+        var toast = new ToastItem(
+            Id: Guid.NewGuid(),
+            Title: "⚔️ Challenge!",
+            Message: $"{notification.ChallengerUsername} challenges you with {notification.PlayerName}!",
+            Type: ToastType.Challenge,
+            CreatedAt: DateTime.UtcNow,
+            Duration: TimeSpan.FromSeconds(10),
+            ChallengeId: notification.ChallengeId
+        );
+
+        AddToast(toast);
+    }
+
+    private void OnBattleResolved(BattleResult result)
+    {
+        var toast = new ToastItem(
+            Id: Guid.NewGuid(),
+            Title: "🏆 Battle Complete!",
+            Message: $"{result.WinnerUsername} defeated {result.LoserUsername}",
+            Type: ToastType.Result,
+            CreatedAt: DateTime.UtcNow,
+            Duration: TimeSpan.FromSeconds(5)
+        );
+
+        AddToast(toast);
+    }
+
+    private void AddToast(ToastItem toast)
+    {
+        _activeToasts.Add(toast);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void DismissToast(Guid id)
+    {
+        _activeToasts.RemoveAll(t => t.Id == id);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task AcceptChallengeAsync(int challengeId)
+    {
+        Navigation.NavigateTo("/battle");
+        _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+    }
+
+    private async Task DeclineChallengeAsync(int challengeId)
+    {
+        await SignalRClient.DeclineChallengeAsync(challengeId);
+        _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CleanupExpiredToasts()
+    {
+        var now = DateTime.UtcNow;
+        var removed = _activeToasts.RemoveAll(t => now - t.CreatedAt > t.Duration);
+        if (removed > 0)
+        {
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string FormatTimeAgo(DateTime createdAt)
+    {
+        var elapsed = DateTime.UtcNow - createdAt;
+        if (elapsed.TotalSeconds < 60)
+            return "just now";
+        if (elapsed.TotalMinutes < 60)
+            return $"{(int)elapsed.TotalMinutes}m ago";
+        return $"{(int)elapsed.TotalHours}h ago";
+    }
+
+    public void Dispose()
+    {
+        BattleState.StateChanged -= OnBattleStateChanged;
+        SignalRClient.ChallengeReceived -= OnChallengeReceived;
+        SignalRClient.BattleResolved -= OnBattleResolved;
+        _cleanupTimer?.Dispose();
+    }
+}

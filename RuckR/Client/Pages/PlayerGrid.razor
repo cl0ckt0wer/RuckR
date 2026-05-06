@@ -1,0 +1,313 @@
+@page "/players/nearby"
+@using RuckR.Shared.Models
+@using RuckR.Client.Store.LocationFeature
+@inject ApiClientService ApiClient
+@inject IState<LocationState> LocationState
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@inject IGeolocationService GeolocationService
+
+<PageTitle>Nearby Players</PageTitle>
+
+<h1>Nearby Players</h1>
+
+@* --- AUTH CHECK --- *@
+@if (_requiresAuth)
+{
+    <p><em>Checking authentication...</em></p>
+    return;
+}
+
+@* --- LOADING --- *@
+@if (_isLoading)
+{
+    <div class="d-flex justify-content-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <span class="ms-3 align-self-center"><em>Scanning for nearby players...</em></span>
+    </div>
+    return;
+}
+
+@* --- NO GPS --- *@
+@if (_gpsDisabled)
+{
+    <div class="text-center py-5">
+        <div style="font-size: 4rem;">📍</div>
+        <h4 class="mt-3">Enable GPS to find nearby players</h4>
+        <p class="text-muted">We need your location to show players near you.</p>
+        <button class="btn btn-primary mt-2" @onclick="EnableGpsAsync">
+            📡 Enable GPS
+        </button>
+    </div>
+    return;
+}
+
+@* --- ERROR --- *@
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <span>@_errorMessage</span>
+        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadNearbyPlayersAsync">Retry</button>
+    </div>
+    return;
+}
+
+@* --- RADIUS SELECTOR --- *@
+<div class="row mb-3 g-2 align-items-end">
+    <div class="col-auto">
+        <label class="form-label mb-1">Search Radius</label>
+        <select class="form-select form-select-sm" @bind="_selectedRadiusKm" @bind:after="OnRadiusChangedAsync">
+            @foreach (var r in _radiusOptions)
+            {
+                <option value="@r">@r km</option>
+            }
+        </select>
+    </div>
+    <div class="col-auto">
+        <span class="text-muted small">
+            @_nearbyPlayers.Count players found within @_selectedRadiusKm km
+        </span>
+    </div>
+</div>
+
+@* --- EMPTY STATE --- *@
+@if (_nearbyPlayers.Count == 0)
+{
+    <div class="text-center py-5">
+        <div style="font-size: 4rem;">🔭</div>
+        <h4 class="mt-3">No players nearby</h4>
+        <p class="text-muted">
+            Try expanding your search radius or check back later!
+        </p>
+    </div>
+    return;
+}
+
+@* --- GRID OF NEARBY PLAYERS --- *@
+<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    @foreach (var item in _sortedPlayers)
+    {
+        var isWild = string.IsNullOrWhiteSpace(item.OwnerUsername);
+        var isSelf = !isWild && string.Equals(item.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+        var fuzzyDist = GetFuzzyDistance(item);
+        var displayDistance = FormatDistanceDisplay(fuzzyDist);
+
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">@item.Name</h5>
+                </div>
+                <div class="card-body d-flex flex-column">
+                    @* Owner username or Wild *@
+                    <p class="card-text mb-1">
+                        <small class="text-muted">Owner:</small>
+                        @if (isWild)
+                        {
+                            <span class="badge bg-secondary">Wild</span>
+                        }
+                        else if (isSelf)
+                        {
+                            <span class="badge bg-info">You</span>
+                        }
+                        else
+                        {
+                            <span>@item.OwnerUsername</span>
+                        }
+                    </p>
+
+                    @* Position badge *@
+                    <span class="badge bg-secondary mb-2">@item.Position</span>
+
+                    @* Rarity badge (color-coded) *@
+                    <span class="badge @RarityBadgeClass(item.Rarity) mb-3">@item.Rarity</span>
+
+                    @* Fuzzy distance (prominent) *@
+                    <div class="text-center mb-3 p-2 rounded" style="background-color: #f8f9fa;">
+                        <span class="fs-4 fw-bold">@displayDistance</span>
+                    </div>
+
+                    @* Action button *@
+                    <div class="mt-auto">
+                        @if (isWild)
+                        {
+                            <button class="btn btn-outline-secondary btn-sm w-100" disabled>
+                                🔍 Scout (Coming Soon)
+                            </button>
+                        }
+                        else if (isSelf)
+                        {
+                            <span class="text-muted small">Your player</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-primary btn-sm w-100"
+                                    @onclick="() => ChallengePlayer(item)">
+                                ⚔️ Challenge
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _requiresAuth = true;
+    private bool _isLoading = true;
+    private bool _gpsDisabled;
+    private string? _errorMessage;
+    private string _currentUsername = string.Empty;
+    private List<NearbyPlayerDto> _nearbyPlayers = new();
+    private int _selectedRadiusKm = 10;
+    private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
+
+    /// <summary>
+    /// Fuzzy distance cache keyed by PlayerId. Static to persist across page
+    /// navigations within the Blazor WASM session, satisfying the "per session"
+    /// requirement. Each player gets a random ±20% offset applied once.
+    /// </summary>
+    private static readonly Dictionary<int, double> s_fuzzyCache = new();
+
+    private IEnumerable<NearbyPlayerDto> _sortedPlayers =>
+        _nearbyPlayers
+            .OrderBy(p => GetFuzzyDistance(p))
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+            Navigation.NavigateTo($"/Identity/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+            return;
+        }
+
+        _requiresAuth = false;
+        _currentUsername = user.Identity.Name ?? string.Empty;
+
+        var lat = LocationState.Value.UserLatitude;
+        var lng = LocationState.Value.UserLongitude;
+
+        if (!lat.HasValue || !lng.HasValue)
+        {
+            _gpsDisabled = true;
+            _isLoading = false;
+            return;
+        }
+
+        await LoadNearbyPlayersAsync();
+    }
+
+    private async Task LoadNearbyPlayersAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var lat = LocationState.Value.UserLatitude;
+            var lng = LocationState.Value.UserLongitude;
+
+            if (!lat.HasValue || !lng.HasValue)
+            {
+                _gpsDisabled = true;
+                return;
+            }
+
+            var radiusMeters = _selectedRadiusKm * 1000;
+            _nearbyPlayers = await ApiClient.GetNearbyPlayersAsync(lat.Value, lng.Value, radiusMeters);
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to load nearby players: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private double GetFuzzyDistance(NearbyPlayerDto player)
+    {
+        if (s_fuzzyCache.TryGetValue(player.PlayerId, out var cached))
+            return cached;
+
+        // Apply ±20% random offset: range 0.8x to 1.2x
+        var fuzzy = player.FuzzyDistanceMeters * (0.8 + Random.Shared.NextDouble() * 0.4);
+        s_fuzzyCache[player.PlayerId] = fuzzy;
+        return fuzzy;
+    }
+
+    private static string FormatDistanceDisplay(double fuzzyDistanceMeters)
+    {
+        return fuzzyDistanceMeters switch
+        {
+            <= 50.0 => "< 50m",
+            <= 100.0 => "< 100m",
+            <= 250.0 => "< 250m",
+            <= 500.0 => "< 500m",
+            _ => $"~{fuzzyDistanceMeters / 1000.0:F1}km"
+        };
+    }
+
+    private async Task OnRadiusChangedAsync()
+    {
+        await LoadNearbyPlayersAsync();
+    }
+
+    private void ChallengePlayer(NearbyPlayerDto player)
+    {
+        Navigation.NavigateTo(
+            $"/battle?opponent={Uri.EscapeDataString(player.OwnerUsername)}&player={player.PlayerId}");
+    }
+
+    private async Task EnableGpsAsync()
+    {
+        try
+        {
+            _gpsDisabled = false;
+            _isLoading = true;
+            await GeolocationService.StartWatchAsync();
+
+            // Give the location service a moment to get a fix
+            await Task.Delay(1500);
+
+            var lat = LocationState.Value.UserLatitude;
+            var lng = LocationState.Value.UserLongitude;
+
+            if (!lat.HasValue || !lng.HasValue)
+            {
+                _gpsDisabled = true;
+                _isLoading = false;
+                return;
+            }
+
+            await LoadNearbyPlayersAsync();
+        }
+        catch
+        {
+            _gpsDisabled = true;
+            _isLoading = false;
+        }
+    }
+
+    private static string RarityBadgeClass(string rarity) => rarity switch
+    {
+        "Common" => "bg-secondary",
+        "Uncommon" => "bg-success",
+        "Rare" => "bg-primary",
+        "Epic" => "bg-purple text-white",
+        "Legendary" => "bg-warning text-dark",
+        _ => "bg-secondary"
+    };
+}

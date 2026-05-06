@@ -1,0 +1,447 @@
+plan_id: "20260505-update-project"
+plan_objective: "Upgrade RuckR to .NET 10, update NuGet packages, and finish the Profile feature"
+created_at: "2026-05-05"
+created_by: gem-planner
+status: planned
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 6
+  total_dependencies: 17
+  risk_score: medium
+tldr: |
+  Two-wave upgrade for RuckR Blazor WASM Hosted:
+  Wave 1: .NET 8→10 TFM migration across all 3 projects, NuGet packages 8.0.0→10.0.7,
+  code migrations (MapStaticAssets, Router NotFoundPage, service worker updateViaCache).
+  Wave 2: Finish Profile feature stub — expand ProfileModel (6 fields with DataAnnotations),
+  create ProfileController (GET/PUT), implement Profile.razor (view/edit toggle with EditForm).
+open_questions:
+  - question: "Should ProfileModel remain in RuckR.Shared.Models namespace or move to RuckR.Shared (matching WeatherForecast pattern)?"
+    context: "WeatherForecast.cs is in namespace RuckR.Shared; ProfileModel.cs is in RuckR.Shared.Models. Inconsistency exists but research says keep as-is to avoid moving existing file."
+    type: nice_to_know
+    affects: ["expand-profile-model", "implement-profile-page"]
+gaps: []
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "NuGet package restore fails after TFM upgrade due to version compatibility issues"
+      likelihood: medium
+      impact: high
+      mitigation: "All 10.0.7 packages confirmed available on NuGet.org; csproj changes and package restore done atomically in Wave 1; verify-build catches any resolve errors"
+    - scenario: "Router NotFoundPage migration breaks client-side routing or causes runtime error"
+      likelihood: low
+      impact: medium
+      mitigation: "Exact migration pattern confirmed by research — 2-file change (App.razor + new NotFound.razor); dotnet build verifies compilation"
+    - scenario: "Profile feature build fails due to namespace/model reference inconsistencies"
+      likelihood: low
+      impact: medium
+      mitigation: "Follows established WeatherForecastController + FetchData.razor pattern exactly; verify-build-wave2 catches all compilation issues"
+    - scenario: "MapStaticAssets/WithStaticAssets middleware ordering causes runtime asset serving failure"
+      likelihood: low
+      impact: high
+      mitigation: "Research-confirmed migration pattern; MapStaticAssets replaces UseStaticFiles at same position in pipeline; verify-build confirms compilation"
+  assumptions:
+    - ".NET 10 SDK 10.0.203 is installed locally and available for dotnet build"
+    - "All 10.0.7 NuGet packages are available and compatible with the solution"
+    - "No HttpClient synchronous Stream.Read usage exists in codebase (verified by research)"
+    - "Single-user in-memory profile is acceptable (no auth, no DB)"
+    - "Build verification is sufficient — no automated tests exist"
+implementation_specification:
+  code_structure: "3-project solution: RuckR.Server (ASP.NET Core host), RuckR.Client (Blazor WASM SPA), RuckR.Shared (shared models library)"
+  affected_areas:
+    - "All 3 .csproj files (TFM + package versions)"
+    - "Server/Program.cs (middleware pipeline — MapStaticAssets + WithStaticAssets)"
+    - "Client/App.razor (Router NotFoundPage parameter)"
+    - "Client/Pages/NotFound.razor (new file — extracted NotFound content)"
+    - "Client/wwwroot/index.html (service worker updateViaCache)"
+    - "Shared/Models/ProfileModel.cs (expand from 2 to 6 properties + DataAnnotations)"
+    - "Server/Controllers/ProfileController.cs (new file — GET/PUT endpoints)"
+    - "Client/Pages/Profile.razor (full implementation from 6-line stub)"
+  component_details:
+    - component: RuckR.Server
+      responsibility: "ASP.NET Core host; API controllers; serves compiled Blazor WASM assets"
+      interfaces: ["ProfileController: GET /Profile, PUT /Profile"]
+      dependencies:
+        - component: RuckR.Client
+          relationship: "ProjectReference — serves compiled WASM"
+        - component: RuckR.Shared
+          relationship: "ProjectReference — uses ProfileModel"
+        - component: Microsoft.AspNetCore.Components.WebAssembly.Server
+          relationship: "NuGet 10.0.7 — WASM hosting middleware"
+      integration_points: ["Program.cs middleware pipeline", "Controllers/"]
+    - component: RuckR.Client
+      responsibility: "Blazor WebAssembly SPA (PWA); renders UI in browser"
+      interfaces: ["Profile.razor page at /profile", "HttpClient → Server API"]
+      dependencies:
+        - component: RuckR.Shared
+          relationship: "ProjectReference — uses ProfileModel"
+        - component: Microsoft.AspNetCore.Components.WebAssembly
+          relationship: "NuGet 10.0.7 — WASM runtime"
+        - component: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+          relationship: "NuGet 10.0.7 (PrivateAssets=all) — dev debugging"
+      integration_points: ["App.razor Router", "wwwroot/index.html", "Pages/"]
+    - component: RuckR.Shared
+      responsibility: "Shared models/types consumed by both Server and Client"
+      interfaces: ["ProfileModel class with 6 properties + DataAnnotations"]
+      dependencies: []
+      integration_points: ["Models/ProfileModel.cs"]
+contracts:
+  - from_task: "expand-profile-model"
+    to_task: "create-profile-controller"
+    interface: "ProfileModel class"
+    format: "C# class in RuckR.Shared.Models namespace. Properties: string? Name, string? Biography, string? Email ([Required],[EmailAddress],[StringLength(256)]), string? Location ([StringLength(100)]), DateTime JoinedDate, string? AvatarUrl ([Url],[StringLength(500)]). All unused using directives removed."
+  - from_task: "expand-profile-model"
+    to_task: "implement-profile-page"
+    interface: "ProfileModel class"
+    format: "C# class — consumed via @using RuckR.Shared.Models, deserialized from GET /Profile response, serialized in PUT /Profile request body"
+  - from_task: "create-profile-controller"
+    to_task: "implement-profile-page"
+    interface: "REST API"
+    format: "GET /Profile returns ProfileModel as JSON. PUT /Profile accepts ProfileModel JSON body, updates static field, returns 200 OK. [ApiController] auto-validates via DataAnnotations."
+waves:
+  - wave: 1
+    title: ".NET 10 Upgrade & NuGet Package Updates"
+    tasks:
+      - task_id: "upgrade-csproj-tfm"
+        title: "Upgrade TFM and NuGet package versions in all .csproj files"
+        description: "Edit all three .csproj files to target net10.0 and update NuGet package versions from 8.0.0 to 10.0.7. RuckR.Server.csproj: TFM net8.0→net10.0, Microsoft.AspNetCore.Components.WebAssembly.Server 8.0.0→10.0.7. RuckR.Client.csproj: TFM net8.0→net10.0, Microsoft.AspNetCore.Components.WebAssembly 8.0.0→10.0.7, Microsoft.AspNetCore.Components.WebAssembly.DevServer 8.0.0→10.0.7. RuckR.Shared.csproj: TFM net8.0→net10.0 (no NuGet packages). All other properties (Nullable, ImplicitUsings, SupportedPlatform browser, ServiceWorkerAssetsManifest, PrivateAssets=all, SDK types) remain unchanged."
+        agent: gem-implementer
+        file: "RuckR/Server/RuckR.Server.csproj, RuckR/Client/RuckR.Client.csproj, RuckR/Shared/RuckR.Shared.csproj"
+        depends_on: []
+        wave: 1
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 3
+        estimated_lines: 15
+        focus_area: dotnet-10-upgrade
+        acceptance_criteria:
+          - "All 3 .csproj <TargetFramework> values changed from net8.0 to net10.0"
+          - "RuckR.Server.csproj: Microsoft.AspNetCore.Components.WebAssembly.Server Version changed from 8.0.0 to 10.0.7"
+          - "RuckR.Client.csproj: Microsoft.AspNetCore.Components.WebAssembly Version changed from 8.0.0 to 10.0.7"
+          - "RuckR.Client.csproj: Microsoft.AspNetCore.Components.WebAssembly.DevServer Version changed from 8.0.0 to 10.0.7"
+          - "All other properties preserved unchanged (Nullable, ImplicitUsings, SDK, SupportedPlatform, ServiceWorkerAssetsManifest, PrivateAssets=all, ProjectReference declarations)"
+        verification:
+          - "Visual inspection of all 3 .csproj files confirms net10.0 TFM and 10.0.7 package versions"
+          - "All other properties unchanged from current state"
+        tech_stack: ["MSBuild", "XML", ".NET 10"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_dotnet-10-upgrade.yaml"
+          - "research_findings_nuget-package-management.yaml"
+
+      - task_id: "migrate-server-program-cs"
+        title: "Migrate Server Program.cs middleware to MapStaticAssets and WithStaticAssets"
+        description: "Update RuckR/Server/Program.cs .NET 10 middleware pattern: replace app.UseStaticFiles() with app.MapStaticAssets(), chain .WithStaticAssets() on app.MapRazorPages() and app.MapControllers(). Other middleware (UseWebAssemblyDebugging, UseBlazorFrameworkFiles, UseRouting, MapFallbackToFile) unchanged. Line 27: app.UseStaticFiles() → app.MapStaticAssets(). Line 32: app.MapRazorPages() → app.MapRazorPages().WithStaticAssets(). Line 33: app.MapControllers() → app.MapControllers().WithStaticAssets()."
+        agent: gem-implementer
+        file: "RuckR/Server/Program.cs"
+        depends_on: ["upgrade-csproj-tfm"]
+        wave: 1
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 1
+        estimated_lines: 5
+        focus_area: dotnet-10-upgrade
+        acceptance_criteria:
+          - "Line 27: app.UseStaticFiles() replaced with app.MapStaticAssets()"
+          - "Line 32: app.MapRazorPages() changed to app.MapRazorPages().WithStaticAssets()"
+          - "Line 33: app.MapControllers() changed to app.MapControllers().WithStaticAssets()"
+          - "All other lines in Program.cs unchanged"
+          - "app.MapStaticAssets() positioned after app.UseBlazorFrameworkFiles() and before app.UseRouting() — same position as original UseStaticFiles"
+        verification:
+          - "Visual inspection confirms exact 3-line change; all other middleware calls unchanged"
+          - "Middleware ordering preserved: UseBlazorFrameworkFiles → MapStaticAssets → UseRouting → MapRazorPages → MapControllers → MapFallbackToFile"
+        tech_stack: ["ASP.NET Core 10", "C#"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_dotnet-10-upgrade.yaml"
+
+      - task_id: "migrate-app-razor"
+        title: "Migrate App.razor Router from NotFound fragment to NotFoundPage parameter"
+        description: "Replace the <NotFound> RenderFragment in RuckR/Client/App.razor with the NotFoundPage parameter on Router. Remove <NotFound>...</NotFound> block (lines 6-11) and add NotFoundPage parameter to Router tag. Create new NotFound.razor page component in RuckR/Client/Pages/NotFound.razor containing the extracted content: PageTitle 'Not found' and LayoutView with the alert paragraph. App.razor Router tag becomes: <Router AppAssembly=\"@typeof(App).Assembly\" NotFoundPage=\"@typeof(NotFound)\"> (closing the <Found> block without <NotFound>). The NotFound.razor uses LayoutView wrapping the existing 'Sorry, there's nothing at this address.' content."
+        agent: gem-implementer
+        file: "RuckR/Client/App.razor (edit), RuckR/Client/Pages/NotFound.razor (new)"
+        depends_on: ["upgrade-csproj-tfm"]
+        wave: 1
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 2
+        estimated_lines: 18
+        focus_area: dotnet-10-upgrade
+        acceptance_criteria:
+          - "App.razor: <NotFound> fragment removed; Router tag has NotFoundPage=\"@typeof(NotFound)\" parameter"
+          - "App.razor: Router tag properly closed after <Found> block (no longer 2 children)"
+          - "NotFound.razor created at RuckR/Client/Pages/NotFound.razor"
+          - "NotFound.razor contains PageTitle 'Not found' and LayoutView wrapping the alert paragraph from original <NotFound>"
+          - "LayoutView.Layout set to typeof(MainLayout) matching original pattern"
+          - "Content exactly: 'Sorry, there's nothing at this address.' as role='alert' paragraph"
+        verification:
+          - "Visual inspection of App.razor: no <NotFound> element, NotFoundPage parameter present"
+          - "Visual inspection of NotFound.razor: correct content extraction from original <NotFound>"
+        tech_stack: ["Blazor", "Razor", "C#"]
+        test_coverage: null
+        failure_modes:
+          - scenario: "Router NotFoundPage type reference fails — NotFound component not found at compile time"
+            likelihood: low
+            impact: medium
+            mitigation: "NotFound.razor created in same project (RuckR.Client.Pages namespace); verify build catches type resolution issues"
+        research_sources:
+          - "research_findings_dotnet-10-upgrade.yaml"
+
+      - task_id: "update-index-html"
+        title: "Update index.html service worker registration with updateViaCache"
+        description: "Update the service worker registration script in RuckR/Client/wwwroot/index.html line 33 to include the updateViaCache: 'none' option per .NET 10 PWA guidance. Change: navigator.serviceWorker.register('service-worker.js') to navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }). All other HTML content (meta tags, stylesheets, blazor script, error UI) remains unchanged."
+        agent: gem-implementer
+        file: "RuckR/Client/wwwroot/index.html"
+        depends_on: ["upgrade-csproj-tfm"]
+        wave: 1
+        status: pending
+        priority: medium
+        estimated_effort: small
+        estimated_files: 1
+        estimated_lines: 2
+        focus_area: dotnet-10-upgrade
+        acceptance_criteria:
+          - "Line 33 service worker registration script updated to include { updateViaCache: 'none' }"
+          - "Registration call: navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' })"
+          - "All other HTML unchanged (DOCTYPE, head, body, blazor script, error UI div)"
+        verification:
+          - "Visual inspection confirms exact change to line 33 only"
+        tech_stack: ["HTML", "JavaScript", "PWA"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_dotnet-10-upgrade.yaml"
+
+      - task_id: "nuget-package-restore"
+        title: "Run dotnet restore to resolve updated NuGet packages"
+        description: "Run dotnet restore RuckR.sln to restore all NuGet packages with the updated 10.0.7 versions. This validates that all package versions resolve correctly against nuget.org with the net10.0 target framework. Then run dotnet list package --outdated to confirm no outdated packages remain. No csproj edits — versions were already set in upgrade-csproj-tfm."
+        agent: gem-implementer
+        file: "RuckR.sln"
+        depends_on: ["upgrade-csproj-tfm"]
+        wave: 1
+        status: pending
+        priority: medium
+        estimated_effort: small
+        estimated_files: 0
+        estimated_lines: 0
+        focus_area: nuget-package-management
+        acceptance_criteria:
+          - "dotnet restore RuckR.sln completes with zero errors"
+          - "All 3 NuGet packages (WebAssembly.Server, WebAssembly, WebAssembly.DevServer) resolve to version 10.0.7"
+          - "dotnet list package --outdated shows no outdated packages"
+          - "No NU#### errors or warnings in restore output"
+        verification:
+          - "Review dotnet restore output for errors"
+          - "Review dotnet list package --outdated output — expect empty or zero outdated"
+        tech_stack: [".NET CLI", "NuGet"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_nuget-package-management.yaml"
+
+      - task_id: "verify-build-wave1"
+        title: "Verify Wave 1 build — dotnet build RuckR.sln with zero errors and warnings"
+        description: "Run dotnet build RuckR.sln from the repository root to verify all Wave 1 changes compile successfully. This gates Wave 2 start. Acceptance: zero errors, zero warnings (treat warnings as errors for this verification). If build fails, identify the failing project and task, then re-run the relevant task."
+        agent: gem-implementer
+        file: "RuckR.sln"
+        depends_on: ["upgrade-csproj-tfm", "migrate-server-program-cs", "migrate-app-razor", "update-index-html", "nuget-package-restore"]
+        wave: 1
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 0
+        estimated_lines: 0
+        focus_area: dotnet-10-upgrade
+        acceptance_criteria:
+          - "dotnet build RuckR.sln completes with zero errors"
+          - "dotnet build RuckR.sln completes with zero warnings"
+          - "All 3 projects (Server, Client, Shared) build successfully"
+          - "Build output confirms net10.0 target framework"
+        verification:
+          - "Full build log reviewed for errors and warnings"
+        failure_modes:
+          - scenario: "Build fails with NU1101 — package not found"
+            likelihood: medium
+            impact: high
+            mitigation: "Verify NuGet package versions are exactly 10.0.7; run dotnet nuget locals all --clear and retry restore"
+          - scenario: "Build fails with CS#### compilation errors from code migrations"
+            likelihood: medium
+            impact: high
+            mitigation: "Re-run the specific failing task (migrate-server-program-cs, migrate-app-razor, or update-index-html) to fix; MapStaticAssets/WithStaticAssets require Microsoft.AspNetCore.Components.WebAssembly.Server 10.x"
+          - scenario: "Build succeeds but dotnet run fails at runtime"
+            likelihood: low
+            impact: high
+            mitigation: "Runtime verification is manual per PRD; build verification confirms compilation only"
+        tech_stack: [".NET CLI", "MSBuild"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_dotnet-10-upgrade.yaml"
+          - "research_findings_nuget-package-management.yaml"
+
+  - wave: 2
+    title: "Profile Feature"
+    tasks:
+      - task_id: "expand-profile-model"
+        title: "Expand ProfileModel with 4 new properties and DataAnnotations"
+        description: "Expand RuckR/Shared/Models/ProfileModel.cs from the current 2-property stub (Name, Biography) to 6 properties with DataAnnotations validation attributes. Add: Email (string?, [Required], [EmailAddress], [StringLength(256)]), Location (string?, [StringLength(100)]), JoinedDate (DateTime, auto-initialized to DateTime.Today), AvatarUrl (string?, [Url], [StringLength(500)]). Add using System.ComponentModel.DataAnnotations. Remove all 5 unused using directives (System.Collections.Generic, System.Linq, System.Security.Cryptography.X509Certificates, System.Text, System.Threading.Tasks). Retain existing Name and Biography properties unchanged including nullable annotations and default values. Keep namespace RuckR.Shared.Models."
+        agent: gem-implementer
+        file: "RuckR/Shared/Models/ProfileModel.cs"
+        depends_on: ["verify-build-wave1"]
+        wave: 2
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 1
+        estimated_lines: 25
+        focus_area: profile-feature
+        acceptance_criteria:
+          - "Email property: public string? Email { get; set; } with [Required], [EmailAddress], [StringLength(256)]"
+          - "Location property: public string? Location { get; set; } with [StringLength(100)]"
+          - "JoinedDate property: public DateTime JoinedDate { get; set; } = DateTime.Today"
+          - "AvatarUrl property: public string? AvatarUrl { get; set; } with [Url], [StringLength(500)]"
+          - "Existing Name and Biography properties retained with original nullable annotations and = null default"
+          - "using System.ComponentModel.DataAnnotations added"
+          - "All 5 unused using directives removed (System.Collections.Generic, System.Linq, System.Security.Cryptography.X509Certificates, System.Text, System.Threading.Tasks)"
+          - "using System retained (needed for DateTime.Today default)"
+          - "Namespace RuckR.Shared.Models preserved"
+        verification:
+          - "Visual inspection: 6 properties, correct DataAnnotations, correct using directives"
+          - "Quick validation: dotnet build RuckR.Shared.csproj compiles without errors (optional pre-verify)"
+        tech_stack: ["C#", ".NET 10", "System.ComponentModel.DataAnnotations"]
+        test_coverage: null
+        failure_modes:
+          - scenario: "DataAnnotations namespace not resolved — missing framework reference"
+            likelihood: low
+            impact: low
+            mitigation: "System.ComponentModel.DataAnnotations is included in net10.0 framework; no NuGet package needed"
+        research_sources:
+          - "research_findings_profile-feature.yaml"
+
+      - task_id: "create-profile-controller"
+        title: "Create ProfileController with GET and PUT endpoints"
+        description: "Create RuckR/Server/Controllers/ProfileController.cs following the WeatherForecastController pattern. Class decorated with [ApiController] and [Route(\"[controller]\")], inherits ControllerBase. Injects ILogger<ProfileController> via constructor. Stores profile data in a private static ProfileModel field initialized with sensible defaults (Name='Your Name', Biography='Write something about yourself...', etc.). GET /Profile action ([HttpGet]) returns the static ProfileModel field. PUT /Profile action ([HttpPut]) accepts a ProfileModel body, updates the static field, and returns Ok(). Log information on GET and PUT operations via _logger. [ApiController] auto-validates PUT body against DataAnnotations — invalid models return 400 Bad Request automatically."
+        agent: gem-implementer
+        file: "RuckR/Server/Controllers/ProfileController.cs (new)"
+        depends_on: ["verify-build-wave1", "expand-profile-model"]
+        wave: 2
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 1
+        estimated_lines: 45
+        focus_area: profile-feature
+        acceptance_criteria:
+          - "File created at RuckR/Server/Controllers/ProfileController.cs"
+          - "[ApiController] and [Route(\"[controller]\")] attributes on class"
+          - "Inherits ControllerBase"
+          - "Injects ILogger<ProfileController> via constructor, stored in private readonly field"
+          - "Private static ProfileModel field (_profile) with default values for all 6 properties"
+          - "GET action ([HttpGet]) returns profile field as ActionResult<ProfileModel>"
+          - "PUT action ([HttpPut]) accepts [FromBody] ProfileModel, updates _profile, returns Ok()"
+          - "Logging: _logger.LogInformation on GET and PUT"
+          - "using Microsoft.AspNetCore.Mvc and using RuckR.Shared.Models"
+          - "Matches WeatherForecastController structure (namespace, class declaration, DI pattern)"
+        verification:
+          - "Structural comparison with WeatherForecastController.cs confirms pattern match"
+          - "Visual inspection: correct attributes, actions, static storage"
+        tech_stack: ["ASP.NET Core 10", "C#", "ControllerBase"]
+        test_coverage: null
+        failure_modes:
+          - scenario: "PUT endpoint does not auto-validate because [ApiController] missing"
+            likelihood: low
+            impact: medium
+            mitigation: "[ApiController] attribute is mandatory — acceptance criteria explicitly require it"
+          - scenario: "Controller route conflict with existing controllers"
+            likelihood: low
+            impact: low
+            mitigation: "Route token [controller] maps to /Profile — no existing controller has this name"
+        research_sources:
+          - "research_findings_profile-feature.yaml"
+
+      - task_id: "implement-profile-page"
+        title: "Implement Profile.razor with view/edit toggle and EditForm validation"
+        description: "Fully implement RuckR/Client/Pages/Profile.razor from the current 6-line stub. Page at /profile with view/edit toggle. Inject HttpClient via @inject. Add @using RuckR.Shared.Models. OnInitializedAsync: fetch profile from GET /Profile via Http.GetFromJsonAsync<ProfileModel>(\"Profile\"). View mode: display all 6 fields (Name, Biography, Email, Location, JoinedDate, AvatarUrl) in a Bootstrap card layout with an Edit button. Edit mode: EditForm with DataAnnotationsValidator, InputText/InputTextArea fields for editable properties, Save and Cancel buttons. Save sends PUT /Profile via Http.PutAsJsonAsync(\"Profile\", profileModel), switches back to view mode on success. Loading state: show 'Loading...' while profile is null. Error state: show error message in alert div when HTTP calls fail (try/catch). Use Bootstrap 5 classes consistent with existing pages (card, form-control, btn, alert). Follow FetchData.razor patterns for HttpClient usage and loading states."
+        agent: gem-implementer
+        file: "RuckR/Client/Pages/Profile.razor"
+        depends_on: ["expand-profile-model", "create-profile-controller"]
+        wave: 2
+        status: pending
+        priority: high
+        estimated_effort: medium
+        estimated_files: 1
+        estimated_lines: 120
+        focus_area: profile-feature
+        acceptance_criteria:
+          - "Page route: @page \"/profile\" preserved"
+          - "@inject HttpClient Http and @using RuckR.Shared.Models directives present"
+          - "OnInitializedAsync fetches profile: await Http.GetFromJsonAsync<ProfileModel>(\"Profile\")"
+          - "View mode displays all 6 fields in a Bootstrap card (or similar layout) with labels"
+          - "Edit button toggles isEditing = true"
+          - "Edit mode uses <EditForm Model=\"profileModel\" OnValidSubmit=\"SaveProfile\">"
+          - "EditForm contains <DataAnnotationsValidator />"
+          - "Input fields for editable properties (Name, Biography, Email, Location, AvatarUrl) with <ValidationMessage>"
+          - "JoinedDate displayed read-only in edit mode"
+          - "Save button (type=\"submit\") triggers SaveProfile → Http.PutAsJsonAsync(\"Profile\", profileModel)"
+          - "Cancel button resets isEditing without saving"
+          - "Successful save switches back to view mode (isEditing = false)"
+          - "Loading state: '<p><em>Loading...</em></p>' when profile == null (matching FetchData.razor)"
+          - "Error state: Bootstrap alert div with errorMessage when HTTP calls fail"
+          - "Try/catch in OnInitializedAsync and SaveProfile with errorMessage set on failure"
+          - "Bootstrap 5 styling consistent with existing pages"
+        verification:
+          - "Pattern comparison with FetchData.razor confirms HttpClient usage and loading pattern"
+          - "Visual inspection: correct EditForm structure, DataAnnotationsValidator, ValidationMessage per field"
+          - "Code review: try/catch error handling present in both GET and PUT operations"
+        tech_stack: ["Blazor WebAssembly", "Razor", "C#", "Bootstrap 5", "EditForm"]
+        test_coverage: null
+        failure_modes:
+          - scenario: "GET /Profile fails because controller not discovered by MapControllers"
+            likelihood: low
+            impact: medium
+            mitigation: "ProfileController follows exact same pattern as WeatherForecastController which is already discovered; verify build confirms compilation"
+          - scenario: "EditForm validation messages don't display — DataAnnotationsValidator not working"
+            likelihood: low
+            impact: low
+            mitigation: "Ensure <DataAnnotationsValidator /> is a child of <EditForm>; acceptance criteria verify presence"
+          - scenario: "PUT /Profile returns 400 because client doesn't send Content-Type: application/json"
+            likelihood: low
+            impact: low
+            mitigation: "PutAsJsonAsync automatically sets Content-Type header; this is standard behavior"
+        research_sources:
+          - "research_findings_profile-feature.yaml"
+
+      - task_id: "verify-build-wave2"
+        title: "Verify Wave 2 build — dotnet build RuckR.sln with zero errors and warnings"
+        description: "Run dotnet build RuckR.sln from the repository root to verify all Wave 2 changes compile successfully. Confirms ProfileModel, ProfileController, and Profile.razor all compile together with the upgraded .NET 10 framework. Acceptance: zero errors, zero warnings."
+        agent: gem-implementer
+        file: "RuckR.sln"
+        depends_on: ["expand-profile-model", "create-profile-controller", "implement-profile-page"]
+        wave: 2
+        status: pending
+        priority: high
+        estimated_effort: small
+        estimated_files: 0
+        estimated_lines: 0
+        focus_area: profile-feature
+        acceptance_criteria:
+          - "dotnet build RuckR.sln completes with zero errors"
+          - "dotnet build RuckR.sln completes with zero warnings"
+          - "All 3 projects (Server, Client, Shared) build successfully"
+          - "ProfileController and ProfileModel references resolve correctly"
+          - "Profile.razor compilation succeeds"
+        verification:
+          - "Full build log reviewed for errors and warnings"
+        failure_modes:
+          - scenario: "Profile.razor compilation fails due to missing @using or type resolution"
+            likelihood: medium
+            impact: medium
+            mitigation: "Ensure @using RuckR.Shared.Models in Profile.razor; re-run implement-profile-page to fix"
+          - scenario: "ProfileController namespace or using mismatch"
+            likelihood: low
+            impact: medium
+            mitigation: "Match WeatherForecastController namespace RuckR.Server.Controllers and using RuckR.Shared.Models"
+        tech_stack: [".NET CLI", "MSBuild"]
+        test_coverage: null
+        research_sources:
+          - "research_findings_profile-feature.yaml"
+          - "research_findings_dotnet-10-upgrade.yaml"

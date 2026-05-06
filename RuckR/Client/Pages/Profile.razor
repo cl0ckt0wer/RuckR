@@ -1,6 +1,154 @@
 ﻿@page "/profile"
+@using RuckR.Shared.Models
+@inject HttpClient Http
+
 <h3>Profile</h3>
 
-@code {
+@if (profile == null && string.IsNullOrEmpty(errorMessage))
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Loading profile...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+        <button class="btn btn-outline-danger btn-sm ms-3" @onclick="LoadProfile">Retry</button>
+    </div>
+}
+else if (!isEditing)
+{
+    <!-- VIEW MODE -->
+    <div class="card">
+        <div class="card-body">
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Name</div>
+                <div class="col-md-8">@profile!.Name</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Email</div>
+                <div class="col-md-8">@profile.Email</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Location</div>
+                <div class="col-md-8">@profile.Location</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Joined</div>
+                <div class="col-md-8">@profile.JoinedDate.ToString("MMMM yyyy")</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Avatar URL</div>
+                <div class="col-md-8">@profile.AvatarUrl</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-4 fw-bold">Biography</div>
+                <div class="col-md-8">@profile.Biography</div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button class="btn btn-primary" @onclick="() => isEditing = true">Edit</button>
+        </div>
+    </div>
+}
+else
+{
+    <!-- EDIT MODE -->
+    <EditForm Model="profile" OnValidSubmit="SaveProfile">
+        <DataAnnotationsValidator />
 
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <InputText @bind-Value="profile!.Name" class="form-control" />
+                    <ValidationMessage For="() => profile.Name" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <InputText @bind-Value="profile.Email" class="form-control" />
+                    <ValidationMessage For="() => profile.Email" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Location</label>
+                    <InputText @bind-Value="profile.Location" class="form-control" />
+                    <ValidationMessage For="() => profile.Location" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Joined</label>
+                    <input class="form-control" value="@profile.JoinedDate.ToString("d")" readonly />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Avatar URL</label>
+                    <InputText @bind-Value="profile.AvatarUrl" class="form-control" />
+                    <ValidationMessage For="() => profile.AvatarUrl" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Biography</label>
+                    <InputTextArea @bind-Value="profile.Biography" class="form-control" rows="4" />
+                    <ValidationMessage For="() => profile.Biography" />
+                </div>
+            </div>
+            <div class="card-footer">
+                <button type="submit" class="btn btn-primary me-2">Save</button>
+                <button type="button" class="btn btn-secondary" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private ProfileModel? profile;
+    private string errorMessage = string.Empty;
+    private bool isEditing = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfile();
+    }
+
+    private async Task LoadProfile()
+    {
+        try
+        {
+            errorMessage = string.Empty;
+            profile = await Http.GetFromJsonAsync<ProfileModel>("Profile");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load profile: {ex.Message}";
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        try
+        {
+            errorMessage = string.Empty;
+            var response = await Http.PutAsJsonAsync("Profile", profile);
+            if (response.IsSuccessStatusCode)
+            {
+                isEditing = false;
+            }
+            else
+            {
+                errorMessage = $"Failed to save profile. Server returned {response.StatusCode}.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to save profile: {ex.Message}";
+        }
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        // Reload from server to discard unsaved changes
+        _ = LoadProfile();
+    }
 }

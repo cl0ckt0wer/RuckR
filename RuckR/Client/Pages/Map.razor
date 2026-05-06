@@ -1,0 +1,358 @@
+﻿@page "/map"
+@page "/"
+@using Fluxor
+@using RuckR.Client.Store.LocationFeature
+@using RuckR.Client.Store.MapFeature
+@using RuckR.Client.Services
+@using RuckR.Shared.Models
+@inject IGeolocationService GeolocationService
+@inject IMapService MapService
+@inject ApiClientService ApiClient
+@inject IDispatcher Dispatcher
+@inject IState<LocationState> LocationState
+@inject IState<MapState> MapState
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<style>
+    #ruckr-map { height: calc(100vh - 56px); width: 100%; z-index: 1; }
+    .pitch-marker { background: none !important; border: none !important; font-size: 24px; text-align: center; }
+    .user-location-pulse { animation: pulse 2s infinite; }
+    @@keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 50% { transform: scale(1.3); opacity: 0.4; } 100% { transform: scale(1); opacity: 0.8; } }
+    .map-overlay { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000; background: white; border-radius: 16px 16px 0 0; padding: 16px; box-shadow: 0 -4px 20px rgba(0,0,0,0.1); }
+</style>
+
+@* Onboarding Banner *@
+@if (_showOnboarding)
+{
+    <div class="alert alert-info alert-dismissible fade show position-fixed top-0 start-0 end-0 m-3" style="z-index: 2000;" role="alert">
+        Welcome to RuckR! 🏉
+        1️⃣ Explore the map to find rugby pitches
+        2️⃣ Get close to capture players
+        3️⃣ Challenge nearby players to PVP battles!
+        <button type="button" class="btn-close" @onclick="DismissOnboarding" aria-label="Close"></button>
+    </div>
+}
+
+@* Loading State *@
+@if (_isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: calc(100vh - 56px);">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading map...</span>
+        </div>
+    </div>
+}
+
+@* Error State *@
+@if (_hasError)
+{
+    <div class="d-flex flex-column justify-content-center align-items-center" style="height: calc(100vh - 56px);">
+        <div class="alert alert-danger text-center">
+            <p class="mb-1 fw-bold">Failed to load map</p>
+            <p class="small text-muted mb-2">@_errorMessage</p>
+            <button class="btn btn-outline-danger" @onclick="RetryAsync">Retry</button>
+        </div>
+    </div>
+}
+
+@* GPS Disabled Banner *@
+@if (_gpsDisabled && !_isLoading && !_hasError)
+{
+    <div class="alert alert-warning alert-dismissible fade show position-fixed top-0 start-0 end-0 m-3" style="z-index: 1500;" role="alert">
+        Enable GPS for the full experience
+        <button class="btn btn-outline-warning btn-sm ms-3" @onclick="EnableGpsAsync">Enable</button>
+    </div>
+}
+
+@* Map container — always present for Leaflet init, hidden when error/loading replaces it *@
+<div id="ruckr-map" class="@(_isLoading || _hasError ? "invisible" : "")"></div>
+
+@* Pitch Selection Overlay *@
+@if (_selectedPitch is not null)
+{
+    <div class="map-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="mb-0">@_selectedPitch.Name</h5>
+            <button type="button" class="btn-close" @onclick="ClearSelection" aria-label="Close"></button>
+        </div>
+        <div class="mb-2">
+            <span class="badge bg-@PitchTypeBadgeClass(_selectedPitch.Type) me-2">@_selectedPitch.Type</span>
+            <span class="badge bg-secondary">@_selectedPitchDistanceBucket</span>
+        </div>
+        <p class="mb-2">
+            Available Players:
+            @if (_isLoadingPlayers)
+            {
+                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+            }
+            else
+            {
+                @_nearbyPlayerCount
+            }
+            <span class="text-muted ms-1">(players at this pitch)</span>
+        </p>
+        <div class="d-grid gap-2 d-sm-flex">
+            <button class="btn btn-primary" @onclick="NavigateToCapture">Capture Players</button>
+            @if (_nearbyPlayerCount > 0)
+            {
+                <button class="btn btn-outline-primary" @onclick="NavigateToChallenge">Challenge Nearby Player</button>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isLoading = true;
+    private bool _hasError;
+    private string _errorMessage = string.Empty;
+    private bool _gpsDisabled;
+    private bool _showOnboarding;
+    private PitchModel? _selectedPitch;
+    private string _selectedPitchDistanceBucket = string.Empty;
+    private int _nearbyPlayerCount;
+    private bool _isLoadingPlayers;
+    private int _lastSelectedPitchId = -1;
+    private bool _subscriptionsActive;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeAsync();
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        // Clean up previous subscriptions if retrying
+        RemoveSubscriptions();
+        GeolocationService.StopWatch();
+
+        _isLoading = true;
+        _hasError = false;
+        _gpsDisabled = false;
+        _showOnboarding = false;
+        _errorMessage = string.Empty;
+        _selectedPitch = null;
+        _lastSelectedPitchId = -1;
+        StateHasChanged();
+
+        try
+        {
+            var lat = LocationState.Value.UserLatitude ?? 51.5074;
+            var lng = LocationState.Value.UserLongitude ?? -0.1278;
+
+            await MapService.InitMapAsync("ruckr-map", lat, lng, 15);
+
+            // Onboarding check via localStorage
+            try
+            {
+                var onboarded = await JS.InvokeAsync<string>("localStorage.getItem", "ruckr_onboarded");
+                _showOnboarding = string.IsNullOrEmpty(onboarded);
+            }
+            catch
+            {
+                // localStorage unavailable — skip onboarding
+            }
+
+            // Subscribe to state changes and events before starting GPS
+            MapState.StateChanged += OnMapStateChanged;
+            LocationState.StateChanged += OnLocationStateChanged;
+            GeolocationService.PositionChanged += OnPositionChanged;
+            _subscriptionsActive = true;
+
+            // Start GPS watch (non-critical — map works without GPS)
+            try
+            {
+                await GeolocationService.StartWatchAsync();
+            }
+            catch
+            {
+                _gpsDisabled = true;
+            }
+
+            _isLoading = false;
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _errorMessage = ex.Message;
+            _isLoading = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async void OnPositionChanged(GeoPosition pos)
+    {
+        try
+        {
+            await MapService.AddUserMarkerAsync(pos.Latitude, pos.Longitude);
+
+            var pitches = await ApiClient.GetNearbyPitchesAsync(pos.Latitude, pos.Longitude, 500);
+            if (pitches.Count > 0)
+            {
+                await MapService.AddPitchMarkersAsync(pitches);
+                Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
+            }
+        }
+        catch
+        {
+            // Transient map/API errors; wait for next position update
+        }
+    }
+
+    private async void OnMapStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<MapState>)sender!).Value;
+        if (state.SelectedPitchId.HasValue && state.SelectedPitchId.Value != _lastSelectedPitchId)
+        {
+            _lastSelectedPitchId = state.SelectedPitchId.Value;
+            _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
+
+            if (_selectedPitch is not null)
+            {
+                // Calculate distance bucket from user's current position
+                if (LocationState.Value.UserLatitude.HasValue && LocationState.Value.UserLongitude.HasValue)
+                {
+                    var userPos = new GeoPosition
+                    {
+                        Latitude = LocationState.Value.UserLatitude.Value,
+                        Longitude = LocationState.Value.UserLongitude.Value
+                    };
+                    var pitchPos = new GeoPosition
+                    {
+                        Latitude = _selectedPitch.Location.Y,
+                        Longitude = _selectedPitch.Location.X
+                    };
+                    var dist = GeoPosition.HaversineDistance(userPos, pitchPos);
+                    _selectedPitchDistanceBucket = FormatDistanceBucket(GeoPosition.GetDistanceBucket(dist));
+                }
+
+                // Load nearby player count for the selected pitch
+                _ = LoadPitchPlayersAsync(_selectedPitch);
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (!state.SelectedPitchId.HasValue && _selectedPitch is not null)
+        {
+            _lastSelectedPitchId = -1;
+            _selectedPitch = null;
+            _nearbyPlayerCount = 0;
+            _selectedPitchDistanceBucket = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnLocationStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<LocationState>)sender!).Value;
+        if (!string.IsNullOrEmpty(state.ErrorMessage))
+        {
+            _gpsDisabled = true;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LoadPitchPlayersAsync(PitchModel pitch)
+    {
+        _isLoadingPlayers = true;
+        try
+        {
+            var players = await ApiClient.GetNearbyPlayersAsync(
+                pitch.Location.Y, pitch.Location.X, 100);
+            _nearbyPlayerCount = players.Count;
+        }
+        catch
+        {
+            _nearbyPlayerCount = 0;
+        }
+        _isLoadingPlayers = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DismissOnboarding()
+    {
+        _showOnboarding = false;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "ruckr_onboarded", "true");
+        }
+        catch
+        {
+            // localStorage unavailable
+        }
+    }
+
+    private async Task RetryAsync()
+    {
+        await InitializeAsync();
+    }
+
+    private async Task EnableGpsAsync()
+    {
+        try
+        {
+            await GeolocationService.StartWatchAsync();
+            _gpsDisabled = false;
+            StateHasChanged();
+        }
+        catch
+        {
+            _gpsDisabled = true;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private void NavigateToCapture()
+    {
+        Navigation.NavigateTo("/players/nearby");
+    }
+
+    private void NavigateToChallenge()
+    {
+        Navigation.NavigateTo("/battles/new");
+    }
+
+    private void RemoveSubscriptions()
+    {
+        if (!_subscriptionsActive)
+            return;
+
+        GeolocationService.PositionChanged -= OnPositionChanged;
+        MapState.StateChanged -= OnMapStateChanged;
+        LocationState.StateChanged -= OnLocationStateChanged;
+        _subscriptionsActive = false;
+    }
+
+    private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
+    {
+        DistanceBucket.Within50m => "< 50m",
+        DistanceBucket.Within100m => "< 100m",
+        DistanceBucket.Within250m => "< 250m",
+        DistanceBucket.Within500m => "< 500m",
+        DistanceBucket.Beyond => "> 500m",
+        _ => "Unknown"
+    };
+
+    private static string PitchTypeBadgeClass(PitchType type) => type switch
+    {
+        PitchType.Standard => "primary",
+        PitchType.Training => "success",
+        PitchType.Stadium => "warning",
+        _ => "secondary"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        RemoveSubscriptions();
+        GeolocationService.StopWatch();
+    }
+}

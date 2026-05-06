@@ -1,0 +1,594 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Research spatial/geospatial capabilities in Microsoft SQL Server (MSSQL) for a .NET 10 / EF Core rugby-themed creature-collector game — replacing the originally planned PostgreSQL + PostGIS stack."
+focus_area: "spatial_sqlserver"
+created_at: "2026-05-05T23:30:00Z"
+created_by: "gem-researcher"
+status: completed
+tldr: |
+  - Use the `geography` type (not `geometry`) for lat/lng earth coordinates — SQL Server geography returns distances in meters with SRID 4326 (WGS 84), using ellipsoidal (round-earth) calculations with ≤0.25% deviation from true geodesic distance.
+  - EF Core supports SQL Server spatial via `Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite` (version 10.0.7 available). NetTopologySuite `Point` type maps to SQL `geography` by default.
+  - Core LINQ patterns: `IsWithinDistance()` for radius queries, `.Distance()` with `OrderBy` / `Take` for nearest-neighbor, `STBuffer()` for geofencing. All translate to SQL.
+  - Fuzzy distance (±20%) applies in C# after fetching sorted results from the database.
+  - LocalDB (`(localdb)\MSSQLLocalDB`) provides a zero-config development environment on Windows. Docker-based SQL Server covered for cross-platform dev.
+  - Key gotcha: NTS ignores SRID on client-side calculations (returns degrees); server-side SQL queries (via EF Core) return proper meters. NTS X=longitude, Y=latitude (reversed from lat,lng convention).
+  - Spatial indexes require a primary key on the table; SQL Server `GEOGRAPHY_AUTO_GRID` tessellation is recommended for nearest-neighbor queries.
+
+research_metadata:
+  methodology: "semantic_search + webfetch (Microsoft Learn: SQL Server spatial docs, EF Core spatial docs, LocalDB docs, NuGet package page)"
+  scope: "comprehensive"
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: "RuckR.Server.csproj"
+    path: "RuckR/Server/RuckR.Server.csproj"
+    purpose: "Current Server project — targets net10.0, no EF Core or database packages yet"
+    key_elements:
+      - element: "TargetFramework"
+        type: "property"
+        location: "RuckR/Server/RuckR.Server.csproj:4"
+        description: "net10.0 — all NuGet packages must target this TFM"
+        language: "xml"
+    lines: 19
+
+  - file: "RuckR.Shared.csproj"
+    path: "RuckR/Shared/RuckR.Shared.csproj"
+    purpose: "Shared project where new spatial models will live"
+    key_elements:
+      - element: "SupportedPlatform"
+        type: "property"
+        location: "RuckR/Shared/RuckR.Shared.csproj:10"
+        description: "browser — Shared project marked for WASM compatibility; NetTopologySuite types must be WASM-compatible"
+        language: "xml"
+    lines: 12
+
+  - file: "Program.cs"
+    path: "RuckR/Server/Program.cs"
+    purpose: "Server entry point — no DbContext, no database configuration yet"
+    key_elements:
+      - element: "WebApplication builder"
+        type: "class"
+        location: "RuckR/Server/Program.cs:3"
+        description: "Has AddControllersWithViews + AddRazorPages; needs AddDbContext<RuckRDbContext>() and AddIdentity()"
+        language: "csharp"
+    lines: 36
+
+  - file: "ProfileModel.cs"
+    path: "RuckR/Shared/Models/ProfileModel.cs"
+    purpose: "Canonical shared model pattern — block-scoped namespace, DataAnnotations. New spatial models follow this convention."
+    key_elements:
+      - element: "namespace RuckR.Shared.Models"
+        type: "namespace"
+        location: "RuckR/Shared/Models/ProfileModel.cs:4"
+        description: "All new game models must use this namespace"
+        language: "csharp"
+    lines: 25
+
+  - file: "appsettings.json"
+    path: "RuckR/Server/appsettings.json"
+    purpose: "Current app settings — no connection string; needs ConnectionStrings:RuckRDbContext"
+    key_elements: []
+    lines: 9
+
+patterns_found:
+  - category: "architecture"
+    pattern: "Geography over Geometry for GPS coordinates"
+    description: |
+      SQL Server supports two spatial types. For GPS lat/lng data on a round earth:
+      - `geography`: Ellipsoidal (round-earth) model. SRID 4326 (WGS 84). `STDistance()` returns meters. Must use supported EPSG SRID from `sys.spatial_reference_systems`. Polygon ring orientation matters (exterior CCW, interior CW).
+      - `geometry`: Euclidean (flat-plane) model. No SRID constraint. `STDistance()` returns units of the coordinate system (meaningless for lat/lng in degrees).
+      **Recommendation: geography with SRID 4326** for all game location data, since the game operates with GPS coordinates on a real map and needs accurate distance calculations.
+    examples:
+      - file: "SQL Server docs"
+        location: "https://learn.microsoft.com/en-us/sql/relational-databases/spatial/spatial-data-sql-server"
+        snippet: |
+          -- geography: round-earth, meters
+          DECLARE @g geography = geography::Point(47.65100, -122.34900, 4326);
+          -- STDistance() returns distance in meters
+    prevalence: common
+
+  - category: "structure"
+    pattern: "NetTopologySuite Point for spatial columns in EF Core"
+    description: |
+      EF Core maps `NetTopologySuite.Geometries.Point` to SQL Server `geography` by default.
+      Coordinate convention: X = longitude, Y = latitude (reversed from typical lat,lng order).
+      SRID is set on the `Point` object (`point.SRID = 4326`). EF Core passes it through to SQL Server.
+      NTS 2.6.0+ is available and compatible with .NET 10.
+    examples:
+      - file: "EF Core spatial docs"
+        location: "https://learn.microsoft.com/en-us/ef/core/modeling/spatial#longitude-and-latitude"
+        snippet: |
+          // X = longitude, Y = latitude (backwards from lat,lng)
+          var seattle = new Point(-122.333056, 47.609722) { SRID = 4326 };
+    prevalence: common
+
+  - category: "architecture"
+    pattern: "IsWithinDistance for radius queries"
+    description: |
+      For "find all X within Y meters of Z", use `.IsWithinDistance(geometry, distance)` in LINQ.
+      This translates to `column.STDistance(@point) <= @distance` in SQL, which is more efficient
+      than standalone `.Distance()` when combined with `WHERE`, especially with spatial indexes.
+    examples:
+      - file: "EF Core spatial function mappings"
+        location: "https://learn.microsoft.com/en-us/ef/core/providers/sql-server/spatial#spatial-function-mappings"
+        snippet: |
+          // EF Core LINQ
+          var nearby = await context.Pitches
+              .Where(p => p.Location.IsWithinDistance(userPoint, 500))
+              .ToListAsync();
+          // Translates to: WHERE Location.STDistance(@userPoint) <= 500
+    prevalence: common
+
+  - category: "architecture"
+    pattern: "OrderBy Distance + Take for nearest-neighbor"
+    description: |
+      For "find nearest N to location", use `.OrderBy(x => x.Location.Distance(point)).Take(N)`.
+      SQL Server requires: `WHERE STDistance() IS NOT NULL`, `ORDER BY STDistance() ASC`, `TOP(N)`.
+      EF Core generates this pattern automatically when using `.OrderBy(...Distance...)` + `.Take(N)`.
+      This enables spatial index usage.
+    examples:
+      - file: "EF Core spatial docs"
+        location: "https://learn.microsoft.com/en-us/ef/core/modeling/spatial#querying-data"
+        snippet: |
+          var nearestCity = await db.Cities
+              .OrderBy(c => c.Location.Distance(currentLocation))
+              .FirstOrDefaultAsync();
+    prevalence: common
+
+  - category: "architecture"
+    pattern: "Fuzzy distance applied client-side after DB query"
+    description: |
+      SQL Server returns exact distance in meters. The PRD requires ±20% display fuzz for player-to-player
+      distance (no exact GPS exposed). This is applied in C# after fetching sorted results:
+      1. Query players sorted by exact distance from DB
+      2. In C#, apply random fuzz factor (0.8–1.2) per player before display
+      3. Bucket into display categories ("< 50m", "< 100m", "< 250m", "< 500m")
+      This keeps spatial index usage intact while achieving the privacy goal.
+    examples:
+      - file: "PRD.yaml user_stories.US-03"
+        location: "docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml:118-128"
+        snippet: |
+          // C# fuzzy distance after query
+          var exactDistance = player.Location.Distance(userPoint); // server-side, meters
+          var fuzzFactor = Random.Shared.NextDouble() * 0.4 + 0.8; // 0.8–1.2
+          var displayDistance = exactDistance * fuzzFactor;
+          var bucket = displayDistance switch {
+              < 50 => "< 50m",
+              < 100 => "< 100m",
+              < 250 => "< 250m",
+              < 500 => "< 500m",
+              _ => "> 500m"
+          };
+    prevalence: occasional
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "RuckRDbContext"
+      responsibility: "EF Core DbContext with DbSets for all game entities, spatial column configuration"
+      location: "RuckR/Server/Data/RuckRDbContext.cs (to be created)"
+      relationship_to_domain: "Central database context — configures spatial columns, identity, relationships"
+
+    - component: "PitchModel"
+      responsibility: "Represent a virtual rugby pitch with GPS location, name, creator"
+      location: "RuckR/Shared/Models/PitchModel.cs (to be created)"
+      relationship_to_domain: "Has a `Point Location` property mapped to SQL geography column for proximity queries"
+
+    - component: "PlayerModel (creature)"
+      responsibility: "Represent a collectible rugby player creature with stats, rarity, location"
+      location: "RuckR/Shared/Models/PlayerModel.cs (to be created)"
+      relationship_to_domain: "Can optionally have a `Point SpawnLocation` for where the creature was discovered"
+
+    - component: "UserLocationState"
+      responsibility: "Store the current user's GPS coordinates for proximity queries and SignalR broadcasting"
+      location: "RuckR/Shared/Models/ (or SignalR hub state)"
+      relationship_to_domain: "Used as the reference point for all proximity queries"
+
+  interfaces_used_by_domain:
+    - interface: "NetTopologySuite.Geometries.Point"
+      location: "NetTopologySuite NuGet package"
+      usage_pattern: "Property type on spatial models; X=longitude, Y=latitude; SRID=4326"
+
+    - interface: "IJSObjectReference / IJSRuntime"
+      location: "Microsoft.JSInterop"
+      usage_pattern: "Bridge for browser Geolocation API → C#; passes lat/lng to construct NTS Points"
+
+  data_flow_involving_domain: |
+    1. Browser Geolocation API → JS interop → C# `Point` (user location)
+    2. User Point → EF Core LINQ query → SQL Server `geography::STDistance()` → sorted results
+    3. Sorted results → C# fuzzy logic (±20%) → distance buckets → UI display
+    4. User-designated pitch: lat/lng from map click → JS interop → C# `Point` → EF Core insert → SQL `geography` column
+
+  key_relationships_to_domain:
+    - from: "RuckR.Server"
+      to: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+      relationship: "package_reference"
+    - from: "RuckR.Shared"
+      to: "NetTopologySuite"
+      relationship: "package_reference"
+    - from: "PitchModel"
+      to: "NetTopologySuite.Geometries.Point"
+      relationship: "composes"
+    - from: "RuckRDbContext"
+      to: "PitchModel"
+      relationship: "DbSet<T>"
+
+related_technology_stack:
+  languages_used_in_domain: ["C# 13 (.NET 10)", "T-SQL"]
+  frameworks_used_in_domain:
+    - name: "Entity Framework Core 10.0.7"
+      usage_in_domain: "ORM for all database access; spatial column mapping via NetTopologySuite; migrations"
+    - name: "ASP.NET Core 10.0.7"
+      usage_in_domain: "Hosts API controllers, SignalR hub, Identity, and serves Blazor WASM"
+  libraries_used_in_domain:
+    - name: "Microsoft.EntityFrameworkCore.SqlServer"
+      purpose_in_domain: "SQL Server EF Core provider — required dependency of spatial package"
+    - name: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+      purpose_in_domain: "Enables spatial data support for SQL Server provider; maps NTS Point to geography; version 10.0.7 available"
+    - name: "NetTopologySuite"
+      purpose_in_domain: "Core spatial library for .NET; provides Point, Geometry, Distance(), IsWithinDistance(), Buffer() methods"
+    - name: "NetTopologySuite.IO.SqlServerBytes"
+      purpose_in_domain: "Serialization between NTS types and SQL Server spatial binary format (transitive dependency of spatial NuGet)"
+    - name: "ProjNet (optional)"
+      purpose_in_domain: "Client-side coordinate projection for meter-accurate distance when not using SQL (e.g., in Blazor WASM without server round-trip)"
+  external_apis_used_in_domain:
+    - name: "SQL Server spatial functions (STDistance, STIntersects, STBuffer, STContains)"
+      integration_point: "Generated by EF Core LINQ translation to T-SQL"
+    - name: "Browser Geolocation API"
+      integration_point: "JS interop → C# to construct Point objects"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Spatial properties: `Location` (Point), `SpawnLocation` (Point)
+    - DB column: EF Core maps to `geography` type; column name = property name
+    - SRID: Always set to 4326 when creating Point objects
+    - Coordinate order: X = longitude, Y = latitude (NTS convention; reversed from human-readable lat,lng)
+  structure_of_domain: |
+    - Models in `RuckR.Shared.Models` (e.g., `PitchModel`, `PlayerModel`)
+    - DbContext in `RuckR.Server.Data` (e.g., `RuckRDbContext`)
+    - Migrations managed by EF Core CLI (`dotnet ef migrations add`)
+    - Connection string in `appsettings.json` under `ConnectionStrings:RuckRDbContext`
+  error_handling_in_domain: |
+    - `STDistance()` returns NULL if SRIDs mismatch — always set SRID consistently to 4326
+    - NTS validates geography polygon ring orientation before sending to SQL Server
+    - Null spatial values handled by EF Core; `IsWithinDistance` returns false for NULL operands
+    - SQL Server throws if geography polygon ring orientation is inverted (exterior must be CCW)
+  testing_in_domain: |
+    - No test projects currently exist in the codebase
+    - Spatial queries should be tested against a real SQL Server instance (LocalDB or Docker)
+    - The InMemory EF Core provider does NOT support spatial types — use real SQL Server for spatial tests
+    - Consider using the `SimonCropp/LocalDb` NuGet wrapper for test automation
+  documentation_in_domain: |
+    - ADR should be created documenting the MSSQL choice (replacing original ADR-004 for PostGIS)
+    - Spatial query patterns should be documented in a developer guide (LINQ → SQL translations)
+    - Coordinate convention (X=lng, Y=lat) must be prominently documented to prevent bugs
+
+related_dependencies:
+  internal:
+    - component: "RuckRDbContext"
+      relationship_to_domain: "Configures spatial type mappings and indexes"
+      direction: "inbound"
+    - component: "PitchController (to be created)"
+      relationship_to_domain: "Exposes API endpoints for pitch discovery, proximity queries"
+      direction: "inbound"
+    - component: "PlayerController / MapController (to be created)"
+      relationship_to_domain: "Exposes API endpoints for player locations, nearest-player queries"
+      direction: "inbound"
+    - component: "Map.razor (to be created)"
+      relationship_to_domain: "Consumes proximity query results, renders pitch markers on Leaflet"
+      direction: "outbound"
+  external:
+    - name: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+      purpose_for_domain: "Required NuGet package for spatial support; version 10.0.7 available for net10.0"
+    - name: "NetTopologySuite"
+      purpose_for_domain: "Required for Point, Geometry types in shared models; note: NTS must be WASM-compatible for Shared project"
+    - name: "SQL Server (Express LocalDB or Docker)"
+      purpose_for_domain: "Runtime database engine with geography/geometry type support"
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Exact user GPS coordinates"
+      location: "Server-side queries; SignalR hub"
+      concern: "User's exact lat/lng must NEVER be exposed to other users. Only distance buckets or fuzzed distance values are shared. The raw Point should be stored server-side only and used for proximity calculations that return bucketed/fuzzed results."
+    - area: "Spatial query injection"
+      location: "API endpoints accepting lat/lng parameters"
+      concern: "Lat/lng values from client should be validated (range checks: lat -90..90, lng -180..180) before constructing NTS Point objects to prevent malformed spatial queries."
+    - area: "Connection string"
+      location: "appsettings.json"
+      concern: "SQL Server credentials (especially sa password in Docker) must be stored in User Secrets during development, not committed to source control."
+  authentication_patterns_in_domain: "ASP.NET Core Identity — user must be authenticated to query nearby players, access pitch discovery, or participate in PVP"
+  authorization_patterns_in_domain: "Proximity queries are per-user: only return pitches/players within the requesting user's vicinity. The user's own location determines query scope."
+  data_validation_in_domain: |
+    - Latitude: -90.0 to 90.0
+    - Longitude: -180.0 to 180.0
+    - SRID: Must be 4326 for all geography Points (WGS 84)
+    - Distance radius: Reasonable cap (e.g., max 10,000 meters) to prevent full-table scans
+    - Pitch name: Required, max 200 chars
+    - Creator User ID: Foreign key to Identity user
+
+testing_patterns:
+  framework: "None currently (no test projects in solution)"
+  coverage_areas: ["Spatial queries should be tested end-to-end against LocalDB"]
+  test_organization: "Not yet established"
+  mock_patterns: ["Cannot mock spatial queries with InMemory provider; use real LocalDB or Docker SQL Server for spatial tests"]
+
+open_questions:
+  - question: "Is NetTopologySuite compatible with Blazor WASM (browser) for the Shared project?"
+    context: "RuckR.Shared has `SupportedPlatform include=\"browser\"`. NTS must work in WASM. NTS is a pure .NET library and should be WASM-compatible, but the full dependency chain (NTS → NetTopologySuite.IO.SqlServerBytes → Microsoft.Data.SqlClient) may not be. The Shared project may only need NetTopologySuite (not the EF Core spatial package)."
+    type: "research"
+    affects: ["RuckR.Shared.csproj", "Model design"]
+
+  - question: "How to configure spatial indexes via EF Core Fluent API?"
+    context: "EF Core supports `HasIndex()` for regular indexes, but spatial indexes have special parameters (tessellation scheme: GEOGRAPHY_AUTO_GRID, cells per object, bounding box). EF Core does not have a dedicated Fluent API for spatial indexes. Spatial indexes must be added via raw SQL in a migration (`migrationBuilder.Sql(\"CREATE SPATIAL INDEX ...\")`)."
+    type: "research"
+    affects: ["EF Core migrations", "Performance"]
+
+  - question: "Should PlayerModel have a spatial Location property or is it only on PitchModel?"
+    context: "The PRD mentions 'Player locations (for proximity-based PVP matchmaking)'. This could mean: (a) each Player creature has a fixed spawn location (Point on PitchModel), or (b) each human user has a current GPS position stored separately. Clarifying this determines whether PlayerModel gets a Point property or a separate UserLocation table."
+    type: "decision_blocker"
+    affects: ["PlayerModel design", "PVP matchmaking queries"]
+
+  - question: "Will SQL Server Express LocalDB spatial features (geography, spatial indexes) work identically to full SQL Server?"
+    context: "LocalDB is a full SQL Server Express engine running in user mode. Spatial types (geography, geometry) and spatial indexes are available in all editions including Express/LocalDB. No feature gap for the game's spatial needs."
+    type: "research"
+    affects: ["Development environment setup"]
+
+  - question: "How to handle the `BufferedWithCurves` warning in SQL Server geography?"
+    context: "SQL Server `STBuffer()` on geography returns a `FullGlobe` instance when the buffer distance exceeds the distance from equator to pole. For game-typical buffer distances (≤10km around a point), this is not a concern. The buffer polygon ring orientation requirements (exterior CCW) are handled by NTS validation."
+    type: "nice_to_know"
+    affects: ["Edge cases in pitch discovery radius"]
+
+gaps:
+  - area: "EF Core spatial index configuration"
+    description: "EF Core lacks a dedicated Fluent API for configuring spatial index tessellation parameters (GEOGRAPHY_AUTO_GRID, cells per object). Spatial indexes must be created via raw SQL in migrations. This is a known limitation — not a blocking issue."
+    impact: "research_blocker"
+    affects: ["EF Core migrations", "Query performance"]
+
+  - area: "NetTopologySuite WASM compatibility"
+    description: "The Shared project targets WASM (`SupportedPlatform browser`). NTS and its full dependency tree must be verified to work in the browser. The `NetTopologySuite.IO.SqlServerBytes` package (transitive dependency) references `Microsoft.Data.SqlClient` which may not work in Blazor WASM. Likely only `NetTopologySuite` (core library) should be referenced in Shared."
+    impact: "research_blocker"
+    affects: ["RuckR.Shared.csproj", "NuGet package references"]
+
+  - area: "Client-side distance calculation"
+    description: "NTS ignores SRID on client side — `point1.Distance(point2)` returns degrees, not meters. For client-only distance calculations (e.g., sorting markers on map without server round-trip), the ProjNet library should be used for coordinate projection or a simple Haversine formula. This gap may affect offline map interactions."
+    impact: "nice_to_know"
+    affects: ["Client-side map features", "Offline experience"]
+
+  - area: "PostGIS-to-MSSQL migration of ADR-004"
+    description: "The PRD and ADR-004 currently specify PostgreSQL + PostGIS. The decision to switch to MSSQL requires an updated architectural decision record. This is a documentation/documentation gap, not a technical blocker."
+    impact: "decision_blocker"
+    affects: ["PRD.yaml", "AGENTS.md", "ADR-004"]
+
+# ============================================================================
+# APPENDIX: Code Examples & Configuration (reference material, not findings)
+# ============================================================================
+
+supplementary:
+  nuget_packages_required:
+    - name: "Microsoft.EntityFrameworkCore.SqlServer"
+      version: "10.0.7"
+      project: "RuckR.Server"
+      purpose: "SQL Server EF Core provider"
+    - name: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+      version: "10.0.7"
+      project: "RuckR.Server"
+      purpose: "Spatial support for SQL Server provider"
+    - name: "NetTopologySuite"
+      version: "2.6.0+"
+      project: "RuckR.Shared"
+      purpose: "NTS Point, Geometry types for spatial models (WASM-compatible core library only)"
+    - name: "Microsoft.EntityFrameworkCore.Design"
+      version: "10.0.7"
+      project: "RuckR.Server"
+      purpose: "EF Core CLI tooling for migrations (PrivateAssets=all)"
+
+  dbcontext_configuration_example: |
+    // RuckR.Server/Data/RuckRDbContext.cs
+    using Microsoft.EntityFrameworkCore;
+    using RuckR.Shared.Models;
+    using NetTopologySuite.Geometries;
+
+    public class RuckRDbContext : DbContext
+    {
+        public RuckRDbContext(DbContextOptions<RuckRDbContext> options) : base(options) { }
+
+        public DbSet<PitchModel> Pitches => Set<PitchModel>();
+        public DbSet<PlayerModel> Players => Set<PlayerModel>();
+        public DbSet<CollectionModel> Collections => Set<CollectionModel>();
+        public DbSet<BattleModel> Battles => Set<BattleModel>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+
+            // Spatial column: maps Point to geography by default
+            modelBuilder.Entity<PitchModel>(entity =>
+            {
+                entity.Property(p => p.Location)
+                    .HasColumnType("geography");  // Explicit; 'geography' is default
+            });
+        }
+    }
+
+  program_cs_registration_example: |
+    // RuckR.Server/Program.cs — Add to builder.Services
+    using Microsoft.EntityFrameworkCore;
+
+    builder.Services.AddDbContext<RuckRDbContext>(options =>
+        options.UseSqlServer(
+            builder.Configuration.GetConnectionString("RuckRDbContext"),
+            sqlOptions => sqlOptions.UseNetTopologySuite()));
+
+  connection_string_localdb: |
+    // appsettings.Development.json
+    {
+      "ConnectionStrings": {
+        "RuckRDbContext": "Server=(localdb)\\MSSQLLocalDB;Database=RuckR;Trusted_Connection=True;TrustServerCertificate=True;"
+      }
+    }
+
+  connection_string_docker: |
+    // appsettings.Development.json (Docker)
+    {
+      "ConnectionStrings": {
+        "RuckRDbContext": "Server=localhost,1433;Database=RuckR;User=sa;Password=YourStrong!Passw0rd;TrustServerCertificate=True;"
+      }
+    }
+    // Docker command:
+    // docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourStrong!Passw0rd" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+
+  spatial_model_example: |
+    // RuckR.Shared/Models/PitchModel.cs
+    using System.ComponentModel.DataAnnotations;
+    using NetTopologySuite.Geometries;
+
+    namespace RuckR.Shared.Models
+    {
+        public class PitchModel
+        {
+            public int Id { get; set; }
+
+            [Required]
+            [StringLength(200)]
+            public string Name { get; set; } = string.Empty;
+
+            // Spatial column — maps to SQL Server geography
+            // X = longitude, Y = latitude, SRID = 4326
+            [Required]
+            public Point Location { get; set; } = Point.Empty;
+
+            [Required]
+            [StringLength(450)] // Max key length for Identity FK
+            public string CreatorUserId { get; set; } = string.Empty;
+
+            public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        }
+    }
+
+  key_linq_query_patterns:
+    - pattern: "Find pitches within radius"
+      description: "Get all pitches within 500 meters of user's GPS position"
+      code: |
+        var userPoint = new Point(longitude, latitude) { SRID = 4326 };
+        var nearbyPitches = await context.Pitches
+            .Where(p => p.Location.IsWithinDistance(userPoint, 500))
+            .Select(p => new {
+                p.Id, p.Name,
+                Distance = p.Location.Distance(userPoint)
+            })
+            .OrderBy(p => p.Distance)
+            .ToListAsync();
+        // SQL: WHERE Location.STDistance(@userPoint) <= 500 ORDER BY Location.STDistance(@userPoint)
+
+    - pattern: "Find nearest N pitches"
+      description: "Get the 10 closest pitches to user"
+      code: |
+        var nearestPitches = await context.Pitches
+            .Where(p => p.Location.Distance(userPoint) != null) // required for spatial index
+            .OrderBy(p => p.Location.Distance(userPoint))
+            .Take(10)
+            .ToListAsync();
+        // SQL: SELECT TOP(10) ... WHERE Location.STDistance(@userPoint) IS NOT NULL ORDER BY Location.STDistance(@userPoint)
+
+    - pattern: "Sort players by fuzzy distance"
+      description: "Sort players by distance, apply ±20% fuzz, bucket"
+      code: |
+        // Step 1: Get exact distances from server
+        var playersWithDistance = await context.Collections
+            .Where(c => c.OwnerId != currentUserId)
+            .Select(c => new {
+                c.OwnerId,
+                Distance = c.OwnerLocation.Distance(userPoint)
+            })
+            .ToListAsync();
+
+        // Step 2: Apply fuzz client-side
+        var rng = new Random();
+        var fuzzed = playersWithDistance
+            .Select(p => new {
+                p.OwnerId,
+                Distance = p.Distance * (0.8 + rng.NextDouble() * 0.4), // ±20%
+                Bucket = p.Distance switch {
+                    < 50 => "nearby",
+                    < 100 => "close",
+                    < 250 => "medium",
+                    < 500 => "far",
+                    _ => "distant"
+                }
+            })
+            .OrderBy(p => p.Distance)
+            .ToList();
+
+    - pattern: "Pitch interaction (geofence)"
+      description: "Check if user is within discovery range (100m)"
+      code: |
+        var canDiscover = await context.Pitches
+            .AnyAsync(p => p.Id == pitchId && p.Location.IsWithinDistance(userPoint, 100));
+        // SQL: WHERE Location.STDistance(@userPoint) <= 100
+
+  spatial_index_migration_example: |
+    // In migration Up() method — raw SQL for spatial index
+    protected override void Up(MigrationBuilder migrationBuilder)
+    {
+        // Create table first (EF Core generates this)
+        // ...
+
+        // Add spatial index for nearest-neighbor queries
+        migrationBuilder.Sql(@"
+            CREATE SPATIAL INDEX [IX_Pitches_Location]
+            ON [Pitches] ([Location])
+            USING GEOGRAPHY_AUTO_GRID
+            WITH (CELLS_PER_OBJECT = 16);");
+    }
+
+  gotchas_and_limitations:
+    - gotcha: "NTS coordinate order: X=longitude, Y=latitude"
+      detail: "In NTS, `Point.X` is longitude and `Point.Y` is latitude. This is the opposite of human-readable `(lat, lng)` order. Always document this. Constructor: `new Point(longitude, latitude) { SRID = 4326 }`."
+      severity: "high"
+      mitigation: "Document in model comments; add validation helper; use named parameters or factory method"
+
+    - gotcha: "NTS client-side Distance() returns degrees, not meters"
+      detail: "When NTS calculates distance in C# (not via SQL), it ignores SRID and uses planar math. `point1.Distance(point2)` returns degrees for WGS 84 coordinates — meaningless for the game."
+      severity: "medium"
+      mitigation: "Always use EF Core LINQ (server-side) for distance calculations. For client-only needs, use ProjNet or the Haversine formula."
+
+    - gotcha: "Spatial indexes require primary key on the table"
+      detail: "SQL Server spatial indexes can only be created on tables with a primary key (max 15 columns). All our game entity tables will have `Id` PK, so this is not a restriction."
+      severity: "low"
+
+    - gotcha: "InMemory provider does not support spatial"
+      detail: "EF Core's InMemory provider cannot run spatial queries. Spatial integration tests must use a real SQL Server instance (LocalDB or Docker)."
+      severity: "medium"
+      mitigation: "Use LocalDB for integration tests; SimonCropp/LocalDb NuGet wrapper simplifies test setup."
+
+    - gotcha: "STDistance() with geography vs geometry — different units"
+      detail: "`geography::STDistance()` returns meters. `geometry::STDistance()` returns degrees (meaningless for lat/lng). Always use geography for GPS data."
+      severity: "high"
+      mitigation: "Explicitly set column type to `geography` in model configuration; never use `geometry` for GPS."
+
+    - gotcha: "SRID mismatch = NULL distance"
+      detail: "If two geography instances have different SRIDs, `STDistance()` returns NULL. All Points must use SRID 4326 consistently."
+      severity: "medium"
+      mitigation: "Enforce SRID 4326 in a factory method or validation attribute."
+
+    - gotcha: "SQL Server geography polygon ring orientation"
+      detail: "Geography polygons require exterior ring counterclockwise, interior rings clockwise. NTS validates this. For buffer operations, SQL Server handles orientation correctly. Not a concern for Point-only operations (pitches, player locations)."
+      severity: "low"
+
+    - gotcha: "Maximum geography buffer distance"
+      detail: "`STBuffer()` max distance is ~0.999 × half Earth circumference. For game-typical distances (≤10km), this is irrelevant."
+      severity: "low"
+
+    - gotcha: "SQL Server Express LocalDB is Windows-only"
+      detail: "LocalDB is a Windows feature. For macOS/Linux development, Docker-based SQL Server must be used. The connection string pattern differs."
+      severity: "medium"
+      mitigation: "Provide both LocalDB (Windows) and Docker (cross-platform) connection string examples in documentation."
+
+    - gotcha: "FullGlobe instances not supported by NTS"
+      detail: "SQL Server can return FullGlobe geography instances when buffer distances are extreme. NTS cannot represent these. Not applicable for game-scale spatial operations."
+      severity: "low"
+
+    - gotcha: "GeometryCollection, Curve types not supported by NTS"
+      detail: "NTS does not support CircularString, CompoundCurve, CurvePolygon, or FullGlobe. Use `STCurveToLine()` in SQL for curve conversions if needed. Not applicable to point-based game data."
+      severity: "low"

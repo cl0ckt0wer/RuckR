@@ -1,0 +1,138 @@
+plan_id: "20260505-update-project"
+title: "RuckR Project Upgrade — .NET 10, NuGet Updates, and Profile Feature"
+version: "1.0"
+created_at: "2026-05-05T21:55:00Z"
+status: draft
+tldr: |
+  Three-phase upgrade for the RuckR Blazor WASM Hosted project:
+  1. Upgrade all three projects from .NET 8 to .NET 10 (TFM + breaking-change code migrations)
+  2. Update all NuGet packages from 8.0.0 to 10.0.7 to match the new target framework
+  3. Finish the Profile feature stub: expand ProfileModel, create ProfileController, and fully implement Profile.razor page
+scope:
+  description: |
+    The RuckR solution is a Hosted Blazor WebAssembly application with three projects:
+    - RuckR.Server: ASP.NET Core host serving API controllers and compiled WASM assets
+    - RuckR.Client: Blazor WebAssembly SPA (PWA) running in the browser
+    - RuckR.Shared: Shared models library consumed by both Server and Client
+    
+    This plan delivers a .NET 10 upgrade with NuGet package alignment followed by 
+    completion of the Profile feature stub following the established controller/page pattern.
+  
+  in_scope:
+    - Upgrade all three .csproj TargetFramework values from net8.0 to net10.0
+    - Update 3 NuGet packages from 8.0.0 to 10.0.7 (matching the TFM)
+    - Migrate Server/Program.cs middleware: MapStaticAssets + WithStaticAssets pattern
+    - Migrate Client/App.razor Router: <NotFound> fragment → NotFoundPage parameter + NotFound.razor page
+    - Update Client/wwwroot/index.html: service worker registration with updateViaCache option
+    - Expand ProfileModel.cs with 4 additional properties and DataAnnotations
+    - Create ProfileController.cs with GET and PUT endpoints
+    - Implement Profile.razor with view/edit toggle, EditForm validation, loading/error states
+  
+  out_of_scope:
+    - Adding authentication or authorization
+    - Adding a database or persistent storage
+    - Adding test projects or automated tests
+    - Adding CI/CD pipelines
+    - PWA advanced configuration beyond service worker update
+    - Creating a service/repository layer
+    - Mobile-specific development (React Native, Expo, Flutter)
+
+user_stories:
+  - id: US-01
+    title: "Upgrade to .NET 10"
+    description: "As a developer, I want the solution to target .NET 10 so that I can use the latest framework features, performance improvements, and security patches."
+    acceptance_criteria:
+      - "All 3 .csproj files have <TargetFramework>net10.0</TargetFramework>"
+      - "Server/Program.cs uses app.MapStaticAssets() instead of app.UseStaticFiles()"
+      - "MapRazorPages() and MapControllers() are chained with .WithStaticAssets()"
+      - "Client/App.razor uses NotFoundPage parameter instead of <NotFound> fragment"
+      - "Client/wwwroot/index.html service worker registration includes { updateViaCache: ''none'' }"
+      - "dotnet build RuckR.sln succeeds with zero errors"
+  
+  - id: US-02
+    title: "Update NuGet Packages"
+    description: "As a developer, I want all NuGet packages updated to version 10.0.7 so that they are aligned with the .NET 10 target framework and include the latest security patches."
+    acceptance_criteria:
+      - "Microsoft.AspNetCore.Components.WebAssembly.Server version is 10.0.7 (RuckR.Server.csproj)"
+      - "Microsoft.AspNetCore.Components.WebAssembly version is 10.0.7 (RuckR.Client.csproj)"
+      - "Microsoft.AspNetCore.Components.WebAssembly.DevServer version is 10.0.7 (RuckR.Client.csproj)"
+      - "dotnet list package --outdated shows no outdated packages for the solution"
+  
+  - id: US-03
+    title: "Implement Profile Model"
+    description: "As a developer, I want ProfileModel to include all relevant user profile fields with validation attributes so that both server and client can use a validated data contract."
+    acceptance_criteria:
+      - "ProfileModel has Email (with [Required], [EmailAddress], [StringLength(256)])"
+      - "ProfileModel has Location (with [StringLength(100)])"
+      - "ProfileModel has JoinedDate (DateTime) property"
+      - "ProfileModel has AvatarUrl (with [Url], [StringLength(500)])"
+      - "All unused using directives removed (System.Security.Cryptography.X509Certificates, etc.)"
+      - "Existing Name and Biography properties retained"
+  
+  - id: US-04
+    title: "Implement Profile API Controller"
+    description: "As a developer, I want a ProfileController following the WeatherForecastController pattern so that the client can read and update the profile via REST API."
+    acceptance_criteria:
+      - "ProfileController.cs created in RuckR/Server/Controllers/"
+      - "Uses [ApiController] and [Route('[controller]')] attributes (results in /Profile route)"
+      - "GET /Profile returns a single ProfileModel (not an array)"
+      - "PUT /Profile accepts a ProfileModel body, updates static field, returns 200 OK"
+      - "Uses static in-memory ProfileModel storage (matches WeatherForecastController pattern)"
+      - "Injects ILogger<ProfileController> via constructor"
+      - "[ApiController] auto-validates PUT body via DataAnnotations"
+  
+  - id: US-05
+    title: "Implement Profile Blazor Page"
+    description: "As a user, I want to view my profile and edit it through a form so that I can manage my profile information."
+    acceptance_criteria:
+      - "Profile.razor page at /profile shows profile data when in view mode"
+      - "Toggle button switches between view and edit modes"
+      - "Edit mode uses EditForm with DataAnnotationsValidator for field validation"
+      - "Profile loads from GET /Profile on page initialization"
+      - "Save button sends PUT /Profile and switches back to view mode on success"
+      - "Loading state shown while fetching/updating data"
+      - "Error state shown when HTTP calls fail"
+      - "Uses Bootstrap 5 styling consistent with existing pages"
+
+acceptance_criteria:
+  - "dotnet build RuckR.sln succeeds with zero warnings after all changes"
+  - "dotnet run --project RuckR/Server/RuckR.Server.csproj --launch-profile https starts successfully"
+  - "Navigation to /profile renders the profile page"
+  - "Profile view mode displays all 6 fields (Name, Biography, Email, Location, JoinedDate, AvatarUrl)"
+  - "Profile edit mode allows editing fields with validation"
+  - "Saving profile updates data and persists until server restart"
+
+constraints:
+  - "Must build and run after each wave"
+  - "No test projects exist — manual verification only"
+  - "No authentication infrastructure"
+  - "Single shared profile (no multi-user)"
+  - "In-memory storage only (no database)"
+
+stakeholders:
+  - role: "Developer"
+    needs: "Upgrade to latest .NET, clean code, consistent patterns"
+    
+risks:
+  - risk: "Breaking changes in .NET 10 Router component (NotFoundPage vs NotFound fragment)"
+    severity: medium
+    mitigation: "Research confirms exact migration pattern; migration is a 2-file code change (App.razor + new NotFound.razor)"
+  - risk: "HttpClient streaming enabled by default in .NET 10 could break synchronous Stream.Read usage"
+    severity: low
+    mitigation: "Current code uses GetFromJsonAsync which is async — no synchronous Stream.Read found in codebase"
+  - risk: "NuGet version mismatch between packages and TFM causes build failure"
+    severity: medium
+    mitigation: "TFM and packages updated atomically in same wave; all versions confirmed available on NuGet.org"
+  - risk: "No automated tests to catch regressions"
+    severity: medium
+    mitigation: "Manual build verification after each wave; small codebase with clear acceptance criteria per task"
+
+references:
+  - file: docs/plan/dotnet-10-upgrade/research_findings_dotnet-10-upgrade.yaml
+    purpose: ".NET 10 upgrade path, file-by-file migration analysis"
+  - file: docs/plan/nuget-package-update/research_findings_nuget-package-management.yaml
+    purpose: "NuGet package inventory, version compatibility, update commands"
+  - file: docs/plan/profile-feature-research/research_findings_profile-feature.yaml
+    purpose: "Profile feature architecture, existing patterns, implementation specifications"
+  - file: AGENTS.md
+    purpose: "Architectural decisions (ADR-001, ADR-002, ADR-003), conventions, build instructions"

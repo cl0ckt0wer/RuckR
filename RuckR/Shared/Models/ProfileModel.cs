@@ -1,16 +1,25 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading.Tasks;
+using System.ComponentModel.DataAnnotations;
 
 namespace RuckR.Shared.Models
 {
     public class ProfileModel
     {
-        public string? Name { get; set; }   = null;
+        public string? Name { get; set; } = null;
         public string? Biography { get; set; } = null;
 
+        [Required]
+        [EmailAddress]
+        [StringLength(256)]
+        public string? Email { get; set; }
+
+        [StringLength(100)]
+        public string? Location { get; set; }
+
+        public DateTime JoinedDate { get; set; } = DateTime.Today;
+
+        [Url]
+        [StringLength(500)]
+        public string? AvatarUrl { get; set; }
     }
 }

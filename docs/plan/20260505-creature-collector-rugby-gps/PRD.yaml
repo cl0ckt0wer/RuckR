@@ -1,0 +1,482 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+title: "RuckR Creature Collector — Rugby GPS Game"
+version: "1.0"
+created_at: "2026-05-05T23:00:00Z"
+status: draft
+tldr: |
+  Transform the RuckR Blazor WASM Hosted demo app into a rugby-themed creature-collector game
+  with GPS integration. Players explore a real-world map, discover procedurally-placed virtual
+  rugby pitches, collect auto-generated fictional rugby players (creatures), and engage in
+  turn-based asynchronous PVP battles. Built on SQL Server (geography type) + NetTopologySuite
+  for geospatial queries, SignalR for real-time communication, Leaflet.js for map rendering,
+  and Fluxor for client-state management. ASP.NET Core Identity provides authentication.
+
+scope:
+  description: |
+    RuckR is currently a 3-project Blazor WASM Hosted demo (Server, Client, Shared) with
+    two static endpoints (WeatherForecast, Profile) and no persistent storage, authentication,
+    or real-time features. This plan delivers a rugby-themed creature-collector game layered
+    on top of the existing architecture:
+    
+    - **Server** adds ASP.NET Core Identity with EF Core, SignalR hub, SQL Server (geography type)
+      via NetTopologySuite and EF Core SqlServer spatial provider, and game-specific API controllers (players, pitches, collections, battles).
+    - **Client** adds Leaflet.js interop for map rendering, Fluxor for client-side state,
+      GPS geolocation via browser API, and game pages (Map, Collection, Battle, Catalog).
+    - **Shared** gains new models: PlayerModel, PitchModel, CollectionModel, BattleModel.
+    
+    Rugby players are the "creatures" — each has position-based stats, a rarity tier,
+    and is discoverable at virtual rugby pitches procedurally placed on the map. Players
+    collect them, build a team, and challenge other users in async turn-based PVP.
+
+  in_scope:
+    # Foundation
+    - ASP.NET Core Identity with EF Core for user registration, login, and session management
+    - SQL Server database (LocalDB for dev, Docker SQL Server for cross-platform) with geography type via NetTopologySuite and EF Core SqlServer spatial provider
+    - Entity Framework Core migrations for database schema management
+    - Server-hosted Razor pages for auth UI (login, register, logout)
+
+    # Game Data
+    - Auto-generated fictional rugby players with name, position, stats, rarity, and bio
+    - Procedurally-placed virtual rugby pitches with real-world GPS coordinates + geography type
+    - Player collection per user (inventory with acquisition timestamp and location)
+    - Player catalog page for browsing all known players
+
+    # GPS & Map
+    - Browser geolocation API integration for reading user GPS position
+    - Leaflet.js interactive map rendered via Blazor JS interop (`IJSObjectReference`/`IJSRuntime`)
+    - Distance-bucketed sorting for fuzzy location (exact GPS not exposed to other players)
+    - Pitch markers on map with proximity-based discovery UI
+    - User position indicator on map
+
+    # Real-Time
+    - SignalR hub for live map updates, battle notifications, and player location sharing
+    - Real-time pitch discovery notifications
+    - Battle challenge notifications via SignalR
+
+    # PVP Battles
+    - Turn-based asynchronous PVP challenge system
+    - Challenge another user by selecting from your collection
+    - Opponent accepts/declines challenge
+    - Simple stat-based resolution (position matchups, rarity multipliers)
+    - Battle history/log per user
+
+    # Client State
+    - Fluxor (Flux/Redux pattern) for client-side state management
+    - Shared reactive state across map, collection, and battle pages
+    - State slices: inventory, active battles, map state, user session
+
+    # UI/UX
+    - Bootstrap 5 styling consistent with existing pages
+    - Responsive layout for mobile/desktop map usage
+    - Loading, empty, and error states on all pages
+
+  out_of_scope:
+    - Real-money transactions or in-app purchases
+    - Mobile-native apps (React Native, Expo, Flutter) — browser-only MVP
+    - Third-party auth providers (Google, Facebook, etc.) — username/password only
+    - Automated matchmaking or skill-based ranking
+    - Real-time synchronous battles (only async turn-based)
+    - AI/bot opponents — PVP only
+    - Player trading or gifting between users
+    - Offline support or local caching of game data
+    - Admin dashboard or moderation tools
+    - CI/CD pipelines, automated tests, or monitoring infrastructure
+    - Social features (friends lists, chat, leaderboards) beyond PVP challenges
+
+user_stories:
+  - id: US-01
+    title: "User Registration & Authentication"
+    description: |
+      As a new player, I want to register an account with a username and password
+      so that I can save my collection and participate in PVP battles.
+    acceptance_criteria:
+      - "Register page at /Identity/Account/Register with username + password + confirm password fields"
+      - "Login page at /Identity/Account/Login with username + password fields"
+      - "Logout functionality clears session and redirects to home"
+      - "Authentication state available in Blazor WASM via AuthenticationStateProvider"
+      - "Unauthenticated users redirected to login when accessing protected pages"
+      - "ASP.NET Core Identity backed by EF Core with default IdentityUser schema"
+      - "Passwords hashed and stored securely (ASP.NET Core Identity default)"
+
+  - id: US-02
+    title: "Database & Spatial Foundation"
+    description: |
+      As a developer, I want SQL Server configured as the application database with spatial support
+      so that all game data is persistently stored with geospatial query support.
+    acceptance_criteria:
+      - "SQL Server (LocalDB for dev; Docker SQL Server image for cross-platform) as the backing database"
+      - "Microsoft.EntityFrameworkCore.SqlServer with NetTopologySuite spatial provider configured in Server"
+      - "EF Core DbContext (RuckRDbContext) with DbSets for PlayerModel, PitchModel, CollectionModel, BattleModel"
+      - "PitchModel has a SQL Server geography Point column (SRID 4326) for GPS coordinates"
+      - "Proximity query: find pitches within X meters of a given coordinate using STDistance"
+      - "EF Core migrations create all tables with correct spatial column types (geography)"
+      - "Connection string configurable via appsettings.json"
+
+  - id: US-03
+    title: "GPS Location & Pitch Discovery"
+    description: |
+      As a player, I want the app to use my device's GPS location so that I can discover
+      virtual rugby pitches near me and collect the rugby players at them.
+    acceptance_criteria:
+      - "Browser geolocation API accessed via JS interop to read user's current position"
+      - "User's location displayed on the Leaflet map as a marker"
+      - "Nearby pitches (within 500m) highlighted on the map with distance indicators"
+      - "Distance shown in buckets: '< 50m', '< 100m', '< 250m', '< 500m' (fuzzy, not exact)"
+      - "Tapping/clicking a nearby pitch opens discovery panel showing available players"
+      - "Pitch discovery triggers when user is within proximity threshold (100m default)"
+      - "User's exact GPS coordinates never exposed to other players — only distance bucket"
+
+  - id: US-04
+    title: "Interactive Map"
+    description: |
+      As a player, I want an interactive map showing my location and nearby rugby pitches
+      so that I can navigate to pitches and discover new rugby players.
+    acceptance_criteria:
+      - "Leaflet.js map renders full-screen or large panel on the Map page (/map)"
+      - "Map tiles load from OpenStreetMap (free tile provider)"
+      - "User's current position shown as a distinct marker (e.g., blue dot with pulse)"
+      - "Pitches rendered as rugby-ball markers on the map"
+      - "Map auto-pans to user's location on load"
+      - "Pitch markers update in real-time as user moves (SignalR or polling)"
+      - "Map page works on mobile and desktop (responsive)"
+      - "JS interop module encapsulates all Leaflet operations behind `IJSObjectReference`"
+
+  - id: US-05
+    title: "Rugby Player Collection"
+    description: |
+      As a player, I want to view my collection of discovered rugby players
+      so that I can see their stats, manage my team, and select fighters for battles.
+    acceptance_criteria:
+      - "Collection page (/collection) shows all players the user has discovered"
+      - "Each player card displays: name, position, stats (Speed, Strength, Agility, Kicking), rarity"
+      - "Empty state message when user has no collected players"
+      - "Player detail view showing full stats, bio, acquisition date, and discovery location"
+      - "Collection persists across sessions (stored in SQL Server)"
+      - "Players cannot be deleted or traded (collection is permanent for MVP)"
+
+  - id: US-06
+    title: "Player Catalog"
+    description: |
+      As a player, I want to browse a catalog of all rugby players that exist in the game
+      so that I can see what players are available to discover.
+    acceptance_criteria:
+      - "Catalog page (/catalog) lists all rugby players in the game"
+      - "Filter by position (Prop, Hooker, Lock, Flanker, Scrum-half, Fly-half, Centre, Wing, Fullback)"
+      - "Filter by rarity tier (Common, Uncommon, Rare, Epic, Legendary)"
+      - "Search by player name"
+      - "Collected vs uncollected badge on each player card"
+      - "Players are auto-generated fictional characters with rugby-appropriate names"
+
+  - id: US-07
+    title: "Turn-Based Async PVP Battles"
+    description: |
+      As a player, I want to challenge another player to a PVP battle using my collected rugby players
+      so that I can compete and see whose collection is stronger.
+    acceptance_criteria:
+      - "Challenge form: select one player from collection, choose opponent by username"
+      - "Challenge sent via SignalR notification to opponent in real-time"
+      - "Opponent sees challenge notification with challenger name and selected player"
+      - "Opponent can accept (with their own player selection) or decline"
+      - "Battle resolution: stat-based comparison with position matchups and rarity multipliers"
+      - "Simple resolution formula: base stat comparison + position advantage + rarity bonus + randomness"
+      - "Battle result logged: winner, loser, players used, timestamp"
+      - "Battle history page (/battles) shows past battle results"
+      - "Players cannot challenge themselves"
+      - "A player cannot have more than 3 active (pending) challenges at once"
+
+  - id: US-08
+    title: "Real-Time Notifications"
+    description: |
+      As a player, I want real-time notifications for pitch discoveries and battle challenges
+      so that I am immediately aware of game events.
+    acceptance_criteria:
+      - "SignalR connection established on app load and maintained for session duration"
+      - "Battle challenge notifications appear as toast/banner with accept/decline actions"
+      - "New pitch discovery notifications when entering proximity of an undiscovered pitch"
+      - "Connection state indicator shown in UI (connected/disconnected/reconnecting)"
+      - "SignalR reconnection handled gracefully with exponential backoff"
+
+  - id: US-09
+    title: "Procedural Pitch & Player Generation"
+    description: |
+      As the system, I need a seed-based procedural generation system for rugby pitches and players
+      so that the game world feels populated without manual data entry.
+    acceptance_criteria:
+      - "Pitches procedurally placed at real-world GPS coordinates (seed-based, reproducible)"
+      - "~100 initial pitches generated across a metropolitan area (configurable seed/region)"
+      - "Each pitch assigned a name (e.g., 'Thunderstrike Field', 'Ruck Arena') from a pool"
+      - "~500 auto-generated fictional rugby players distributed across pitches"
+      - "Player names drawn from rugby-appropriate first/last name pools"
+      - "Player stats (Speed, Strength, Agility, Kicking) generated with position-based distributions"
+      - "Player rarity assigned per distribution: Common 50%, Uncommon 25%, Rare 15%, Epic 7%, Legendary 3%"
+      - "Seed stored in appsettings for reproducibility; can be changed to regenerate world"
+
+acceptance_criteria:
+  - "dotnet build RuckR.sln succeeds with zero errors and zero warnings after all waves"
+  - "All new NuGet packages (SignalR, Fluxor, Identity, NetTopologySuite, EF Core SqlServer) resolve and compile"
+  - "User can register, log in, and maintain authenticated session"
+  - "Map page renders Leaflet with user location marker and nearby pitch markers"
+  - "User can discover a pitch within proximity and collect a rugby player"
+  - "Collection page shows discovered players with correct stats"
+  - "PVP challenge can be sent, accepted, and resolved with battle result logged"
+  - "All game data persists across server restarts (SQL Server)"
+  - "SignalR delivers real-time challenge notifications between two browser sessions"
+
+constraints:
+  - "Browser-only: Blazor WASM hosted model; no native mobile apps"
+  - "Username/password authentication only (ASP.NET Core Identity with EF Core)"
+  - "SQL Server database (LocalDB for dev; Docker SQL Server for cross-platform; not SQLite or in-memory for production)"
+  - "Must use existing 3-project structure (Server, Client, Shared)"
+  - "Must follow existing code conventions: block-scoped namespaces, ControllerBase, ApiController, Bootstrap 5"
+  - "All new models under RuckR.Shared.Models namespace"
+  - "Leaflet.js via JS interop only — no C# map SDK"
+  - "Fluxor for client state (not ad-hoc service injection)"
+  - "Fuzzy location only — never expose exact user GPS to other users"
+
+stakeholders:
+  - role: "Developer"
+    needs: "Clean architecture, maintainable code, documented patterns, incremental delivery"
+  - role: "Player (End User)"
+    needs: "Fun creature-collector experience, responsive map, fair PVP, persistent progress"
+
+features:
+  - name: "Authentication System"
+    overview: "ASP.NET Core Identity with EF Core for user registration, login, and session management"
+    status: planned
+
+  - name: "SQL Server Spatial Database"
+    overview: "Persistent storage with SQL Server geography type and NetTopologySuite for pitch proximity and discovery"
+    status: planned
+
+  - name: "Interactive Map"
+    overview: "Leaflet.js map rendered via Blazor JS interop showing user location and nearby pitches"
+    status: planned
+
+  - name: "Procedural Pitch Placement"
+    overview: "Seed-based generation of virtual rugby pitches at real-world GPS coordinates"
+    status: planned
+
+  - name: "Auto-Generated Rugby Players"
+    overview: "Fictional rugby player creatures with stats, positions, rarity tiers, and bios"
+    status: planned
+
+  - name: "Creature Collection"
+    overview: "User inventory of discovered rugby players with acquisition metadata"
+    status: planned
+
+  - name: "Player Catalog"
+    overview: "Browsable, filterable catalog of all rugby players in the game"
+    status: planned
+
+  - name: "Async PVP Battles"
+    overview: "Turn-based asynchronous player-vs-player challenges with stat-based resolution"
+    status: planned
+
+  - name: "Real-Time Notifications"
+    overview: "SignalR-powered notifications for pitch discoveries and battle challenges"
+    status: planned
+
+  - name: "Client State Management"
+    overview: "Fluxor for shared reactive state across map, collection, and battle pages"
+    status: planned
+
+state_machines:
+  - name: "BattleModel"
+    states:
+      - Pending
+      - Accepted
+      - Completed
+      - Declined
+      - Expired
+    transitions:
+      - from: Pending
+        to: Accepted
+        trigger: "Opponent accepts challenge and selects their player"
+      - from: Pending
+        to: Declined
+        trigger: "Opponent declines challenge"
+      - from: Pending
+        to: Expired
+        trigger: "Challenge not responded to within 24 hours"
+      - from: Accepted
+        to: Completed
+        trigger: "Battle resolved — stat comparison complete, result logged"
+
+  - name: "PitchDiscovery"
+    states:
+      - Undiscovered
+      - Discovered
+    transitions:
+      - from: Undiscovered
+        to: Discovered
+        trigger: "User's GPS position within 100m of pitch coordinates"
+
+decisions:
+  - id: ADR-004
+    status: accepted
+    decision: "Use SQL Server geography type + NetTopologySuite for spatial data layer"
+    rationale: "User chose MSSQL for Windows dev simplicity (LocalDB); SQL Server's native geography type with SRID 4326 provides robust spatial query support. EF Core supports it via Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite."
+    alternatives:
+      - "PostgreSQL + PostGIS (mature open-source geospatial, but adds operational complexity for Windows dev)"
+      - "SQLite with custom Haversine queries (no spatial index, poor perf at scale)"
+    consequences:
+      - "Requires SQL Server (LocalDB for Windows dev; Docker mcr.microsoft.com/mssql/server image for cross-platform)"
+      - "Adds Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite and NetTopologySuite NuGet dependencies"
+      - "Enables efficient proximity queries via STDistance and spatial indexes on geography columns"
+
+  - id: ADR-005
+    status: accepted
+    decision: "Use SignalR for real-time communication"
+    rationale: "SignalR is the idiomatic ASP.NET Core real-time library with built-in Blazor client support."
+    alternatives:
+      - "Polling (simple but wasteful, no real-time feel)"
+      - "WebSocket raw (more boilerplate, no auto-reconnect)"
+    consequences:
+      - "Adds Microsoft.AspNetCore.SignalR NuGet dependency (built into ASP.NET Core)"
+      - "Requires SignalR hub on server, connection management on client"
+      - "Enables instant battle notifications and live map updates"
+
+  - id: ADR-006
+    status: accepted
+    decision: "Use Leaflet.js via JS interop for map rendering"
+    rationale: "Leaflet is lightweight (42 KB), open-source, and has mature Blazor interop community patterns."
+    alternatives:
+      - "Google Maps JS API (requires API key, larger payload, licensing concerns)"
+      - "Mapbox GL JS (requires API key, larger payload)"
+      - "Blazor Leaflet wrapper library (adds dependency, may lag Leaflet releases)"
+    consequences:
+      - "Requires JavaScript interop module (`IJSObjectReference`/`IJSRuntime`)"
+      - "OpenStreetMap tiles are free with no API key"
+      - "All map manipulation goes through JS interop boundary"
+
+  - id: ADR-007
+    status: accepted
+    decision: "Create new models under RuckR.Shared.Models: PlayerModel, PitchModel, CollectionModel, BattleModel"
+    rationale: "Follows existing ProfileModel convention (subdirectory with qualified namespace)."
+    alternatives:
+      - "Root namespace RuckR.Shared (follows WeatherForecast pattern — inconsistent with ProfileModel)"
+    consequences:
+      - "Namespace: RuckR.Shared.Models"
+      - "PitchModel uses NetTopologySuite Point type for geometry"
+      - "All models available to both Server and Client projects"
+
+  - id: ADR-008
+    status: accepted
+    decision: "Use Fluxor for client-side state management"
+    rationale: "Multiple pages (Map, Collection, Battle) need shared reactive state; Fluxor is the most popular Blazor state library."
+    alternatives:
+      - "Singleton service with event callbacks (simpler but manual plumbing, no dev tools)"
+      - "BlazorFluxor (competing library, smaller community)"
+    consequences:
+      - "Adds Fluxor NuGet dependency to RuckR.Client"
+      - "State organized into features: Inventory, Battles, Map, Auth"
+      - "Redux dev tools available for debugging"
+
+  - id: ADR-009
+    status: accepted
+    decision: "Use ASP.NET Core Identity with EF Core for authentication"
+    rationale: "Built-in, battle-tested auth framework; avoids third-party auth dependencies."
+    alternatives:
+      - "Auth0/Okta (external dependency, requires internet, overkill for MVP)"
+      - "Custom JWT (more boilerplate, less secure default configuration)"
+    consequences:
+      - "Adds Microsoft.AspNetCore.Identity.EntityFrameworkCore NuGet dependency"
+      - "Server hosts Razor pages for auth UI (login, register)"
+      - "EF Core manages IdentityUser and related tables alongside game tables"
+      - "Cookie-based authentication with Blazor WASM AuthenticationStateProvider"
+
+needs_clarification:
+  - question: "Target platform — browser Blazor WASM only, or also mobile native?"
+    context: "Browser GPS works in Blazor WASM but mobile-native (React Native/Expo) would provide better GPS accuracy and background tracking."
+    impact: "Determines GPS implementation approach and whether React Native/Expo project scope is needed."
+    status: open
+    owner: "Product owner"
+
+  - question: "Fuzzy location — exact distance-bucketed sorting or fully anonymized regions?"
+    context: "Distance buckets (< 50m, < 100m, etc.) still reveal approximate location. Region-based (suburb/neighborhood) would be more private."
+    impact: "Affects privacy model and how pitch proximity is calculated."
+    status: open
+    owner: "Product owner"
+
+  - question: "PVP depth — simple stat comparison or full turn-based move selection?"
+    context: "Simple stat-based resolution is faster to build. Full move selection (like Pokemon) requires more design, moves, and balance."
+    impact: "Affects BattleModel complexity, UI design, and development timeline."
+    status: open
+    owner: "Product owner"
+
+  - question: "Data persistence — SQL Server or lighter alternatives?"
+    context: "SQL Server with geography type provides robust spatial support. SQLite with Haversine could work for MVP but lacks spatial indexing."
+    impact: "SQL Server adds a server dependency (LocalDB for dev, Docker for cross-platform); SQLite is simpler but limited for spatial queries."
+    status: resolved
+    owner: "Technical lead"
+
+  - question: "Authentication — simple username/password or third-party providers?"
+    context: "ASP.NET Core Identity handles both. Third-party (Google, etc.) reduces friction but adds setup."
+    impact: "Username/password is simpler to implement; third-party requires OAuth setup."
+    status: open
+    owner: "Product owner"
+
+  - question: "Rugby player data — auto-generated fictional or real-world rugby players?"
+    context: "Fictional players avoid licensing issues. Real players would require data rights."
+    impact: "Fictional is legally safe and more fun for a creature-collector theme."
+    status: open
+    owner: "Product owner"
+
+  - question: "Rugby pitches — procedurally placed virtual locations or real rugby venues?"
+    context: "Virtual pitches give full control over placement and density. Real venues limit to existing fields."
+    impact: "Virtual pitches create a parallel game world; real venues tie to actual geography."
+    status: open
+    owner: "Product owner"
+
+risks:
+  - risk: "SQL Server spatial setup complexity slows initial development"
+    severity: medium
+    mitigation: "Docker Compose for local SQL Server (mcr.microsoft.com/mssql/server) instance; connection string via appsettings; well-documented setup; LocalDB zero-config for Windows dev"
+
+  - risk: "Leaflet.js interop performance with many markers"
+    severity: low
+    mitigation: "Leaflet handles hundreds of markers natively; clustering plugin if needed; only load visible pitches"
+
+  - risk: "Browser geolocation API permission denial — user refuses GPS access"
+    severity: medium
+    mitigation: "Graceful fallback: show map centered on default location; prompt user to enable GPS; manual coordinate entry"
+
+  - risk: "SignalR connection instability on mobile networks"
+    severity: medium
+    mitigation: "Automatic reconnection with exponential backoff; connection state indicator; graceful degradation when offline"
+
+  - risk: "Too many NuGet dependencies introduced at once causing version conflicts"
+    severity: medium
+    mitigation: "Add dependencies incrementally per wave; verify build after each wave; pin compatible versions"
+
+  - risk: "No automated tests — regressions from game logic changes"
+    severity: high
+    mitigation: "Manual verification per wave; small codebase manageable; critical paths (auth, battle resolution) verified manually"
+
+  - risk: "Long dev cycle — feature creep before playable MVP"
+    severity: high
+    mitigation: "Deliver in waves: auth+DB, map+GPS, collection, PVP; each wave delivers a testable increment"
+
+references:
+  - file: AGENTS.md
+    purpose: "Architectural decisions (ADR-001 through ADR-009), conventions, build instructions"
+  - file: RuckR/Server/Controllers/ProfileController.cs
+    purpose: "Canonical controller pattern: [ApiController], [Route], ControllerBase, static storage, ILogger DI"
+  - file: RuckR/Client/Pages/Profile.razor
+    purpose: "Canonical Blazor page pattern: @page, @inject HttpClient, @using, OnInitializedAsync, EditForm with DataAnnotationsValidator"
+  - file: RuckR/Shared/Models/ProfileModel.cs
+    purpose: "Canonical shared model pattern: block-scoped namespace, DataAnnotations, SupportedPlatform browser"
+  - file: RuckR/Client/Pages/FetchData.razor
+    purpose: "HttpClient.GetFromJsonAsync + loading state pattern"
+  - file: docs/plan/20260505-update-project/PRD.yaml
+    purpose: "Previous PRD — establishes format conventions, scope structure, and acceptance criteria patterns"
+
+user_confirmed_decisions:
+  - decision: "SQL Server (MSSQL) as the database instead of PostgreSQL + PostGIS"
+    confirmed_by: "User"
+    date: "2026-05-06"
+    rationale: "Windows dev simplicity with LocalDB zero-config; Docker SQL Server image for cross-platform deployment."
+    implications:
+      - "EF Core provider: Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite (not Npgsql)"
+      - "Spatial type: geography (SRID 4326) via NetTopologySuite"
+      - "Proximity queries: STDistance (not ST_DWithin)"

@@ -1,0 +1,377 @@
+plan_id: dotnet-10-upgrade
+objective: Research upgrade path from .NET 8 to .NET 10 for Blazor WASM Hosted project
+focus_area: dotnet-10-upgrade
+created_at: "2026-05-05T21:48:00Z"
+created_by: RESEARCHER
+status: completed
+tldr: |
+  - .NET 10 SDK 10.0.203 (stable) installed locally; NuGet stable is 10.0.7 for all Blazor WASM packages
+  - ASP.NET Core 10.0.7 runtime and .NET Core 10.0.7 runtime installed locally
+  - Migration is 8→9→10 cumulative: MapStaticAssets (9), HttpClient streaming default (10), blazor.boot.json inlined (10), Router NotFoundPage replaces <NotFound> fragment (10)
+  - Critical files: 3 .csproj, Server/Program.cs, Client/Program.cs, Client/App.razor, Client/wwwroot/index.html, Client/wwwroot/service-worker.js
+  - No global.json, no Directory.Build.props; SupportedPlatform "browser" remains valid in .NET 10
+research_metadata:
+  methodology: semantic_search + grep_search + webfetch (NuGet Gallery, Microsoft Learn docs) + local SDK inspection
+  scope: full-project
+  confidence: high
+  coverage: 100
+  decision_blockers: 0
+  research_blockers: 0
+files_analyzed:
+  - file: RuckR.Shared.csproj
+    path: RuckR/Shared/RuckR.Shared.csproj
+    purpose: Shared models library, net8.0, SupportedPlatform browser
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: RuckR/Shared/RuckR.Shared.csproj:4
+        description: Currently net8.0 — must change to net10.0
+        language: xml
+      - element: SupportedPlatform
+        type: msbuild-item
+        location: RuckR/Shared/RuckR.Shared.csproj:10
+        description: Marks assembly for browser/WASM compatibility — still valid in .NET 10
+        language: xml
+    lines: 12
+  - file: RuckR.Server.csproj
+    path: RuckR/Server/RuckR.Server.csproj
+    purpose: ASP.NET Core host; serves WASM + API controllers
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: RuckR/Server/RuckR.Server.csproj:4
+        description: Currently net8.0 — must change to net10.0
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly.Server
+        type: dependency
+        location: RuckR/Server/RuckR.Server.csproj:10
+        description: Version 8.0.0 — must update to 10.0.7
+        language: xml
+      - element: SDK
+        type: property
+        location: RuckR/Server/RuckR.Server.csproj:1
+        description: Microsoft.NET.Sdk.Web — unchanged for .NET 10
+        language: xml
+    lines: 19
+  - file: RuckR.Client.csproj
+    path: RuckR/Client/RuckR.Client.csproj
+    purpose: Blazor WebAssembly SPA (PWA)
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:4
+        description: Currently net8.0 — must change to net10.0
+        language: xml
+      - element: SDK
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:1
+        description: Microsoft.NET.Sdk.BlazorWebAssembly — unchanged for .NET 10
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly
+        type: dependency
+        location: RuckR/Client/RuckR.Client.csproj:11
+        description: Version 8.0.0 — must update to 10.0.7
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly.DevServer
+        type: dependency
+        location: RuckR/Client/RuckR.Client.csproj:12
+        description: Version 8.0.0 — must update to 10.0.7
+        language: xml
+      - element: ServiceWorkerAssetsManifest
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:7
+        description: PWA service worker assets manifest — no change needed
+        language: xml
+    lines: 23
+  - file: Server Program.cs
+    path: RuckR/Server/Program.cs
+    purpose: Server entry point; configures middleware pipeline
+    key_elements:
+      - element: UseStaticFiles
+        type: function-call
+        location: RuckR/Server/Program.cs:27
+        description: Must replace with app.MapStaticAssets() (.NET 9+ optimization)
+        language: csharp
+      - element: MapRazorPages
+        type: function-call
+        location: RuckR/Server/Program.cs:32
+        description: Must chain .WithStaticAssets() after MapRazorPages()
+        language: csharp
+      - element: MapControllers
+        type: function-call
+        location: RuckR/Server/Program.cs:33
+        description: Must chain .WithStaticAssets() after MapControllers()
+        language: csharp
+      - element: UseWebAssemblyDebugging
+        type: function-call
+        location: RuckR/Server/Program.cs:15
+        description: No change — still valid in .NET 10 for WASM debug proxy
+        language: csharp
+      - element: UseBlazorFrameworkFiles
+        type: function-call
+        location: RuckR/Server/Program.cs:26
+        description: No change — still serves _framework/ static files in .NET 10
+        language: csharp
+      - element: MapFallbackToFile
+        type: function-call
+        location: RuckR/Server/Program.cs:34
+        description: No change — still serves index.html for SPA routing
+        language: csharp
+    lines: 36
+  - file: Client Program.cs
+    path: RuckR/Client/Program.cs
+    purpose: Blazor WASM client entry point
+    key_elements:
+      - element: WebAssemblyHostBuilder.CreateDefault
+        type: function-call
+        location: RuckR/Client/Program.cs:5
+        description: No change required — same API in .NET 10
+        language: csharp
+      - element: RootComponents
+        type: pattern
+        location: RuckR/Client/Program.cs:6-7
+        description: No change — RootComponents API unchanged in .NET 10
+        language: csharp
+      - element: HttpClient service registration
+        type: pattern
+        location: RuckR/Client/Program.cs:9
+        description: No change — but note HttpClient streaming is now enabled by default (breaking change if using ReadAsStream synchronously)
+        language: csharp
+    lines: 11
+  - file: Client App.razor
+    path: RuckR/Client/App.razor
+    purpose: Blazor root component with Router
+    key_elements:
+      - element: Router NotFound fragment
+        type: pattern
+        location: RuckR/Client/App.razor:6-11
+        description: <NotFound> render fragment is NOT supported in .NET 10 — must replace with Router NotFoundPage parameter pointing to a new NotFound.razor page
+        language: razor
+    lines: 12
+  - file: Client index.html
+    path: RuckR/Client/wwwroot/index.html
+    purpose: WASM bootstrap HTML page
+    key_elements:
+      - element: blazor.webassembly.js script
+        type: script-reference
+        location: RuckR/Client/wwwroot/index.html:32
+        description: Script reference unchanged — Blazor script now served as static web asset with auto-compression/fingerprinting in .NET 10
+        language: html
+      - element: Service worker registration
+        type: script
+        location: RuckR/Client/wwwroot/index.html:33
+        description: Must add { updateViaCache: 'none' } option to navigator.serviceWorker.register() per .NET 10 PWA guidance
+        language: html
+    lines: 36
+  - file: Client service-worker.js
+    path: RuckR/Client/wwwroot/service-worker.js
+    purpose: Dev-time service worker (no caching)
+    key_elements:
+      - element: fetch event listener
+        type: function
+        location: RuckR/Client/wwwroot/service-worker.js:4
+        description: Development-only; no change required
+        language: javascript
+    lines: 4
+  - file: Client service-worker.published.js
+    path: RuckR/Client/wwwroot/service-worker.published.js
+    purpose: Production service worker with offline caching
+    key_elements:
+      - element: assets manifest import
+        type: function
+        location: RuckR/Client/wwwroot/service-worker.published.js:4
+        description: No change required — still uses service-worker-assets.js (generated at build)
+        language: javascript
+    lines: 48
+  - file: Server launchSettings.json
+    path: RuckR/Server/Properties/launchSettings.json
+    purpose: Development launch profiles
+    key_elements:
+      - element: ASPNETCORE_ENVIRONMENT
+        type: environment-variable
+        location: RuckR/Server/Properties/launchSettings.json:18
+        description: Still used by Server project — no change for Server-side. Only standalone WASM apps need WasmApplicationEnvironmentName
+        language: json
+    lines: 40
+  - file: Client launchSettings.json
+    path: RuckR/Client/Properties/launchSettings.json
+    purpose: Client dev launch profiles (used when debugging via Server proxy)
+    key_elements:
+      - element: ASPNETCORE_ENVIRONMENT
+        type: environment-variable
+        location: RuckR/Client/Properties/launchSettings.json:18
+        description: For hosted WASM, environment is controlled by Server — no WasmApplicationEnvironmentName property needed here
+        language: json
+    lines: 40
+patterns_found:
+  - category: architecture
+    pattern: Hosted Blazor WASM (3-project structure)
+    description: Server hosts API + serves WASM client; Shared library used by both; Client is BlazorWebAssembly SDK project
+    examples:
+      - file: RuckR.sln
+        location: root
+        snippet: "Server -> Client, Server -> Shared, Client -> Shared"
+    prevalence: common
+  - category: structure
+    pattern: PWA service worker with offline cache
+    description: Service worker uses self.assetsManifest generated at build time; dev worker is no-op
+    examples:
+      - file: RuckR/Client/wwwroot/service-worker.published.js
+        location: lines 1-48
+        snippet: "self.importScripts('./service-worker-assets.js')"
+    prevalence: common
+  - category: naming
+    pattern: net8.0 TFM across all projects
+    description: All three projects target net8.0 with matching 8.0.0 NuGet packages
+    examples:
+      - file: RuckR/Shared/RuckR.Shared.csproj
+        location: line 4
+        snippet: "<TargetFramework>net8.0</TargetFramework>"
+    prevalence: common
+  - category: architecture
+    pattern: Nullable reference types enabled project-wide
+    description: All three projects have <Nullable>enable</Nullable> and <ImplicitUsings>enable</ImplicitUsings>
+    examples:
+      - file: RuckR/Shared/RuckR.Shared.csproj
+        location: lines 5-6
+        snippet: "<Nullable>enable</Nullable>"
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: RuckR.Server
+      responsibility: ASP.NET Core host; serves API controllers, Razor Pages, and Blazor WASM static files
+      location: RuckR/Server/
+      relationship_to_domain: Host project for the upgrade — TFMs and NuGet packages change here
+    - component: RuckR.Client
+      responsibility: Blazor WebAssembly SPA with PWA support
+      location: RuckR/Client/
+      relationship_to_domain: Client project — TFMs, NuGet packages, App.razor Router, index.html, service worker change here
+    - component: RuckR.Shared
+      responsibility: Shared models/types consumed by both Server and Client
+      location: RuckR/Shared/
+      relationship_to_domain: TFM change only; SupportedPlatform "browser" unchanged
+  interfaces_used_by_domain:
+    - interface: WebAssemblyHostBuilder
+      location: RuckR/Client/Program.cs:5
+      usage_pattern: WASM app bootstrap — unchanged in .NET 10
+    - interface: WebApplication
+      location: RuckR/Server/Program.cs:3
+      usage_pattern: Server app builder — MapStaticAssets + WithStaticAssets replaces UseStaticFiles
+    - interface: Router component
+      location: RuckR/Client/App.razor:1
+      usage_pattern: Blazor routing — NotFoundPage parameter replaces <NotFound> fragment
+  data_flow_involving_domain: "Browser → Server (HTTP/HTTPS) → Server serves index.html → Browser loads _framework/blazor.webassembly.js → WASM runtime bootstraps → Client renders Blazor UI → Client calls Server API controllers for data"
+  key_relationships_to_domain:
+    - from: RuckR.Server
+      to: RuckR.Client
+      relationship: composes
+    - from: RuckR.Server
+      to: RuckR.Shared
+      relationship: references
+    - from: RuckR.Client
+      to: RuckR.Shared
+      relationship: references
+    - from: RuckR.Server
+      to: Microsoft.AspNetCore.Components.WebAssembly.Server
+      relationship: depends-on-nuget
+    - from: RuckR.Client
+      to: Microsoft.AspNetCore.Components.WebAssembly
+      relationship: depends-on-nuget
+    - from: RuckR.Client
+      to: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      relationship: depends-on-nuget-dev
+related_technology_stack:
+  languages_used_in_domain:
+    - C# 12 (net8.0 default) → C# 14 (net10.0 default)
+    - Razor (.razor)
+    - HTML/JavaScript (service worker, index.html)
+  frameworks_used_in_domain:
+    - name: ASP.NET Core
+      usage_in_domain: Server hosting, API controllers, middleware pipeline, static file serving, WASM debug proxying
+    - name: Blazor WebAssembly
+      usage_in_domain: Client-side SPA rendering in browser via WASM runtime
+  libraries_used_in_domain:
+    - name: Microsoft.AspNetCore.Components.WebAssembly
+      purpose_in_domain: Core Blazor WASM runtime (client)
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server
+      purpose_in_domain: Server-side WASM hosting, debug proxy, authentication state serialization
+    - name: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      purpose_in_domain: Development-time hot reload and debugging for WASM (PrivateAssets=all)
+    - name: Microsoft.AspNetCore.ResponseCompression
+      purpose_in_domain: Response compression middleware on server
+  external_apis_used_in_domain: []
+related_conventions:
+  naming_patterns_in_domain: PascalCase C# files, kebab-case web assets, ProjectName.Namespace convention (RuckR.Client, RuckR.Server, RuckR.Shared)
+  structure_of_domain: 3-project solution; Server hosts Client WASM; Shared is shared models library
+  error_handling_in_domain: Server uses UseExceptionHandler("/Error") and UseHsts(); Client uses #blazor-error-ui div in index.html
+  testing_in_domain: No test projects exist
+  documentation_in_domain: AGENTS.md documents architectural decisions and conventions; PRD.yaml defines scope
+related_dependencies:
+  internal:
+    - component: RuckR.Client
+      relationship_to_domain: WASM SPA referenced by Server
+      direction: inbound
+    - component: RuckR.Shared
+      relationship_to_domain: Shared models referenced by both Server and Client
+      direction: inbound
+  external:
+    - name: Microsoft.AspNetCore.Components.WebAssembly (NuGet)
+      purpose_for_domain: Blazor WASM runtime — update 8.0.0 → 10.0.7
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server (NuGet)
+      purpose_for_domain: Server-side WASM support — update 8.0.0 → 10.0.7
+    - name: Microsoft.AspNetCore.Components.WebAssembly.DevServer (NuGet)
+      purpose_for_domain: Dev-time WASM debugging — update 8.0.0 → 10.0.7
+    - name: .NET SDK 10.0.203
+      purpose_for_domain: Build toolchain — already installed locally
+    - name: ASP.NET Core 10.0.7 Runtime
+      purpose_for_domain: Server runtime — already installed locally
+domain_security_considerations:
+  sensitive_areas:
+    - area: Service worker PWA caching
+      location: RuckR/Client/wwwroot/service-worker.published.js
+      concern: Service worker cache could serve stale assets — updateViaCache: 'none' mitigates this
+    - area: Client code visibility
+      location: RuckR/Client/
+      concern: All WASM code is sent to browser and inspectable — inherent to WASM hosting model
+  authentication_patterns_in_domain: None currently implemented
+  authorization_patterns_in_domain: None currently implemented
+  data_validation_in_domain: Not visible in current codebase
+testing_patterns:
+  framework: none
+  coverage_areas: []
+  test_organization: No test projects exist
+  mock_patterns: []
+open_questions:
+  - question: Does the project use any .NET 8 APIs that are obsoleted or removed in .NET 10?
+    context: The .NET 10 breaking changes list includes API obsoletions in core libraries and ASP.NET Core. Current code uses basic APIs (WebApplication, WebAssemblyHostBuilder, HttpClient) which are all still present in .NET 10, but a full compilation test after upgrade should verify.
+    type: research
+    affects:
+      - RuckR.Server
+      - RuckR.Client
+      - RuckR.Shared
+  - question: Does the client use HttpClient.ReadAsStreamAsync with synchronous Stream.Read?
+    context: .NET 10 enables HttpClient response streaming by default in Blazor WASM. ReadAsStreamAsync now returns BrowserHttpReadStream (not MemoryStream), which does not support synchronous operations like Stream.Read(Span<Byte>). If the code uses synchronous reads, it will break.
+    type: research
+    affects:
+      - RuckR.Client
+  - question: Is the existing <NotFound> content in App.razor needed as a dedicated NotFound.razor page?
+    context: In .NET 10, the Router <NotFound> render fragment is no longer supported. Must create a NotFound.razor page and set Router NotFoundPage parameter. The existing inline content ("Sorry, there's nothing at this address.") needs migration.
+    type: decision_blocker
+    affects:
+      - RuckR.Client
+gaps:
+  - area: Full compilation verification
+    description: Research confirms all known changes, but actual compilation after applying changes will reveal any project-specific issues (e.g., transitive dependency version conflicts, API obsoletions in used types).
+    impact: research_blocker
+    affects:
+      - all projects
+  - area: HttpClient streaming compatibility
+    description: Cannot confirm from source code alone whether the project uses synchronous Stream.Read on HttpClient responses. Code review or compilation test needed.
+    impact: decision_blocker
+    affects:
+      - RuckR.Client
+  - area: NotFound.razor page migration
+    description: The <NotFound> fragment in App.razor must be replaced with a NotFoundPage parameter pointing to a new NotFound.razor page. This is a code change, not just a config change.
+    impact: decision_blocker
+    affects:
+      - RuckR.Client

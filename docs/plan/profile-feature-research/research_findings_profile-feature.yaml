@@ -1,0 +1,542 @@
+plan_id: profile-feature-research
+objective: Research what "finish the profile feature" should mean for this Blazor WASM project and produce concrete implementation specifications.
+focus_area: profile-feature
+created_at: 2026-05-05T21:47:00Z
+created_by: RESEARCHER
+status: completed
+tldr: |
+  - Profile is a 3-file stub: ProfileModel (Name+Biography), Profile.razor (6-line empty page), NavMenu link. No controller, no service, no DB, no auth.
+  - The existing pattern is WeatherForecastController: [ApiController]+[Route("[controller]")] returning static in-memory data; client uses HttpClient.GetFromJsonAsync<T>() directly in the page.
+  - ADR-002 mandates the profile follows this exact pattern: controller in RuckR.Server.Controllers, model in RuckR.Shared.Models, Razor page in RuckR.Client.Pages.
+  - Implementation requires: expanding ProfileModel (6 fields), creating ProfileController (GET+PUT), building Profile.razor (view/edit toggle, form validation), and cleaning ProfileModel's unused usings.
+  - No architecture changes needed: same in-memory static storage, same direct-HttpClient pattern, same page-level DI.
+
+research_metadata:
+  methodology: semantic_search + grep_search, full file reads, relationship discovery, dependency mapping
+  scope: full codebase (all 3 projects, 15+ files read, 2 grep sweeps confirmed zero hidden services/DB/auth)
+  confidence: high
+  coverage: 100
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: ProfileModel.cs
+    path: RuckR/Shared/Models/ProfileModel.cs
+    purpose: Shared model for profile data — current stub with Name and Biography only
+    key_elements:
+      - element: ProfileModel
+        type: class
+        location: RuckR/Shared/Models/ProfileModel.cs:10
+        description: POCO class with two nullable string properties (Name, Biography). Contains 5 unused using directives from the template (System.Security.Cryptography.X509Certificates, etc.).
+        language: C#
+      - element: Name
+        type: property
+        location: RuckR/Shared/Models/ProfileModel.cs:12
+        description: Nullable string, defaults to null. Represents the user's display name.
+        language: C#
+      - element: Biography
+        type: property
+        location: RuckR/Shared/Models/ProfileModel.cs:13
+        description: Nullable string, defaults to null. Represents a short biography/about text.
+        language: C#
+    lines: 16
+
+  - file: Profile.razor
+    path: RuckR/Client/Pages/Profile.razor
+    purpose: Blazor page for displaying/editing the user profile — current 6-line stub
+    key_elements:
+      - element: Profile page route
+        type: page_directive
+        location: RuckR/Client/Pages/Profile.razor:1
+        description: "@page \"/profile\"" — registered at /profile route.
+        language: Razor
+      - element: Empty code block
+        type: code_block
+        location: RuckR/Client/Pages/Profile.razor:4-6
+        description: Empty @code { } block — no properties, no methods, no lifecycle overrides.
+        language: C#
+    lines: 6
+
+  - file: NavMenu.razor
+    path: RuckR/Client/Shared/NavMenu.razor
+    purpose: Left sidebar navigation component
+    key_elements:
+      - element: Profile NavLink
+        type: component
+        location: RuckR/Client/Shared/NavMenu.razor:13-16
+        description: NavLink to href="profile" with class "nav-link", uses oi-home icon and "Profile" label. Appears first in nav before Home. Uses NavLinkMatch.All.
+        language: Razor
+      - element: ToggleNavMenu
+        type: method
+        location: RuckR/Client/Shared/NavMenu.razor:40-43
+        description: Collapses/expands nav menu on mobile via Bootstrap CSS class toggle.
+        language: C#
+    lines: 44
+
+  - file: Program.cs (Server)
+    path: RuckR/Server/Program.cs
+    purpose: Server app startup — DI registration, middleware pipeline, endpoint routing
+    key_elements:
+      - element: AddControllersWithViews
+        type: service_registration
+        location: RuckR/Server/Program.cs:7
+        description: Registers MVC controller services (API controllers derive from ControllerBase).
+        language: C#
+      - element: AddRazorPages
+        type: service_registration
+        location: RuckR/Server/Program.cs:8
+        description: Registers Razor Pages services (server-side pages in Server/Pages/).
+        language: C#
+      - element: MapControllers
+        type: endpoint_mapping
+        location: RuckR/Server/Program.cs:33
+        description: Maps attribute-routed API controllers. ProfileController will be automatically discovered.
+        language: C#
+      - element: MapFallbackToFile("index.html")
+        type: endpoint_mapping
+        location: RuckR/Server/Program.cs:34
+        description: Serves Blazor WASM SPA for any unmatched route — critical for client-side routing of /profile.
+        language: C#
+    lines: 36
+
+  - file: WeatherForecastController.cs
+    path: RuckR/Server/Controllers/WeatherForecastController.cs
+    purpose: Reference controller — establishes the pattern ProfileController must follow
+    key_elements:
+      - element: WeatherForecastController
+        type: class
+        location: RuckR/Server/Controllers/WeatherForecastController.cs:8
+        description: API controller inheriting ControllerBase. Decorated with [ApiController] and [Route("[controller]")]. This yields URL path /WeatherForecast. Injects ILogger<T>.
+        language: C#
+      - element: Get() action
+        type: method
+        location: RuckR/Server/Controllers/WeatherForecastController.cs:22-32
+        description: [HttpGet] method returning IEnumerable<WeatherForecast>. Generates 5 synthetic forecasts from static Summaries array. No parameters, no service layer, no DB.
+        language: C#
+      - element: Summaries (static data)
+        type: variable
+        location: RuckR/Server/Controllers/WeatherForecastController.cs:10-13
+        description: Static readonly array of 10 weather summary strings — in-memory data store pattern.
+        language: C#
+    lines: 34
+
+  - file: FetchData.razor
+    path: RuckR/Client/Pages/FetchData.razor
+    purpose: Reference page — establishes the client API call pattern Profile.razor must follow
+    key_elements:
+      - element: HttpClient injection
+        type: dependency_injection
+        location: RuckR/Client/Pages/FetchData.razor:3
+        description: "@inject HttpClient Http" — injects HttpClient configured with server BaseAddress.
+        language: Razor
+      - element: Loading state
+        type: pattern
+        location: RuckR/Client/Pages/FetchData.razor:11-14
+        description: Null-check on forecasts — shows "<em>Loading...</em>" until data arrives.
+        language: Razor
+      - element: OnInitializedAsync
+        type: lifecycle_method
+        location: RuckR/Client/Pages/FetchData.razor:43-46
+        description: Calls Http.GetFromJsonAsync<WeatherForecast[]>("WeatherForecast") and stores result. Uses controller name (not full URL) — BaseAddress handles the rest.
+        language: C#
+      - element: Data table rendering
+        type: pattern
+        location: RuckR/Client/Pages/FetchData.razor:17-37
+        description: Standard Blazor foreach over array, rendering table rows with property access.
+        language: Razor
+    lines: 47
+
+  - file: Program.cs (Client)
+    path: RuckR/Client/Program.cs
+    purpose: Client WASM app startup — registers HttpClient, mounts root components
+    key_elements:
+      - element: HttpClient registration
+        type: service_registration
+        location: RuckR/Client/Program.cs:9
+        description: AddScoped<HttpClient> with BaseAddress = host environment base. This is how all API calls work — no typed clients, no HttpMessageHandler customization.
+        language: C#
+    lines: 11
+
+  - file: WeatherForecast.cs
+    path: RuckR/Shared/WeatherForecast.cs
+    purpose: Reference shared model — establishes model conventions
+    key_elements:
+      - element: WeatherForecast
+        type: class
+        location: RuckR/Shared/WeatherForecast.cs:3
+        description: Simple POCO in RuckR.Shared namespace (not .Models sub-namespace). 3 properties + 1 computed property (TemperatureF). Uses DateOnly, int, string?.
+        language: C#
+    lines: 13
+
+  - file: _Imports.razor (Client)
+    path: RuckR/Client/_Imports.razor
+    purpose: Global Razor imports for all Client pages
+    key_elements:
+      - element: Using directives
+        type: imports
+        location: RuckR/Client/_Imports.razor:1-10
+        description: Imports System.Net.Http, System.Net.Http.Json, RuckR.Client, RuckR.Client.Shared. Does NOT import RuckR.Shared or RuckR.Shared.Models — pages must add their own @using.
+        language: Razor
+    lines: 10
+
+  - file: MainLayout.razor
+    path: RuckR/Client/Shared/MainLayout.razor
+    purpose: Default layout — sidebar + main content area
+    key_elements:
+      - element: Layout structure
+        type: component
+        location: RuckR/Client/Shared/MainLayout.razor:3-16
+        description: Two-column layout: sidebar with NavMenu, main area with @Body. Content wrapped in <article class="content px-4">.
+        language: Razor
+    lines: 17
+
+  - file: RuckR.Server.csproj
+    path: RuckR/Server/RuckR.Server.csproj
+    purpose: Server project definition
+    key_elements:
+      - element: Target framework
+        type: property
+        location: RuckR/Server/RuckR.Server.csproj:4
+        description: net8.0 (will become net10.0 per ADR-001). Only NuGet dependency: Microsoft.AspNetCore.Components.WebAssembly.Server 8.0.0.
+        language: XML
+      - element: Project references
+        type: dependency
+        location: RuckR/Server/RuckR.Server.csproj:14-15
+        description: References RuckR.Client and RuckR.Shared projects.
+        language: XML
+    lines: 19
+
+  - file: RuckR.Client.csproj
+    path: RuckR/Client/RuckR.Client.csproj
+    purpose: Client project definition
+    key_elements:
+      - element: SDK type
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:1
+        description: Microsoft.NET.Sdk.BlazorWebAssembly
+        language: XML
+      - element: Target framework
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:4
+        description: net8.0. References Shared project only. PWA service worker configured.
+        language: XML
+    lines: 23
+
+  - file: RuckR.Shared.csproj
+    path: RuckR/Shared/RuckR.Shared.csproj
+    purpose: Shared project definition
+    key_elements:
+      - element: SupportedPlatform browser
+        type: property
+        location: RuckR/Shared/RuckR.Shared.csproj:10
+        description: <SupportedPlatform Include="browser" /> — marks assembly WASM-compatible. Zero NuGet dependencies.
+        language: XML
+    lines: 12
+
+  - file: Index.razor
+    path: RuckR/Client/Pages/Index.razor
+    purpose: Home page at "/"
+    key_elements:
+      - element: SurveyPrompt
+        type: component
+        location: RuckR/Client/Pages/Index.razor:9
+        description: Placeholder survey component — standard Blazor template content.
+        language: Razor
+    lines: 9
+
+  - file: Counter.razor
+    path: RuckR/Client/Pages/Counter.razor
+    purpose: Counter demo page — shows client-only state management pattern
+    key_elements:
+      - element: currentCount
+        type: variable
+        location: RuckR/Client/Pages/Counter.razor:12
+        description: Private int field tracking count — demonstrates client-only state (no API call needed).
+        language: C#
+    lines: 18
+
+patterns_found:
+  - category: architecture
+    pattern: API Controller with in-memory static data
+    description: |
+      Controllers follow [ApiController] + [Route("[controller]")] pattern, inherit ControllerBase,
+      inject ILogger<T>, and store data in static fields (no database, no repository, no service layer).
+      URL path derives from controller class name: WeatherForecastController → /WeatherForecast.
+    examples:
+      - file: WeatherForecastController.cs
+        location: RuckR/Server/Controllers/WeatherForecastController.cs:6-33
+        snippet: |
+          [ApiController]
+          [Route("[controller]")]
+          public class WeatherForecastController : ControllerBase
+          {
+              private static readonly string[] Summaries = new[] { ... };
+              [HttpGet]
+              public IEnumerable<WeatherForecast> Get() { ... }
+          }
+    prevalence: common
+
+  - category: structure
+    pattern: Direct HttpClient injection in Blazor pages
+    description: |
+      Client pages inject HttpClient directly via @inject (not through a typed service wrapper).
+      API calls use GetFromJsonAsync<T>() with the controller route name as a relative URL.
+      BaseAddress is set in Client/Program.cs to the host origin — so the Blazor WASM app
+      calls back to its own server.
+    examples:
+      - file: FetchData.razor
+        location: RuckR/Client/Pages/FetchData.razor:3,43-46
+        snippet: |
+          @inject HttpClient Http
+          forecasts = await Http.GetFromJsonAsync<WeatherForecast[]>("WeatherForecast");
+    prevalence: common
+
+  - category: architecture
+    pattern: Blazor WASM hosted model (single server hosts API + serves WASM)
+    description: |
+      The Server project hosts both the ASP.NET Core API (controllers) AND serves the compiled
+      Blazor WebAssembly client. The client is never run standalone. All /api routes are handled
+      by controllers; any unmatched route falls back to index.html (the WASM SPA entry point).
+    examples:
+      - file: Program.cs (Server)
+        location: RuckR/Server/Program.cs:26-34
+        snippet: |
+          app.UseBlazorFrameworkFiles();
+          app.MapControllers();
+          app.MapFallbackToFile("index.html");
+    prevalence: common
+
+  - category: structure
+    pattern: Three-project solution (Server, Client, Shared)
+    description: |
+      Standard Blazor WASM hosted template structure. Shared holds models consumed by both
+      Server (serialization) and Client (deserialization). Server references both Client
+      (to serve WASM assets) and Shared. Client references Shared only.
+    examples:
+      - file: RuckR.Server.csproj
+        location: RuckR/Server/RuckR.Server.csproj:14-16
+        snippet: |
+          <ProjectReference Include="..\Client\RuckR.Client.csproj" />
+          <ProjectReference Include="..\Shared\RuckR.Shared.csproj" />
+    prevalence: common
+
+  - category: naming
+    pattern: Controller route name matches controller class name minus "Controller" suffix
+    description: |
+      The [Route("[controller]")] token automatically strips "Controller" from the class name.
+      WeatherForecastController → /WeatherForecast. A ProfileController would become /Profile.
+    examples:
+      - file: WeatherForecastController.cs
+        location: RuckR/Server/Controllers/WeatherForecastController.cs:7
+        snippet: "[Route(\"[controller]\")]"
+    prevalence: common
+
+  - category: structure
+    pattern: Page-level @using for Shared namespace
+    description: |
+      Client _Imports.razor does not include RuckR.Shared or RuckR.Shared.Models. Each page
+      that needs shared models adds its own @using directive at the top of the file.
+    examples:
+      - file: FetchData.razor
+        location: RuckR/Client/Pages/FetchData.razor:2
+        snippet: "@using RuckR.Shared"
+    prevalence: common
+
+  - category: error_handling
+    pattern: Null-check loading state
+    description: |
+      Pages check if fetched data is null and show a "<em>Loading...</em>" message during initial load.
+      No try/catch for HTTP errors exists in the current codebase — errors are unhandled.
+    examples:
+      - file: FetchData.razor
+        location: RuckR/Client/Pages/FetchData.razor:11-14
+        snippet: |
+          @if (forecasts == null)
+          {
+              <p><em>Loading...</em></p>
+          }
+    prevalence: common
+
+  - category: architecture
+    pattern: No authentication, no authorization
+    description: |
+      No auth middleware registered in Program.cs. No [Authorize] attributes anywhere.
+      No Identity, no JWT, no cookie auth. Profile will be unauthenticated — single shared profile.
+    examples:
+      - file: Program.cs (Server)
+        location: RuckR/Server/Program.cs:3-36
+        snippet: "// No AddAuthentication, UseAuthentication, or UseAuthorization calls"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: ProfileModel
+      responsibility: Data carrier for profile information shared between Server and Client
+      location: RuckR/Shared/Models/ProfileModel.cs
+      relationship_to_domain: Core domain model — must be expanded from 2 to 6+ properties
+    - component: ProfileController (to be created)
+      responsibility: REST API endpoint serving GET (read) and PUT (update) for the profile
+      location: RuckR/Server/Controllers/ProfileController.cs (new file)
+      relationship_to_domain: API surface — must mirror WeatherForecastController pattern
+    - component: Profile.razor
+      responsibility: Blazor page with view mode (display) and edit mode (form with validation)
+      location: RuckR/Client/Pages/Profile.razor
+      relationship_to_domain: UI layer — must be built from current 6-line stub
+    - component: NavMenu.razor
+      responsibility: Navigation link to /profile
+      location: RuckR/Client/Shared/NavMenu.razor
+      relationship_to_domain: Already configured — no changes needed
+  interfaces_used_by_domain:
+    - interface: HttpClient (System.Net.Http)
+      location: Injected via DI in Client/Program.cs:9
+      usage_pattern: GetFromJsonAsync<ProfileModel>("Profile") for GET, PutAsJsonAsync("Profile", model) for PUT
+    - interface: ILogger<ProfileController>
+      location: Injected via constructor in ProfileController
+      usage_pattern: Standard ASP.NET Core logging — log GET/PUT operations
+  data_flow_involving_domain: |
+    Client (Profile.razor) ──GET /Profile──▶ Server (ProfileController) ──returns ProfileModel──▶ Client renders view
+    Client (Profile.razor) ──PUT /Profile──▶ Server (ProfileController) ──updates static field──▶ returns 200 OK
+    All data stored in a static ProfileModel field on the controller — no persistence across server restarts.
+  key_relationships_to_domain:
+    - from: RuckR.Client.Pages.Profile.razor
+      to: RuckR.Shared.Models.ProfileModel
+      relationship: imports (deserializes GET response, serializes PUT request body)
+    - from: RuckR.Server.Controllers.ProfileController
+      to: RuckR.Shared.Models.ProfileModel
+      relationship: imports (returns from GET, accepts in PUT body)
+    - from: RuckR.Client.Pages.Profile.razor
+      to: System.Net.Http.HttpClient
+      relationship: injects (makes HTTP calls via DI)
+    - from: RuckR.Client.Shared.NavMenu.razor
+      to: RuckR.Client.Pages.Profile.razor
+      relationship: navigates (NavLink href="profile")
+
+related_technology_stack:
+  languages_used_in_domain: [C#, Razor, HTML, CSS (Bootstrap 5 via template)]
+  frameworks_used_in_domain:
+    - name: ASP.NET Core 8.0 (net8.0)
+      usage_in_domain: Server hosts API controllers and serves Blazor WASM assets
+    - name: Blazor WebAssembly 8.0
+      usage_in_domain: Client SPA runs in browser, renders Profile.razor component
+  libraries_used_in_domain:
+    - name: System.Net.Http.Json
+      purpose_in_domain: Extension methods (GetFromJsonAsync, PutAsJsonAsync) for typed JSON HTTP calls from client to server
+    - name: Microsoft.AspNetCore.Components.Forms
+      purpose_in_domain: EditForm, InputText, DataAnnotationsValidator for profile edit form validation
+    - name: System.ComponentModel.DataAnnotations
+      purpose_in_domain: [Required], [EmailAddress], [StringLength] attributes for ProfileModel validation
+  external_apis_used_in_domain:
+    - name: None
+      integration_point: N/A — all API calls are internal (client to self-hosted server)
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Controllers: PascalCase, suffixed with "Controller" (ProfileController)
+    - Models: PascalCase, suffixed with "Model" (ProfileModel)
+    - Razor pages: PascalCase.razor (Profile.razor)
+    - Route: lowercase, derived from controller name minus "Controller" (/profile)
+    - Properties: PascalCase, nullable reference types where data may be absent (string?)
+  structure_of_domain: |
+    - Models in RuckR.Shared/Models/ (ProfileModel.cs)
+    - Controller in RuckR.Server/Controllers/ (ProfileController.cs — new)
+    - Page in RuckR.Client/Pages/ (Profile.razor)
+    - No service layer, no repository pattern — controllers own their data in static fields
+  error_handling_in_domain: |
+    - Current codebase has NO error handling — FetchData.razor has no try/catch
+    - Profile page should add try/catch for HTTP errors (network failure, server error)
+    - PUT should return appropriate status codes (200 OK, 400 Bad Request if validation fails)
+    - Model validation via DataAnnotations with [ApiController] auto-returns 400 on invalid models
+  testing_in_domain: |
+    - No test projects exist in the solution
+    - No unit tests, integration tests, or E2E tests configured
+    - Profile feature testing would be manual only
+  documentation_in_domain: |
+    - Only AGENTS.md at solution root — contains architectural decisions and build instructions
+    - No XML doc comments on models or controllers
+    - No README beyond the Open Iconic CSS README
+
+related_dependencies:
+  internal:
+    - component: RuckR.Shared project
+      relationship_to_domain: ProfileModel lives here — consumed by both Client and Server
+      direction: outbound (both Client and Server depend on Shared)
+    - component: RuckR.Server project
+      relationship_to_domain: ProfileController will be added here — hosts the API
+      direction: outbound (Client calls into Server)
+    - component: RuckR.Client project
+      relationship_to_domain: Profile.razor exists here — consumes the API
+      direction: inbound (receives data from Server)
+  external:
+    - name: Microsoft.AspNetCore.Components.WebAssembly 8.0.0
+      purpose_for_domain: Core Blazor WASM framework for Profile.razor component rendering
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server 8.0.0
+      purpose_for_domain: Server-side middleware to serve compiled WASM assets to the browser
+    - name: System.Net.Http.Json (framework library)
+      purpose_for_domain: JSON serialization/deserialization for ProfileModel over HTTP
+    - name: Bootstrap 5 (via wwwroot/css)
+      purpose_for_domain: UI styling for profile view/edit forms (form-control, btn, card classes)
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: ProfileModel.Email
+      location: RuckR/Shared/Models/ProfileModel.cs (to be added)
+      concern: Email is PII — should be validated client-side and server-side. No encryption needed since this is a demo/single-user app with no persistence.
+    - area: ProfileController PUT endpoint
+      location: RuckR/Server/Controllers/ProfileController.cs (to be added)
+      concern: No auth — any client can overwrite the profile. Acceptable for a demo app with no auth infrastructure.
+  authentication_patterns_in_domain: |
+    None. No authentication configured anywhere. The profile is a single shared resource
+    accessible to anyone who can reach the server. This is appropriate for a demo/learning project.
+  authorization_patterns_in_domain: |
+    None. No [Authorize] attributes, no role checks, no policy-based authorization.
+    If auth were added later, the PUT endpoint should require authorization.
+  data_validation_in_domain: |
+    Client-side: EditForm + DataAnnotationsValidator + validation messages per field
+    Server-side: [ApiController] auto-validates model with DataAnnotations, returns 400 on failure
+    Double validation (client + server) is the standard ASP.NET Core pattern.
+
+testing_patterns:
+  framework: None — no test projects exist
+  coverage_areas: []
+  test_organization: N/A
+  mock_patterns: []
+
+open_questions:
+  - question: Should the profile data persist across server restarts?
+    context: The WeatherForecastController uses static in-memory data that resets on restart. Without a database, the profile will behave the same way — any edits will be lost when the server restarts.
+    type: decision_blocker
+    affects: [ProfileController data storage strategy]
+  - question: Is this a single-user profile or should there be support for multiple profiles?
+    context: No auth system exists. Without user identity, only a single shared profile makes sense. Adding multi-user profiles would require authentication infrastructure (Identity, JWT, cookies, etc.) which is out of scope.
+    type: research
+    affects: [ProfileModel design, ProfileController route design]
+  - question: Should ProfileModel be in the RuckR.Shared namespace (like WeatherForecast) or RuckR.Shared.Models?
+    context: WeatherForecast.cs is in namespace RuckR.Shared (root). ProfileModel.cs is in namespace RuckR.Shared.Models (sub-namespace). Inconsistency exists.
+    type: nice_to_know
+    affects: [Namespace consistency, @using directives in Profile.razor]
+  - question: What should the initial/default profile data be?
+    context: The profile starts empty (Name=null, Biography=null). Should the controller initialize defaults so the page shows something meaningful before the user edits?
+    type: nice_to_know
+    affects: [ProfileController GET initial state]
+
+gaps:
+  - area: Data persistence
+    description: No database, no file storage, no caching. Profile data lives only in server memory and disappears on restart. The WeatherForecastController has the same limitation — this is the established pattern for the project.
+    impact: research_blocker
+    affects: [ProfileController]
+  - area: Authentication
+    description: No identity system, no auth middleware, no user concept. Profile is a single shared resource with no access control. Adding auth would require significant infrastructure (Identity, JWT, cookies, user store).
+    impact: nice_to_know
+    affects: [ProfileController (future), Profile.razor (future)]
+  - area: Service layer
+    description: No service abstraction between controllers and data. Controllers own their data directly in static fields. For a single-controller demo this is fine; if the app grows, a service layer should be introduced.
+    impact: nice_to_know
+    affects: [ProfileController, future controllers]
+  - area: Error handling infrastructure
+    description: Current codebase has zero HTTP error handling (no try/catch in FetchData.razor). Profile page should introduce basic error handling patterns that future pages can copy.
+    impact: nice_to_know
+    affects: [Profile.razor]
+  - area: Testing
+    description: No test projects, no test frameworks, no test patterns established. Profile feature will not have automated tests.
+    impact: nice_to_know
+    affects: [All new files]

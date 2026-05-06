@@ -1,0 +1,1917 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: >
+  Transform RuckR from a Blazor WASM demo into a rugby-themed creature-collector game with
+  GPS integration, interactive Leaflet map, PVP battles via SignalR, and persistent storage
+  via SQL Server. Players explore real-world locations, create rugby pitches, discover and
+  collect auto-generated rugby player creatures, and challenge other players in async
+  stat-based PVP battles.
+created_at: "2026-05-06T01:00:00Z"
+created_by: gem-planner
+status: pending
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 7
+  total_dependencies: 84
+  risk_score: medium
+tldr: >
+  8 waves, 39 tasks. Foundation (NuGet + models) → Database + Identity → API Controllers →
+  Client State (Fluxor + services) → UI Pages (Map, Catalog, Collection) → SignalR Hub →
+  PVP Battle System → Polish. Uses MSSQL with geography spatial type per user clarification.
+  Fuzzy distance (±20%) applied client-side. Pitches are user-created with rate limiting
+  (5/day); players are auto-generated (500) with seed region auto-detected from first user's
+  GPS. CollectionModel is single source of truth for captures; PlayerModel is a shared template.
+  Challenge expiry via lazy-read (GET /battles/pending); capture GPS validated server-side
+  via SignalR in-memory position store.
+
+open_questions: []
+
+gaps:
+  - description: "No research on player auto-generation algorithms (name pools, stat distributions, position-based biases)"
+    refinement_requests:
+      - query: "How to generate 500 fictional rugby players with realistic name/stats distributions? Seed-based RNG with position-weighted stat curves?"
+        source_hint: "Define in W1-05 model or W2-05 seed data task"
+
+  - description: "Fluxor middleware pattern for SignalR event → Fluxor action dispatch not yet designed"
+    refinement_requests:
+      - query: "Should SignalRService dispatch Fluxor actions directly (via IDispatcher injection) or should components mediate?"
+        source_hint: "research_findings_map-rendering-state-management.yaml gap #2"
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "SQL Server LocalDB not available on developer machine"
+      likelihood: medium
+      impact: high
+      mitigation: "Provide Docker SQL Server connection string alternative in appsettings; document Docker setup in W2-02"
+
+    - scenario: "NetTopologySuite not compatible with Blazor WASM (Shared project has SupportedPlatform browser)"
+      likelihood: medium
+      impact: high
+      mitigation: "Reference only NetTopologySuite core (not IO.SqlServerBytes) in Shared; verify WASM compatibility during W1-01; fallback: move Point properties to a shared record struct using doubles"
+
+    - scenario: "Too many NuGet packages cause version conflicts at net10.0"
+      likelihood: medium
+      impact: medium
+      mitigation: "Add packages incrementally per wave; verify dotnet build after each wave; pin all versions to 10.0.7 for ASP.NET packages"
+
+    - scenario: "Leaflet map interop causes WASM memory leaks due to undisposed IJSObjectReference"
+      likelihood: low
+      impact: medium
+      mitigation: "Implement IAsyncDisposable on all map components; wrap DisposeAsync in try/catch for JSDisconnectedException"
+
+    - scenario: "SignalR connection drops on mobile browsers when tab backgrounds"
+      likelihood: high
+      impact: low
+      mitigation: "Use WithAutomaticReconnect() with exponential backoff; show connection status indicator; re-fetch battle state on reconnect"
+
+    - scenario: "Browser geolocation permission denied by user"
+      likelihood: medium
+      impact: medium
+      mitigation: "Graceful fallback: center map on default location; show manual coordinate entry; prompt to enable GPS with educational message"
+
+    - scenario: "Server restart wipes in-memory SignalR location data and group state"
+      likelihood: medium
+      impact: medium
+      mitigation: "Acceptable for MVP — ephemeral location data lost on restart; on reconnect, client re-sends position immediately (W6-03 OnConnectedAsync expects immediate UpdateLocation); active battle groups re-joined on Reconnected event (W6-04); battle data persists in SQL Server"
+
+    - scenario: "Poor GPS accuracy on device causes capture/spoofing issues"
+      likelihood: medium
+      impact: medium
+      mitigation: "Server-side position validation requires recent position (<60s) with accuracy < 50m; reject capture attempts with stale or inaccurate GPS data; use enableHighAccuracy:true in browser geolocation options"
+
+    - scenario: "First user in an empty area has no opponents for PVP"
+      likelihood: medium
+      impact: medium
+      mitigation: "Seed data generates 500 players distributed around first user's GPS region; pitches created by users expand the playable area; API /players/nearby shows players with distance; seed auto-detects from first user's location"
+
+  assumptions:
+    - "SQL Server LocalDB is installed on Windows dev machines (included with Visual Studio)"
+    - "NetTopologySuite core library is WASM-compatible (pure .NET, no native dependencies)"
+    - "ASP.NET Core Identity cookie auth flows automatically to same-origin SignalR connections"
+    - "Blazor WASM hosted model serves Leaflet static assets from Client/wwwroot"
+    - "OpenStreetMap tile server is accessible (free, no API key required)"
+    - "Browser Geolocation API is available in all target browsers (Chrome, Firefox, Edge, Safari)"
+    - "Single server instance is sufficient for MVP (no Redis backplane for SignalR)"
+
+implementation_specification:
+  code_structure: >
+    RuckR.Server/
+      Data/              — RuckRDbContext, migrations
+      Hubs/              — BattleHub
+      Services/          — BattleResolver, ProximityService, PlayerGeneratorService, LocationTracker, SeedService
+      Controllers/       — PlayersController, PitchesController, CollectionController, BattlesController, SeedController
+      Pages/             — Auth scaffold pages (Identity)
+    RuckR.Client/
+      Services/          — IGeolocationService, GeolocationService, MapService, SignalRClientService, ApiClientService
+      Store/             — Fluxor features: LocationFeature, GameFeature, InventoryFeature, BattleFeature, MapFeature
+      Pages/             — Map.razor, Catalog.razor, Collection.razor, PlayerGrid.razor, Battle.razor, PitchCreate.razor, BattleHistory.razor
+      Shared/            — NotificationToast.razor, ConnectionStatus.razor
+      wwwroot/js/        — geolocation.module.js, leaflet-map.module.js
+    RuckR.Shared/
+      Models/            — PlayerModel, PitchModel, CollectionModel, BattleModel, GeoPosition, DTOs
+
+  affected_areas:
+    - "RuckR.Server/Program.cs — Add DbContext, Identity, SignalR, spatial config"
+    - "RuckR.Client/Program.cs — Add Fluxor, SignalR client, typed HttpClient"
+    - "RuckR.Client/_Imports.razor — Add Fluxor, SignalR namespaces"
+    - "RuckR.Client/App.razor — Add StoreInitializer, set default route to /map"
+    - "RuckR.Client/wwwroot/index.html — Add Leaflet CSS/JS CDN links"
+    - "RuckR.Client/Shared/NavMenu.razor — Replace demo links with game nav"
+    - "appsettings.json — Add connection strings"
+
+  component_details:
+    - component: RuckRDbContext
+      responsibility: "EF Core DbContext with Identity + game DbSets; spatial column configuration"
+      interfaces: [IdentityDbContext, DbSet<PlayerModel>, DbSet<PitchModel>, DbSet<CollectionModel>, DbSet<BattleModel>]
+      dependencies:
+        - component: "PlayerModel, PitchModel, etc."
+          relationship: "referenced as entity types"
+      integration_points: ["ASP.NET Core DI", "EF Core migrations", "API controllers"]
+
+    - component: GeoPosition
+      responsibility: "Simple DTO for GPS coordinates with validation (lat: -90..90, lng: -180..180)"
+      interfaces: [Latitude, Longitude, Accuracy, Timestamp]
+      dependencies: []
+      integration_points: ["GeolocationService", "API DTOs", "SignalR messages"]
+
+    - component: ILocationTracker / LocationTracker
+      responsibility: "Singleton in-memory store for user GPS positions (ConcurrentDictionary<UserId, (GeoPosition, DateTime)>). Created in W3-03; populated by BattleHub UpdateLocation in W6-03. Used for server-side capture proximity validation."
+      interfaces: ["TryGetPosition(userId) -> (GeoPosition, DateTime)?", "UpdatePosition(userId, GeoPosition)"]
+      dependencies: []
+      integration_points: ["CollectionController (W3-03)", "BattleHub (W6-03)"]
+
+    - component: Leaflet JS Module
+      responsibility: "Encapsulates all Leaflet.js operations: init map, add/remove markers, pan to location, handle clicks"
+      interfaces: ["initMap(element, lat, lng, zoom)", "addPitchMarkers(markers[])", "addUserMarker(lat, lng)", "centerOn(lat, lng)", "dispose()"]
+      dependencies: []
+      integration_points: ["Map.razor via IJSObjectReference", "DotNet.invokeMethodAsync for callbacks"]
+
+    - component: BattleHub
+      responsibility: "SignalR hub for real-time PVP: challenge delivery, accept/decline, location sharing, battle resolution notifications, pitch discovery alerts"
+      interfaces: ["SendChallenge", "AcceptChallenge", "DeclineChallenge", "UpdateLocation", "JoinBattleGroup"]
+      dependencies:
+        - component: RuckRDbContext
+          relationship: "persists challenges and battle results"
+        - component: BattleResolver
+          relationship: "delegates battle resolution logic"
+        - component: ILocationTracker
+          relationship: "writes user GPS updates to in-memory store"
+      integration_points: ["SignalR middleware", "ASP.NET Core Identity [Authorize]"]
+
+contracts:
+  - from_task: W1-05
+    to_task: W2-01
+    interface: "PlayerModel, PitchModel, CollectionModel, BattleModel class definitions"
+    format: "C# classes in RuckR.Shared.Models namespace with properties as specified in W1-05 acceptance criteria"
+
+  - from_task: W1-06
+    to_task: W2-01
+    interface: "ChallengeRequest, BattleResult, DistanceBucket DTOs"
+    format: "C# record/class types in RuckR.Shared.Models namespace"
+
+  - from_task: W2-01
+    to_task: W3-01
+    interface: "RuckRDbContext with DbSet<PlayerModel> Players, spatial query capability"
+    format: "EF Core DbContext injectable via DI; Players DbSet with IsWithinDistance query support"
+
+  - from_task: W2-01
+    to_task: W3-02
+    interface: "RuckRDbContext with DbSet<PitchModel> Pitches, spatial geography column"
+    format: "EF Core DbContext injectable via DI; Pitches DbSet with IsWithinDistance query support"
+
+  - from_task: W2-01
+    to_task: W3-03
+    interface: "RuckRDbContext with DbSet<CollectionModel> Collections, Identity user FK"
+    format: "EF Core DbContext injectable via DI; Collections DbSet with user-scoped queries"
+
+  - from_task: W2-01
+    to_task: W3-04
+    interface: "RuckRDbContext with DbSet<BattleModel> Battles, Identity user FKs"
+    format: "EF Core DbContext injectable via DI; Battles DbSet with status-based queries"
+
+  - from_task: W3-03
+    to_task: W6-03
+    interface: "ILocationTracker / LocationTracker singleton service"
+    format: "C# interface + class in RuckR.Server.Services; ConcurrentDictionary<string, (GeoPosition, DateTime)> store; BattleHub injects and calls UpdatePosition() on UpdateLocation hub method"
+
+  - from_task: W3-01
+    to_task: W5-02
+    interface: "GET /players (catalog), GET /players/{id} (detail), GET /players/nearby?lat=&lng=&radius= (proximity)"
+    format: "REST API returning JSON arrays of PlayerModel"
+
+  - from_task: W3-02
+    to_task: W5-01
+    interface: "GET /pitches/nearby?lat=&lng=&radius=, POST /pitches (create)"
+    format: "REST API returning JSON arrays of PitchModel with computed Distance field"
+
+  - from_task: W3-03
+    to_task: W5-03
+    interface: "GET /collection (user's collection), POST /collection/capture (add player)"
+    format: "REST API returning JSON arrays of CollectionModel with included PlayerModel"
+
+  - from_task: W4-05
+    to_task: W5-01
+    interface: "IMapService: InitMapAsync, AddPitchMarkersAsync, AddUserMarkerAsync, CenterOnAsync, DisposeAsync"
+    format: "C# service interface in RuckR.Client.Services; implementation wraps leaflet-map.module.js"
+
+  - from_task: W4-04
+    to_task: W5-01
+    interface: "IGeolocationService: GetCurrentPositionAsync, StartWatchAsync, StopWatch, PositionChanged event"
+    format: "C# service interface; fires PositionChanged(GeoPosition) event consumed by Map.razor"
+
+  - from_task: W6-03
+    to_task: W7-02
+    interface: "BattleHub methods: SendChallenge, AcceptChallenge, DeclineChallenge, JoinBattleGroup"
+    format: "SignalR Hub methods callable from client via HubConnection.SendAsync"
+
+  - from_task: W6-04
+    to_task: W6-05
+    interface: "ISignalRClientService: ConnectionState, OnChallengeReceived event, OnBattleResolved event"
+    format: "C# service interface; fires events consumed by NotificationToast and Battle.razor"
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Foundation — NuGet packages + core models (no internal deps)
+  # ========================================================================
+  - id: W1-01
+    title: "Add NuGet packages to Shared project"
+    description: >
+      Add NetTopologySuite NuGet package (latest 2.x) to RuckR.Shared.csproj for
+      Point geometry type. Verify WASM compatibility (only core NTS, not IO.SqlServerBytes).
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Shared/RuckR.Shared.csproj
+        description: "Target project file — add NetTopologySuite PackageReference"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 5
+    focus_area: spatial_sqlserver
+    tech_stack: [.NET 10, NetTopologySuite]
+    verification:
+      - "dotnet build RuckR.Shared.csproj succeeds"
+      - "NetTopologySuite.Geometries.Point is accessible in Shared project"
+      - "dotnet build RuckR.Client.csproj succeeds (Shared is a dependency, must compile for WASM)"
+    acceptance_criteria:
+      - "NetTopologySuite >= 2.6.0 added to RuckR.Shared.csproj"
+      - "Shared project compiles with browser SupportedPlatform"
+      - "No SqlServerBytes or Microsoft.Data.SqlClient dependencies leaked into Shared"
+
+  - id: W1-02
+    title: "Add NuGet packages to Server project"
+    description: >
+      Add EF Core + Identity + Spatial + SignalR packages to RuckR.Server.csproj:
+      Microsoft.EntityFrameworkCore.SqlServer (10.0.7),
+      Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite (10.0.7),
+      Microsoft.AspNetCore.Identity.EntityFrameworkCore (10.0.7),
+      Microsoft.EntityFrameworkCore.Design (10.0.7, PrivateAssets=all).
+      SignalR server is built into ASP.NET Core shared framework — no extra NuGet needed.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Server/RuckR.Server.csproj
+        description: "Target project file — add 4 PackageReference elements"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 12
+    focus_area: spatial_sqlserver
+    tech_stack: [.NET 10, EF Core 10.0.7, ASP.NET Core Identity, NetTopologySuite]
+    verification:
+      - "dotnet build RuckR.Server.csproj succeeds"
+      - "dotnet list package --project RuckR/Server shows all 4 new packages at 10.0.7"
+    acceptance_criteria:
+      - "Microsoft.EntityFrameworkCore.SqlServer 10.0.7 added"
+      - "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite 10.0.7 added"
+      - "Microsoft.AspNetCore.Identity.EntityFrameworkCore 10.0.7 added"
+      - "Microsoft.EntityFrameworkCore.Design 10.0.7 added with PrivateAssets=all"
+
+  - id: W1-03
+    title: "Add NuGet packages to Client project"
+    description: >
+      Add Fluxor state management and SignalR client packages to RuckR.Client.csproj:
+      Fluxor (latest 6.x), Fluxor.Blazor.Web (latest 6.x),
+      Fluxor.Blazor.Web.ReduxDevTools (latest 6.x, optional dev tooling),
+      Microsoft.AspNetCore.SignalR.Client (10.0.7).
+      Also add Leaflet.js CSS and JS CDN links to wwwroot/index.html.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/RuckR.Client.csproj
+        description: "Target project file — add 4 PackageReference elements"
+      - path: RuckR/Client/wwwroot/index.html
+        description: "Add Leaflet CSS <link> in <head>, Leaflet JS <script> before </body>"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 16
+    focus_area: map-rendering-state-management
+    tech_stack: [.NET 10, Fluxor 6.x, SignalR Client 10.0.7, Leaflet 1.9.4]
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Leaflet CSS/JS links present in index.html"
+    acceptance_criteria:
+      - "Fluxor, Fluxor.Blazor.Web, Fluxor.Blazor.Web.ReduxDevTools packages added"
+      - "Microsoft.AspNetCore.SignalR.Client 10.0.7 added"
+      - "Leaflet 1.9.4 CSS loaded from CDN in index.html <head>"
+      - "Leaflet 1.9.4 JS loaded from CDN in index.html before </body>"
+
+  - id: W1-04
+    title: "Create GeoPosition record and Haversine distance helper"
+    description: >
+      Create GeoPosition.cs in RuckR.Shared.Models — a simple DTO record for GPS coordinates
+      with latitude (-90..90), longitude (-180..180), accuracy meters, and timestamp.
+      Add a static HaversineDistance helper method for client-side distance calculations.
+      Also create DistanceBucket enum: Within50m, Within100m, Within250m, Within500m, Beyond.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Shared/Models/ProfileModel.cs
+        description: "Canonical model pattern — block-scoped namespace, DataAnnotations"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 60
+    focus_area: geolocation_blazor_wasm
+    tech_stack: [.NET 10, C# record types]
+    research_sources:
+      - research_findings_geolocation_blazor_wasm.yaml
+    verification:
+      - "GeoPosition record has Latitude, Longitude, Accuracy, Timestamp properties"
+      - "HaversineDistance method returns correct distance (±0.5%) for known coordinates"
+      - "DistanceBucket enum has 5 values matching PRD spec"
+    acceptance_criteria:
+      - "GeoPosition record with range validation (lat -90..90, lng -180..180)"
+      - "static HaversineDistance(GeoPosition a, GeoPosition b) returns double meters"
+      - "DistanceBucket enum: Within50m, Within100m, Within250m, Within500m, Beyond"
+      - "Helper method: GetDistanceBucket(double meters) -> DistanceBucket"
+
+  - id: W1-05
+    title: "Create core game entity models"
+    description: >
+      Create PlayerModel.cs and PitchModel.cs in RuckR.Shared.Models. PlayerModel is a
+      shared template (many users can own the same player type). It has: Id, Name,
+      Position (enum: Prop, Hooker, Lock, Flanker, ScrumHalf, FlyHalf, Centre, Wing,
+      Fullback), Team (string), Speed/Strength/Agility/Kicking (int 1-99), Rarity
+      (enum: Common, Uncommon, Rare, Epic, Legendary), SpawnLocation (Point geography,
+      nullable), Bio (string). NOTE: PlayerModel does NOT have CapturedByUserId —
+      capture ownership is tracked exclusively via CollectionModel (W1-06).
+      PitchModel has: Id, Name, Location (Point geography, SRID 4326), CreatorUserId,
+      Type (enum: Standard, Training, Stadium), CreatedAt (DateTime).
+      Follow block-scoped namespace convention. Important: NTS Point X=longitude, Y=latitude.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-01]
+    context_files:
+      - path: RuckR/Shared/Models/ProfileModel.cs
+        description: "Canonical model pattern"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 120
+    focus_area: spatial_sqlserver
+    tech_stack: [.NET 10, NetTopologySuite, System.ComponentModel.DataAnnotations]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "PlayerModel compiles with all properties including NetTopologySuite.Geometries.Point"
+      - "PitchModel compiles with all properties including Point Location with SRID 4326"
+      - "Position and Rarity enums defined with correct values"
+      - "Block-scoped namespace RuckR.Shared.Models used"
+    acceptance_criteria:
+      - "PlayerModel: Id (int PK), Name (string req), Position (enum), Team (string), Speed/Strength/Agility/Kicking (int 1-99), Rarity (enum), SpawnLocation (Point?), Bio (string)"
+      - "PlayerModel does NOT include CapturedByUserId — capture ownership is via CollectionModel only"
+      - "PitchModel: Id (int PK), Name (string req, max 200), Location (Point req, geography), CreatorUserId (string req), Type (enum), CreatedAt (DateTime)"
+      - "PlayerPosition enum: Prop, Hooker, Lock, Flanker, ScrumHalf, FlyHalf, Centre, Wing, Fullback"
+      - "PlayerRarity enum: Common, Uncommon, Rare, Epic, Legendary (with weight distribution 50/25/15/7/3)"
+      - "PitchType enum: Standard, Training, Stadium"
+      - "All NTS Points default SRID to 4326"
+
+  - id: W1-06
+    title: "Create supporting models and DTOs"
+    description: >
+      Create CollectionModel.cs, BattleModel.cs, and DTOs in RuckR.Shared.Models.
+      CollectionModel: Id, UserId, PlayerId, Player (nav prop), CapturedAt, IsFavorite,
+      CapturedAtPitchId (int?). Database-level unique index on (UserId, PlayerId) to
+      prevent duplicate captures.
+      BattleModel: Id, ChallengerId, OpponentId, ChallengerPlayerId, OpponentPlayerId,
+      Status (enum: Pending, Accepted, Completed, Declined, Expired), WinnerId (string?),
+      CreatedAt, ResolvedAt (DateTime?), [Timestamp] public byte[] RowVersion (EF Core
+      concurrency token).
+      DTOs: ChallengeRequest (opponentUsername, playerId), ChallengeNotification (challengerUsername,
+      playerName, challengeId), BattleResult (winnerUsername, loserUsername, battle details),
+      NearbyPlayerDto (playerId, name, position, rarity, fuzzyDistanceMeters, username).
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-05]
+    context_files:
+      - path: RuckR/Shared/Models/ProfileModel.cs
+        description: "Canonical model pattern"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 150
+    focus_area: signalr-pvp-battles
+    tech_stack: [.NET 10, System.ComponentModel.DataAnnotations]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "CollectionModel has FK relationships to Identity user and PlayerModel"
+      - "BattleModel status enum matches state machine: Pending→Accepted→Completed|Declined|Expired"
+      - "All DTOs are JSON-serializable (public get/set, parameterless constructor or record)"
+    acceptance_criteria:
+      - "CollectionModel: Id, UserId, PlayerId, Player (nav), CapturedAt, IsFavorite, CapturedAtPitchId"
+      - "Unique index on CollectionModel (UserId, PlayerId) enforced in DbContext OnModelCreating"
+      - "BattleModel: Id, ChallengerId, OpponentId, ChallengerPlayerId, OpponentPlayerId, Status, WinnerId, CreatedAt, ResolvedAt"
+      - "BattleModel has [Timestamp] public byte[] RowVersion for optimistic concurrency control"
+      - "BattleStatus enum: Pending, Accepted, Completed, Declined, Expired"
+      - "ChallengeRequest DTO: opponentUsername (string), selectedPlayerId (int)"
+      - "ChallengeNotification DTO: challengerUsername, playerName, playerPosition, playerRarity, challengeId"
+      - "BattleResult DTO: winnerUsername, loserUsername, winnerPlayerName, loserPlayerName, method (string), createdAt"
+      - "NearbyPlayerDto: playerId, name, position, rarity, fuzzyDistanceMeters, ownerUsername"
+
+  - id: W1-07
+    title: "Update PRD and AGENTS.md to reflect MSSQL database decision"
+    description: >
+      Update PRD.yaml: replace all PostgreSQL + PostGIS references with SQL Server geography
+      type via NetTopologySuite. Update the tldr, scope description, US-02 acceptance criteria,
+      constraints section, ADR-004 title/decision/rationale, and risks section. Update
+      AGENTS.md ADR-004: change from "PostgreSQL + PostGIS for geospatial queries" to
+      "SQL Server geography type via NetTopologySuite for geospatial queries (proximity searches,
+      pitch discovery)". Update rationale to reflect MSSQL with NTS. Change ADR-004
+      consequences from "PostgreSQL server installation" to "SQL Server LocalDB or Docker
+      SQL Server". This is a documentation task — no code changes. Must happen early so
+      subsequent implementer tasks read corrected specifications.
+    wave: 1
+    agent: gem-documentation-writer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml
+        description: "Update PostgreSQL references to SQL Server"
+      - path: AGENTS.md
+        description: "Update ADR-004 to reflect MSSQL + NetTopologySuite"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 60
+    focus_area: null
+    tech_stack: [YAML, Markdown]
+    task_type: documentation
+    audience: developers
+    verification:
+      - "PRD.yaml no longer references PostgreSQL or PostGIS"
+      - "AGENTS.md ADR-004 references SQL Server geography + NetTopologySuite"
+      - "All constraints and user stories are consistent with MSSQL"
+    acceptance_criteria:
+      - "PRD.yaml tldr updated: 'SQL Server with geography spatial type' replaces 'PostgreSQL + PostGIS'"
+      - "PRD.yaml scope.in_scope: 'SQL Server + geography type' replaces 'PostgreSQL + PostGIS'"
+      - "PRD.yaml US-02 acceptance criteria: 'SQL Server with geography spatial columns' replaces 'PostgreSQL + PostGIS'"
+      - "PRD.yaml constraints: 'SQL Server database required' replaces 'PostgreSQL database required'"
+      - "PRD.yaml ADR-004: title, decision, rationale, consequences all updated to MSSQL"
+      - "PRD.yaml risks: 'SQL Server setup' replaces 'PostgreSQL + PostGIS setup complexity'"
+      - "AGENTS.md ADR-004: 'SQL Server geography type via NetTopologySuite for geospatial queries' replaces PostgreSQL+PostGIS"
+      - "AGENTS.md ADR-004 rationale updated to reflect MSSQL choice with NTS"
+      - "AGENTS.md ADR-004 consequences updated: 'SQL Server LocalDB or Docker' replaces 'PostgreSQL server installation'"
+
+  # ========================================================================
+  # WAVE 2: Database & Authentication
+  # ========================================================================
+  - id: W2-01
+    title: "Create RuckRDbContext with Identity and spatial configuration"
+    description: >
+      Create RuckR.Server/Data/RuckRDbContext.cs inheriting from IdentityDbContext.
+      Add DbSets: Players, Pitches, Collections, Battles. Configure spatial column mapping:
+      PitchModel.Location → geography, PlayerModel.SpawnLocation → geography (nullable).
+      Configure relationships: Collection.UserId → IdentityUser, Collection.PlayerId → Player,
+      Battle.ChallengerId/OpponentId → IdentityUser, Battle.ChallengerPlayerId/OpponentPlayerId → Player.
+      Set delete behavior to Restrict for battle FKs. Configure unique index on
+      CollectionModel (UserId, PlayerId) via HasIndex().IsUnique().
+      Configure BattleModel.RowVersion as concurrency token via IsRowVersion().
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-02, W1-05, W1-06]
+    context_files:
+      - path: RuckR/Shared/Models/ProfileModel.cs
+        description: "Model pattern reference"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 110
+    focus_area: spatial_sqlserver
+    tech_stack: [EF Core 10, ASP.NET Core Identity, NetTopologySuite, SQL Server geography]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "RuckRDbContext inherits IdentityDbContext with default IdentityUser"
+      - "OnModelCreating configures spatial columns with .HasColumnType(\"geography\")"
+      - "All 6 DbSets (Users from Identity + 4 game tables) are accessible"
+      - "dotnet build succeeds"
+    acceptance_criteria:
+      - "DbContext inherits IdentityDbContext<IdentityUser>"
+      - "DbSet<PlayerModel> Players, DbSet<PitchModel> Pitches, DbSet<CollectionModel> Collections, DbSet<BattleModel> Battles"
+      - "PitchModel.Location mapped to SQL geography type"
+      - "PlayerModel.SpawnLocation mapped to nullable SQL geography type"
+      - "FK relationships: Collection→User, Collection→Player, Battle→Challenger, Battle→Opponent"
+      - "DeleteBehavior.Restrict on battle user FKs to prevent cascade issues"
+      - "Unique index on CollectionModel (UserId, PlayerId) via .HasIndex(c => new { c.UserId, c.PlayerId }).IsUnique()"
+      - "BattleModel.RowVersion configured as concurrency token via .Property(b => b.RowVersion).IsRowVersion()"
+
+  - id: W2-02
+    title: "Configure Identity, DbContext, and connection string in Server"
+    description: >
+      Update RuckR.Server/Program.cs: AddDbContext<RuckRDbContext> with
+      UseSqlServer(connectionString, x => x.UseNetTopologySuite()). AddDefaultIdentity<IdentityUser>()
+      with AddEntityFrameworkStores<RuckRDbContext>(). Add authorization middleware:
+      app.UseAuthentication() + app.UseAuthorization() before app.UseRouting().
+      Add connection string to appsettings.Development.json for LocalDB and
+      appsettings.json for production placeholder. Add Docker SQL Server alternative in comments.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-02, W2-01]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Server entry point — add DI registrations and middleware"
+      - path: RuckR/Server/appsettings.json
+        description: "Add ConnectionStrings section"
+      - path: RuckR/Server/appsettings.Development.json
+        description: "Add LocalDB connection string"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 50
+    focus_area: spatial_sqlserver
+    tech_stack: [ASP.NET Core 10, EF Core, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "dotnet build succeeds"
+      - "app starts without errors (database connection deferred until migration applied)"
+      - "Connection string present in appsettings.Development.json"
+    acceptance_criteria:
+      - "builder.Services.AddDbContext<RuckRDbContext> with UseSqlServer + UseNetTopologySuite()"
+      - "builder.Services.AddDefaultIdentity<IdentityUser>().AddEntityFrameworkStores<RuckRDbContext>()"
+      - "app.UseAuthentication() added before app.UseAuthorization()"
+      - "LocalDB connection string: Server=(localdb)\\MSSQLLocalDB;Database=RuckR;Trusted_Connection=True;"
+      - "Docker SQL Server connection string provided in comments for cross-platform devs"
+      - "appsettings.json has ConnectionStrings.RuckRDbContext placeholder"
+
+  - id: W2-03
+    title: "Scaffold ASP.NET Core Identity auth pages"
+    description: >
+      Scaffold Identity Razor pages into RuckR.Server for login, register, and logout.
+      This uses the built-in Identity scaffold: Pages/Account/Login, Register, LogOut.
+      Configure cookie options: LoginPath = /Identity/Account/Login, AccessDeniedPath,
+      cookie expiration (14 days). Ensure auth pages use the same layout and Bootstrap 5 styling.
+      Add Blazor AuthenticationStateProvider wire-up for client-side auth awareness.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-02]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Identity configuration location"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 80
+    focus_area: null
+    tech_stack: [ASP.NET Core Identity, Razor Pages, Bootstrap 5]
+    verification:
+      - "/Identity/Account/Login page renders login form"
+      - "/Identity/Account/Register page renders registration form"
+      - "User can register and log in via browser"
+      - "Auth cookie set after successful login"
+    acceptance_criteria:
+      - "Login page at /Identity/Account/Login with username + password fields"
+      - "Register page at /Identity/Account/Register with username + password + confirm password"
+      - "Logout functionality clears auth cookie"
+      - "Auth pages styled with Bootstrap 5 (matching existing app theme)"
+      - "Blazor client can access AuthenticationStateProvider for auth-aware UI"
+      - "app.UseAuthorization() middleware active"
+
+  - id: W2-04
+    title: "Create initial EF Core migration with spatial indexes"
+    description: >
+      Run dotnet ef migrations add InitialCreate to generate migration for all tables
+      (Identity tables + Players + Pitches + Collections + Battles). Add raw SQL in
+      migration Up() for spatial indexes on PitchModel.Location and
+      PlayerModel.SpawnLocation using GEOGRAPHY_AUTO_GRID tessellation.
+      Apply migration to LocalDB. Verify tables exist with correct spatial column types.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W2-02]
+    context_files:
+      - path: RuckR/Server/Data/RuckRDbContext.cs
+        description: "DbContext to generate migration from"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 80
+    focus_area: spatial_sqlserver
+    tech_stack: [EF Core Migrations, T-SQL, SQL Server geography]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "dotnet ef migrations add InitialCreate succeeds"
+      - "dotnet ef database update creates all tables in LocalDB"
+      - "sp_help 'Pitches' shows Location column as geography type"
+      - "Spatial index IX_Pitches_Location exists (verify via SSMS or sqlcmd)"
+    acceptance_criteria:
+      - "EF Core migration creates Identity tables + Players + Pitches + Collections + Battles"
+      - "PitchModel.Location column is geography type (not nvarchar or varbinary)"
+      - "PlayerModel.SpawnLocation column is nullable geography type"
+      - "CREATE SPATIAL INDEX on Pitches(Location) with GEOGRAPHY_AUTO_GRID, CELLS_PER_OBJECT = 16"
+      - "CREATE SPATIAL INDEX on Players(SpawnLocation) for nearest-player queries"
+      - "Migration can be applied and rolled back cleanly"
+      - "Unique index on Collections(UserId, PlayerId) included in migration"
+      - "BattleModel.RowVersion column present as rowversion/timestamp type"
+
+  - id: W2-05
+    title: "Create seed data — rugby name pools and player generation service"
+    description: >
+      Create a PlayerGeneratorService in RuckR.Server.Services that uses a seed-based
+      RNG to generate fictional rugby players. Define name pools: ~50 first names,
+      ~50 last names (rugby-themed, e.g., "Ruck", "Maul", "Tackle", plus common names).
+      Define position-based stat distributions: Props get high Strength, Wings get
+      high Speed and Agility, FlyHalves get high Kicking.
+      Generate ~500 initial players (configurable via appsettings Seed.PlayerCount,
+      default 500) with random stats and distribute across a region auto-detected from
+      the first user's GPS location. Create a SeedService with an initialization endpoint
+      or startup check: if the Players table is empty, seed the region around a provided
+      lat/lng (the first user's GPS position). Configurable via appsettings.json Seed section:
+      Seed.SeedValue, Seed.PlayerCount (default 500), Seed.RegionRadiusMeters (default 50000).
+      No hardcoded London — region is dynamically determined from first user's location.
+    wave: 2
+    agent: gem-implementer
+    prototype: true
+    priority: medium
+    status: pending
+    dependencies: [W2-01, W1-05]
+    context_files:
+      - path: RuckR/Server/Data/RuckRDbContext.cs
+        description: "DbContext for seed data insertion"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 300
+    focus_area: null
+    tech_stack: [C#, System.Random, EF Core seed data]
+    verification:
+      - "PlayerGeneratorService.GeneratePlayers(count) returns list of PlayerModel"
+      - "Stats are within valid ranges (1-99) with position-appropriate biases"
+      - "Rarity distribution approximates target (Common ~50%, Uncommon ~25%, Rare ~15%, Epic ~7%, Legendary ~3%)"
+      - "Seed data generation produces same players given same seed"
+    acceptance_criteria:
+      - "PlayerGeneratorService with seed-based RNG (System.Random with fixed seed)"
+      - "Name pools: 50 first names + 50 last names (rugby-themed)"
+      - "Position-based stat distribution: Props (high Strength 60-99), Wings (high Speed 60-99, Agility 50-99), FlyHalves (high Kicking 60-99)"
+      - "Rarity distribution configurable: default 50/25/15/7/3%"
+      - "Seed defaults to 500 players (configurable via appsettings Seed.PlayerCount)"
+      - "Auto-detected region: first user's GPS location becomes the seed center"
+      - "SeedService checks if Players table is empty before generating; if not empty, skip"
+      - "Players distributed randomly within RegionRadiusMeters of the seed center"
+      - "Seed settings in appsettings.json: Seed.SeedValue, Seed.PlayerCount (500), Seed.RegionRadiusMeters (50000)"
+      - "No hardcoded region — dynamically determined from first user's location"
+
+  # ========================================================================
+  # WAVE 3: API Controllers
+  # ========================================================================
+  - id: W3-01
+    title: "Create PlayersController"
+    description: >
+      Create RuckR.Server.Controllers.PlayersController with [ApiController] + [Route("[controller]")].
+      Endpoints: GET /players (catalog — all players, supports ?position=&rarity=&name= filters),
+      GET /players/{id} (single player detail), GET /players/nearby?lat=&lng=&radius=
+      (proximity query using IsWithinDistance on PlayerModel.SpawnLocation, returns sorted
+      by distance). Follow existing block-scoped namespace pattern from ProfileController.
+      Catalog endpoints are public for MVP (no auth required for browsing).
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W2-04]
+    context_files:
+      - path: RuckR/Server/Controllers/ProfileController.cs
+        description: "Canonical controller pattern"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: spatial_sqlserver
+    tech_stack: [ASP.NET Core, EF Core spatial queries, NetTopologySuite]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "GET /players returns list of all players"
+      - "GET /players?position=Prop returns only Props"
+      - "GET /players?rarity=Epic returns only Epic"
+      - "GET /players/nearby?lat=51.5&lng=-0.1&radius=5000 returns nearby players"
+      - "Spatial query uses IsWithinDistance (server-side, efficient)"
+      - "No sensitive user data exposed in responses"
+    acceptance_criteria:
+      - "[ApiController, Route(\"[controller]\")] block-scoped namespace"
+      - "GET /players returns PlayerModel[] with optional filters (position, rarity, name search)"
+      - "GET /players/{id} returns single PlayerModel or 404"
+      - "GET /players/nearby?lat={lat}&lng={lng}&radius={meters} uses EF Core IsWithinDistance"
+      - "Nearby results include computed DistanceMeters property"
+      - "Lat/lng parameters validated (range checks -90..90, -180..180)"
+      - "Max radius capped at 50,000m to prevent full table scans"
+      - "Security: input validation on all parameters; no sensitive data in responses; EF Core parameterized queries prevent SQL injection"
+
+  - id: W3-02
+    title: "Create PitchesController"
+    description: >
+      Create RuckR.Server.Controllers.PitchesController. Endpoints:
+      POST /pitches (create pitch — requires auth, accepts {name, latitude, longitude, type}),
+      GET /pitches/nearby?lat=&lng=&radius= (proximity query returning pitches with distance),
+      GET /pitches/{id} (single pitch detail),
+      GET /pitches (all pitches, paginated). Validate pitch name uniqueness within 100m radius.
+      Enforce rate limiting: max 5 pitches per user per day (in-memory token bucket by userId).
+      User must be authenticated to create pitches.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W2-04]
+    context_files:
+      - path: RuckR/Server/Controllers/ProfileController.cs
+        description: "Canonical controller pattern"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 150
+    focus_area: spatial_sqlserver
+    tech_stack: [ASP.NET Core, EF Core spatial, NetTopologySuite Point]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "POST /pitches creates a new pitch for authenticated user"
+      - "GET /pitches/nearby returns pitches within radius with distance"
+      - "Pitch creation validates lat/lng range"
+      - "Duplicate pitch name within 100m returns 409 Conflict"
+      - "Rate limit enforced: 6th pitch within 24h returns 429 Too Many Requests"
+    acceptance_criteria:
+      - "[ApiController, Route(\"[controller]\")] with [Authorize] on POST"
+      - "POST /pitches: accepts {name, latitude, longitude, type}, creates PitchModel, returns 201"
+      - "GET /pitches/nearby?lat=&lng=&radius= returns pitches with computed Distance field"
+      - "GET /pitches/{id} returns single pitch or 404"
+      - "GET /pitches returns paginated list (page, pageSize params)"
+      - "Lat/lng validation: -90..90, -180..180"
+      - "Name uniqueness check within 100m radius (IsWithinDistance on existing pitches)"
+      - "Rate limiting: max 5 pitches per user per day (ConcurrentDictionary<UserId, List<DateTime>> with cleanup)"
+      - "Security: [Authorize] on POST; input validation on all parameters; no sensitive data in error responses"
+
+  - id: W3-03
+    title: "Create CollectionController and LocationTracker service"
+    description: >
+      Create RuckR.Server.Services.ILocationTracker interface and LocationTracker singleton
+      service with ConcurrentDictionary<string, (GeoPosition position, DateTime timestamp)>
+      for in-memory user position storage. This service is created here to enable server-side
+      GPS validation for capture; BattleHub (W6-03) will populate it via UpdateLocation.
+      Create RuckR.Server.Controllers.CollectionController. All endpoints require [Authorize].
+      Endpoints: GET /collection (user's collected players with player details),
+      POST /collection/capture (capture a player at a pitch — requires {playerId, pitchId}).
+      Capture validation: (1) user's server-authoritative position from ILocationTracker
+      must be recent (<60s old) with accuracy < 50m, else reject 400 "GPS position required";
+      (2) user must be within 100m of pitch via IsWithinDistance;
+      (3) player must spawn at this pitch;
+      (4) user must not already own this player (checked via unique constraint).
+      Use a database transaction with the unique index on CollectionModel (UserId, PlayerId)
+      to prevent duplicate captures (race condition). Rate limit: max 20 captures per hour
+      per user (in-memory token bucket). CollectionModel captures are the single source of
+      truth — PlayerModel has no CapturedByUserId.
+      NOTE: BattleHub location tracking (W6-03) must be active for capture to work;
+      client must connect SignalR and send UpdateLocation before attempting capture.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W2-04, W3-02]
+    context_files:
+      - path: RuckR/Server/Controllers/ProfileController.cs
+        description: "Canonical controller pattern"
+    estimated_effort: large
+    estimated_files: 2
+    estimated_lines: 180
+    focus_area: spatial_sqlserver
+    tech_stack: [ASP.NET Core, EF Core, ASP.NET Core Identity, System.Collections.Concurrent]
+    research_sources:
+      - research_findings_spatial_sqlserver.yaml
+    verification:
+      - "GET /collection returns user's collected players (empty for new user)"
+      - "POST /collection/capture adds player to user's collection"
+      - "Duplicate capture returns 409 Conflict (unique constraint)"
+      - "Capture with stale/missing GPS returns 400 Bad Request"
+      - "Capture outside 100m proximity returns 400 Bad Request"
+      - "LocationTracker.TryGetPosition returns recent position or null"
+    acceptance_criteria:
+      - "ILocationTracker interface: TryGetPosition(userId) -> (GeoPosition, DateTime)?, UpdatePosition(userId, GeoPosition)"
+      - "LocationTracker singleton: ConcurrentDictionary<string, (GeoPosition, DateTime)> with TryGetPosition returning null if position > 60s old"
+      - "[Authorize] on all collection endpoints"
+      - "GET /collection returns CollectionModel[] with included PlayerModel navigation property"
+      - "POST /collection/capture: validates server-side GPS position from ILocationTracker (must be <60s, accuracy <50m)"
+      - "POST /collection/capture: validates user proximity to pitch (≤100m via IsWithinDistance)"
+      - "Capture checks: player exists at pitch, not already owned by user (unique constraint), user within range"
+      - "Capture uses EF Core transaction with unique constraint on (UserId, PlayerId) to prevent race-condition duplicates"
+      - "Rate limiting: max 20 captures per hour per user (ConcurrentDictionary-based token bucket)"
+      - "Returns 201 Created with CollectionModel on success"
+      - "Returns 400 if GPS missing/stale/inaccurate, 400 if proximity check fails, 409 if already owned, 404 if player/pitch not found"
+      - "Security: [Authorize] on all endpoints; input validation; no sensitive data in responses"
+
+  - id: W3-04
+    title: "Create BattlesController"
+    description: >
+      Create RuckR.Server.Controllers.BattlesController. All endpoints require [Authorize].
+      Endpoints: POST /battles/challenge (send challenge — {opponentUsername, playerId}),
+      POST /battles/{id}/accept (accept with {playerId}), POST /battles/{id}/decline,
+      GET /battles/pending (pending challenges for/from current user),
+      GET /battles/history (completed/declined/expired battles).
+      Validate: cannot challenge self, max 3 pending challenges per user,
+      player must be in challenger's collection, opponent must exist.
+      Lazy challenge expiry: GET /battles/pending checks for Pending challenges older than
+      24 hours and transitions them to Expired before returning results (no background service needed for MVP).
+      Rate limiting: max 10 challenge creations per hour per user (in-memory token bucket).
+      Handle DbUpdateConcurrencyException on POST /battles/{id}/accept by returning 409 Conflict.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W2-04, W3-03]
+    context_files:
+      - path: RuckR/Server/Controllers/ProfileController.cs
+        description: "Canonical controller pattern"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: signalr-pvp-battles
+    tech_stack: [ASP.NET Core, EF Core, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "POST /battles/challenge creates pending battle"
+      - "Cannot challenge self (400 Bad Request)"
+      - "Cannot exceed 3 pending challenges (400 Bad Request)"
+      - "POST /battles/{id}/accept transitions to Accepted state"
+      - "POST /battles/{id}/decline transitions to Declined state"
+      - "Pending challenges older than 24h are auto-expired on read"
+      - "Rate limit enforced: 11th challenge within 1h returns 429"
+    acceptance_criteria:
+      - "[Authorize] on all endpoints"
+      - "POST /battles/challenge: validates opponent exists, player owned, not self, ≤3 pending"
+      - "Creates BattleModel with Status=Pending, returns 201 with battleId"
+      - "POST /battles/{id}/accept: validates challenge is pending, opponent is target user"
+      - "Accepts player selection, transitions to Accepted status"
+      - "POST /battles/{id}/decline: transitions to Declined"
+      - "GET /battles/pending: returns pending challenges for current user (incoming + outgoing)"
+      - "GET /battles/pending lazy-expires: marks Pending challenges >24h old as Expired before returning"
+      - "GET /battles/history: returns completed/declined/expired battles, newest first"
+      - "Handle DbUpdateConcurrencyException on accept: catch and return 409 Conflict 'Battle was modified by another request'"
+      - "Rate limiting: max 10 challenge creations per hour per user (ConcurrentDictionary-based token bucket)"
+      - "Security: [Authorize] on all endpoints; input validation on all DTOs; no self-challenge bypass; no sensitive data in responses"
+
+  # ========================================================================
+  # WAVE 4: Client State & Services
+  # ========================================================================
+  - id: W4-01
+    title: "Configure Fluxor and create LocationFeature + MapFeature stores"
+    description: >
+      Register Fluxor in RuckR.Client.Program.cs: builder.Services.AddFluxor(o => o.ScanAssemblies(typeof(Program).Assembly)).
+      Add StoreInitializer to App.razor. Add @using Fluxor to _Imports.razor.
+      Create Store/LocationFeature/ with LocationState (UserLatitude?, UserLongitude?,
+      AccuracyMeters?, IsWatching, ErrorMessage), LocationActions (UpdatePositionAction,
+      SetGpsEnabledAction, LocationErrorAction), LocationReducers.
+      Create Store/MapFeature/ with MapState (IsMapInitialized, VisiblePitches,
+      SelectedPitchId, IsMapReady), MapActions (SetPitchesAction, SelectPitchAction,
+      MapInitializedAction, ClearSelectionAction), MapReducers.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-03, W1-04]
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Add Fluxor registration"
+      - path: RuckR/Client/App.razor
+        description: "Add StoreInitializer"
+      - path: RuckR/Client/_Imports.razor
+        description: "Add @using Fluxor"
+    estimated_effort: medium
+    estimated_files: 6
+    estimated_lines: 180
+    focus_area: map-rendering-state-management
+    tech_stack: [Fluxor 6.x, Blazor WASM, C# records]
+    research_sources:
+      - research_findings_geolocation_blazor_wasm.yaml
+      - research_findings_map-rendering-state-management.yaml
+    verification:
+      - "Fluxor store initializes without errors on app start"
+      - "LocationState has default values (no GPS until user enables)"
+      - "MapState.VisiblePitches is initially empty"
+      - "Reducers compile as pure static methods"
+    acceptance_criteria:
+      - "AddFluxor registered in Client Program.cs with ScanAssemblies"
+      - "StoreInitializer component added to App.razor before Router"
+      - "@using Fluxor and @using Fluxor.Blazor.Web added to _Imports.razor"
+      - "LocationFeature: State (5 properties), Actions (3), Reducers (3 reducer methods)"
+      - "MapFeature: State (4 properties), Actions (4), Reducers (4 reducer methods)"
+      - "All state records implement [FeatureState] with parameterless constructor"
+
+  - id: W4-02
+    title: "Create GameFeature and InventoryFeature Fluxor stores"
+    description: >
+      Create Store/GameFeature/ with GameState (IsAuthenticated, Username?, IsSignalRConnected,
+      ConnectionError?), GameActions (SetAuthStateAction, SetConnectionStateAction), GameReducers.
+      Create Store/InventoryFeature/ with InventoryState (IsLoading, CollectedPlayers
+      as ImmutableList<PlayerModel>, LastSynced?, ErrorMessage?), InventoryActions
+      (FetchInventoryAction, FetchInventoryResultAction, AddPlayerAction,
+      RemovePlayerAction, InventoryErrorAction), InventoryReducers.
+      Use Fluxor's built-in ImmutableList support. Note: InventoryState tracks players
+      collected by the current user (from CollectionModel), not per-player capture state.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-01]
+    context_files:
+      - path: RuckR/Client/Store/LocationFeature/LocationState.cs
+        description: "Pattern reference for new features"
+    estimated_effort: medium
+    estimated_files: 6
+    estimated_lines: 160
+    focus_area: map-rendering-state-management
+    tech_stack: [Fluxor 6.x, System.Collections.Immutable]
+    research_sources:
+      - research_findings_map-rendering-state-management.yaml
+    verification:
+      - "GameState tracks authentication and connection status"
+      - "InventoryState.CollectedPlayers is ImmutableList"
+      - "Reducers handle AddPlayerAction by appending to immutable list"
+    acceptance_criteria:
+      - "GameFeature: State (4 properties), Actions (2), Reducers (2)"
+      - "InventoryFeature: State (5 properties), Actions (5), Reducers (5)"
+      - "InventoryState uses ImmutableList<PlayerModel> for thread-safe state updates"
+      - "All reducers are pure static methods with [ReducerMethod] attribute"
+
+  - id: W4-03
+    title: "Create BattleFeature Fluxor store"
+    description: >
+      Create Store/BattleFeature/ with BattleState (ActiveChallenges as
+      ImmutableList<BattleModel>, BattleHistory as ImmutableList<BattleModel>,
+      IsLoading, ErrorMessage?), BattleActions (ChallengeReceivedAction,
+      ChallengeSentAction, ChallengeRespondedAction, BattleCompletedAction,
+      FetchBattlesResultAction, BattleErrorAction), BattleReducers.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-01]
+    context_files:
+      - path: RuckR/Client/Store/InventoryFeature/InventoryState.cs
+        description: "Pattern reference"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 100
+    focus_area: map-rendering-state-management
+    tech_stack: [Fluxor 6.x, System.Collections.Immutable]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+      - research_findings_map-rendering-state-management.yaml
+    verification:
+      - "BattleState tracks active challenges and history"
+      - "ChallengeReceivedAction reducer appends to ActiveChallenges"
+      - "BattleCompletedAction reducer moves challenge from Active to History"
+    acceptance_criteria:
+      - "BattleFeature: State (4 properties), Actions (6), Reducers (6)"
+      - "ActiveChallenges and BattleHistory both use ImmutableList"
+      - "ChallengeCompletedAction removes from ActiveChallenges, appends to BattleHistory"
+      - "ChallengeRespondedAction updates challenge status in place (replace via ID)"
+
+  - id: W4-04
+    title: "Create GeolocationService and geolocation.module.js"
+    description: >
+      Create RuckR.Client/Services/IGeolocationService.cs and GeolocationService.cs.
+      Create wwwroot/js/geolocation.module.js as an ES module with exported functions:
+      getCurrentPosition(), startWatch(dotNetRef), stopWatch(watchId).
+      Service wraps IJSObjectReference for module import on first use. Registers
+      [JSInvokable] callbacks for position updates. On position change, dispatches
+      Fluxor UpdatePositionAction and fires a PositionChanged event.
+      Throttles updates to max every 5 seconds. Stops watch on dispose.
+      Handles GPS errors (permission denied, unavailable, timeout) with Fluxor error actions.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-03, W1-04, W4-01]
+    context_files: []
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 180
+    focus_area: geolocation_blazor_wasm
+    tech_stack: [Blazor WASM, JavaScript ES module, Browser Geolocation API, Fluxor]
+    research_sources:
+      - research_findings_geolocation_blazor_wasm.yaml
+    verification:
+      - "Browser requests GPS permission when watch starts"
+      - "Position updates appear in Fluxor LocationState"
+      - "GPS denied shows error in state"
+      - "Service disposed cleanly on page navigation"
+    acceptance_criteria:
+      - "IGeolocationService interface: GetCurrentPositionAsync, StartWatchAsync, StopWatch"
+      - "GeolocationService implements IAsyncDisposable for JS module cleanup"
+      - "geolocation.module.js exports: getCurrentPosition, startWatch(dotNetRef), stopWatch(watchId)"
+      - "Position updates dispatch UpdatePositionAction to Fluxor (throttled to 5s or 10m displacement)"
+      - "GPS permission denied dispatches LocationErrorAction"
+      - "Watch position uses enableHighAccuracy: true, timeout: 10000, maximumAge: 5000"
+      - "Registered as Scoped service in Client Program.cs"
+
+  - id: W4-05
+    title: "Create MapService and leaflet-map.module.js"
+    description: >
+      Create RuckR.Client/Services/IMapService.cs and MapService.cs.
+      Create wwwroot/js/leaflet-map.module.js as an ES module exporting:
+      initMap(containerId, centerLat, centerLng, zoom), addPitchMarkers(markersJson),
+      addUserMarker(lat, lng), centerOn(lat, lng), removeAllMarkers(), dispose().
+      The JS module initializes Leaflet map with OpenStreetMap tiles, manages marker
+      layers for pitches and user position. Pitch markers use Leaflet divIcon with
+      rugby ball emoji (🏉) as the icon — no external icon files needed for MVP.
+      User marker uses Leaflet circleMarker (blue, radius 8) with CSS pulse animation
+      class. Click on pitch marker calls back to C# via DotNet.invokeMethodAsync with pitchId.
+      MapService wraps IJSObjectReference and exposes typed C# methods.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-03, W4-01]
+    context_files: []
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 210
+    focus_area: map-rendering-state-management
+    tech_stack: [Blazor WASM, JavaScript ES module, Leaflet 1.9.4, OpenStreetMap tiles]
+    research_sources:
+      - research_findings_map-rendering-state-management.yaml
+    verification:
+      - "Leaflet map renders in a div on the page"
+      - "Map tiles load from OpenStreetMap"
+      - "Markers appear and respond to clicks"
+      - "Map pans to specified coordinates"
+    acceptance_criteria:
+      - "IMapService interface: InitMapAsync, AddPitchMarkersAsync, AddUserMarkerAsync, CenterOnAsync, ClearMarkersAsync, DisposeAsync"
+      - "leaflet-map.module.js creates L.map with OpenStreetMap tile layer"
+      - "Pitch markers rendered with Leaflet divIcon using rugby ball emoji (🏉) — no external icon files needed"
+      - "User marker rendered as blue L.circleMarker(radius 8) with CSS pulse animation class"
+      - "Marker click → DotNet.invokeMethodAsync('MapPage', 'OnPitchClicked', pitchId)"
+      - "MapService registered as Scoped in Client Program.cs"
+      - "IAsyncDisposable implemented for JS module cleanup"
+
+  - id: W4-06
+    title: "Create ApiClientService — typed HTTP client for game API"
+    description: >
+      Create RuckR.Client/Services/ApiClientService.cs as a typed HttpClient wrapper
+      for all game API endpoints. Methods: GetPlayersAsync(filter?), GetPlayerAsync(id),
+      GetNearbyPlayersAsync(lat, lng, radius), GetNearbyPitchesAsync(lat, lng, radius),
+      CreatePitchAsync(request), GetCollectionAsync(), CapturePlayerAsync(playerId, pitchId),
+      SendChallengeAsync(request), AcceptChallengeAsync(id, playerId), DeclineChallengeAsync(id),
+      GetPendingBattlesAsync(), GetBattleHistoryAsync().
+      Register as typed HttpClient in Client Program.cs. Handle HTTP errors (4xx, 5xx)
+      and return Result<T> or throw typed exceptions.
+    wave: 4
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-04, W1-05, W1-06]
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Register typed HttpClient"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: null
+    tech_stack: [Blazor WASM, HttpClient, System.Text.Json]
+    verification:
+      - "All API methods compile with correct return types"
+      - "GET methods use GetFromJsonAsync<T>"
+      - "POST methods use PostAsJsonAsync + read response"
+      - "Auth cookie flows automatically (same-origin hosted)"
+    acceptance_criteria:
+      - "Typed HttpClient registered in Program.cs with BaseAddress from host environment"
+      - "Methods for all 4 controllers: Players, Pitches, Collection, Battles"
+      - "Consistent error handling: throw ApiException with status code and message"
+      - "All DTOs from W1-06 used as request/response types"
+      - "Auth cookie automatically included (no manual token management)"
+
+  # ========================================================================
+  # WAVE 5: UI Pages — Part 1 (Map, Catalog, Collection, Pitch)
+  # ========================================================================
+  - id: W5-01
+    title: "Create Map.razor page with Leaflet integration and onboarding"
+    description: >
+      Create RuckR.Client/Pages/Map.razor at route /map. Renders full-screen Leaflet map
+      div. On first render (OnAfterRenderAsync firstRender=true), imports MapService
+      module and initializes map. Subscribes to LocationState changes to update user marker
+      position. Fetches nearby pitches via ApiClientService and renders pitch markers.
+      Shows user marker as blue dot. On pitch marker click, dispatches SelectPitchAction
+      and shows pitch detail panel (name, type, distance bucket, available players count).
+      First-visit detection via localStorage flag: if 'ruckr_onboarded' flag is not set,
+      show a dismissible info banner with onboarding steps: "Welcome to RuckR! 1) Explore
+      the map to find rugby pitches 2) Get close to capture players 3) Challenge nearby
+      players to PVP battles!" Once dismissed, set localStorage flag.
+      Implements IAsyncDisposable. Design review by gem-designer first.
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-04, W4-05, W4-06]
+    context_files:
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "Loading/error state patterns"
+    estimated_effort: large
+    estimated_files: 2
+    estimated_lines: 300
+    focus_area: map-rendering-state-management
+    tech_stack: [Blazor WASM, Leaflet, Fluxor, JS interop]
+    research_sources:
+      - research_findings_map-rendering-state-management.yaml
+      - research_findings_geolocation_blazor_wasm.yaml
+    verification:
+      - "Map renders at /map with OpenStreetMap tiles"
+      - "User position marker appears when GPS is enabled"
+      - "Nearby pitch markers appear as rugby ball icons"
+      - "Clicking pitch shows detail panel with distance bucket"
+      - "Map re-centers when user moves significantly"
+      - "Onboarding banner appears on first visit and hides on dismiss"
+    acceptance_criteria:
+      - "@page \"/map\" — accessible from nav menu"
+      - "Full-screen map div with CSS height: calc(100vh - 56px)"
+      - "OnAfterRenderAsync firstRender imports map module and initializes map"
+      - "Subscribes to IState<LocationState> for GPS position updates"
+      - "Fetches nearby pitches (500m radius) on position change"
+      - "Distance displayed as fuzzy bucket: '< 50m', '< 100m', '< 250m', '< 500m', '> 500m'"
+      - "Pitch marker click shows Bootstrap card overlay with pitch details"
+      - "Onboarding: check localStorage 'ruckr_onboarded' on first render; if missing, show dismissible Bootstrap alert banner with 3 onboarding steps"
+      - "On dismiss, set localStorage 'ruckr_onboarded' = 'true' and hide banner"
+      - "Implements IAsyncDisposable, cleans up JS module"
+      - "Loading spinner while map initializes"
+      - "Error state if map module fails to load"
+      - "GPS disabled state: map centered on default location, prompt to enable GPS"
+
+  - id: W5-02
+    title: "Create Catalog.razor page"
+    description: >
+      Create RuckR.Client/Pages/Catalog.razor at route /catalog. Displays all rugby players
+      in the game in a responsive grid of player cards. Each card shows: name, position,
+      rarity badge (color-coded), stat bars for Speed/Strength/Agility/Kicking.
+      Filters: position dropdown, rarity dropdown, name search input.
+      Shows badge if player is already in user's collection (collected vs uncollected)
+      by cross-referencing InventoryState (from CollectionModel data).
+      Loading, empty, and error states. Follows FetchData.razor pattern for data loading.
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W4-02, W4-06]
+    context_files:
+      - path: RuckR/Client/Pages/FetchData.razor
+        description: "Loading state and data fetch pattern"
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "Error handling pattern"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: null
+    tech_stack: [Blazor WASM, Bootstrap 5, Fluxor]
+    verification:
+      - "Catalog page shows all players in grid"
+      - "Filter by position works"
+      - "Filter by rarity works"
+      - "Search by name works"
+      - "Collected badge shows for owned players"
+    acceptance_criteria:
+      - "@page \"/catalog\""
+      - "Responsive CSS grid: 2 cols mobile, 4 cols tablet, 6 cols desktop"
+      - "Player cards with: name, position icon, rarity color badge, 4 stat bars"
+      - "Rarity colors: Common (gray), Uncommon (green), Rare (blue), Epic (purple), Legendary (gold)"
+      - "Filter controls: position dropdown, rarity dropdown, name search (client-side)"
+      - "Collected badge (checkmark icon) on cards for players in user's InventoryState (from CollectionModel)"
+      - "Loading spinner while fetching from API"
+      - "Empty state: 'No players found' with clear filters button"
+      - "Error state: error message with retry button"
+
+  - id: W5-03
+    title: "Create Collection.razor page"
+    description: >
+      Create RuckR.Client/Pages/Collection.razor at route /collection. Shows user's
+      collected rugby players in a grid. Each card shows the player with acquisition
+      date and discovery location pitch name. Toggle favorite (star) on each player.
+      Empty state for new users with link to explore map. Player detail modal/expand
+      showing full stats, bio, and rarity info. Requires authentication.
+      Collection data comes from GET /collection API (CollectionModel records).
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-02, W4-06]
+    context_files:
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "Data fetch + view/edit toggle pattern"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: null
+    tech_stack: [Blazor WASM, Bootstrap 5, Fluxor]
+    verification:
+      - "Collection page shows user's collected players"
+      - "Favorite toggle works (client-side state, for MVP)"
+      - "Empty state shows guidance for new users"
+      - "Player detail expands on click"
+    acceptance_criteria:
+      - "@page \"/collection\" with [Authorize] equivalent (redirect if not authenticated)"
+      - "Grid of collected player cards: image placeholder, name, position, rarity badge"
+      - "Each card shows: 'Captured on {date} at {pitch name}'"
+      - "Favorite star toggle (updates InventoryState locally; server sync deferred)"
+      - "Empty state: 'You haven't discovered any players yet! Head to the map to find pitches.' with link to /map"
+      - "Player detail: click card expands to show full stats, bio, Spotify-style info panel"
+      - "Loading state, error state with retry"
+
+  - id: W5-04
+    title: "Create PitchCreate.razor page"
+    description: >
+      Create RuckR.Client/Pages/PitchCreate.razor at route /pitches/create. Form for
+      authenticated users to designate a new pitch location. Uses current GPS position
+      as default coordinates (editable). Includes an embedded mini Leaflet map for
+      pin-dropping to select location. Fields: name (required, max 200), type dropdown
+      (Standard/Training/Stadium), coordinates (auto-filled or manual). On submit,
+      calls ApiClientService.CreatePitchAsync. Success redirects to /map.
+      Requires authentication. Validates inputs client-side before submit.
+      Shows rate limit warning: "You have X of 5 pitches remaining today."
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W4-04, W4-06]
+    context_files:
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "EditForm pattern with validation"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 170
+    focus_area: null
+    tech_stack: [Blazor WASM, Bootstrap 5, EditForm, Leaflet (mini map)]
+    verification:
+      - "Pitch creation form renders with all fields"
+      - "GPS coordinates auto-populate from current location"
+      - "Form validates name required, coordinates in range"
+      - "Successful creation redirects to /map"
+      - "Rate limit warning displayed"
+    acceptance_criteria:
+      - "@page \"/pitches/create\" — requires authentication"
+      - "EditForm with DataAnnotationsValidator"
+      - "Pitch name text input (required, max 200 chars)"
+      - "Pitch type dropdown: Standard, Training, Stadium"
+      - "Latitude/longitude inputs: number fields, range -90..90 / -180..180"
+      - "Auto-fill coordinates from GeolocationService current position"
+      - "Mini map div (200px height) for visual location picker (optional enhancement)"
+      - "Submit calls POST /pitches, on success navigates to /map"
+      - "Rate limit display: 'X of 5 pitches remaining today' based on recent creations"
+      - "Error handling: duplicate name (409), rate limit exceeded (429), validation errors (400), network errors"
+      - "Loading state on submit button"
+
+  # ========================================================================
+  # WAVE 6: UI Pages — Part 2 + SignalR Hub
+  # ========================================================================
+  - id: W6-01
+    title: "Create PlayerGrid.razor page — nearby players for PVP"
+    description: >
+      Create RuckR.Client/Pages/PlayerGrid.razor at route /players/nearby. Fetches
+      nearby players via GET /players/nearby API. Applies fuzzy distance (±20% random
+      per session, cached). Displays as responsive CSS grid of player cards sorted by
+      fuzzy distance. Each card shows: player name, owner username, position, rarity,
+      fuzzy distance (e.g., "~2.5km away"), and "Challenge" button. Clicking challenge
+      opens Battle.razor challenge form. Requires authentication. Grid layout encourages
+      PVP by showing nearest opponents first.
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-02, W4-06, W5-02]
+    context_files:
+      - path: RuckR/Client/Pages/Catalog.razor
+        description: "Grid card pattern reference"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 150
+    focus_area: geolocation_blazor_wasm
+    tech_stack: [Blazor WASM, Bootstrap 5, Fluxor]
+    research_sources:
+      - research_findings_geolocation_blazor_wasm.yaml
+    verification:
+      - "Grid shows nearby players sorted by fuzzy distance"
+      - "Distance displays as '~Xkm away' with fuzz"
+      - "Challenge button navigates to battle interface"
+      - "Same-session fuzzy values are consistent (cached)"
+    acceptance_criteria:
+      - "@page \"/players/nearby\" — requires authentication"
+      - "Fetches players within configurable radius (default 10000m) from user's GPS position"
+      - "Fuzzy distance: server returns exact meters, client applies ±20% random ONCE per session"
+      - "Fuzzy factor cached in a session-level Dictionary<int, double> keyed by player ID"
+      - "Display format: '< 50m', '< 100m', '< 250m', '< 500m', '~{0.0}km' for >500m"
+      - "Responsive grid: 1 col mobile, 2 cols tablet, 3 cols desktop"
+      - "Each card: name, owner, position badge, rarity badge, fuzzy distance, Challenge button"
+      - "Challenge button navigates to /battle?opponent={username}&player={id}"
+      - "Loading spinner, empty state ('No players nearby — try expanding your search'), error state"
+
+  - id: W6-02
+    title: "Create Battle.razor page — PVP challenge UI"
+    description: >
+      Create RuckR.Client/Pages/Battle.razor at route /battle. Two-tab layout:
+      "New Challenge" tab and "Active Challenges" tab.
+      New Challenge: select one of your players from dropdown, enter opponent username,
+      submit to POST /battles/challenge. Shows success toast on challenge sent.
+      Active Challenges: shows incoming challenges (with accept/decline buttons) and
+      outgoing pending challenges. Accept prompts user to select their player, then
+      calls POST /battles/{id}/accept. On battle completed (SignalR notification),
+      shows result modal. Requires authentication.
+      Design review by gem-designer first for battle UI.
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W4-03, W4-06, W6-04]
+    context_files:
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "Form and data patterns"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 250
+    focus_area: signalr-pvp-battles
+    tech_stack: [Blazor WASM, Bootstrap 5, Fluxor, SignalR]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "New challenge form submits successfully"
+      - "Incoming challenges appear with accept/decline"
+      - "Accepting challenge shows player selection"
+      - "Battle result modal appears on completion (SignalR)"
+      - "Cannot challenge self (client-side validation)"
+    acceptance_criteria:
+      - "@page \"/battle\" with optional query params: ?opponent=&player="
+      - "Two-tab layout: New Challenge | Active Challenges (Bootstrap tabs)"
+      - "New Challenge form: player dropdown (from InventoryState), opponent username input, Submit"
+      - "Client-side validation: cannot be empty, player must be owned"
+      - "Active Challenges tab: split into 'Incoming' and 'Outgoing' sections"
+      - "Incoming: player card + 'Accept' (opens player selector modal) + 'Decline' buttons"
+      - "Outgoing: shows pending challenge status, auto-updates on response via SignalR"
+      - "Battle result modal: shows winner/loser, players, stats comparison"
+      - "Max 3 pending challenges indicator"
+      - "Loading/error states for all API calls"
+
+  - id: W6-03
+    title: "Create BattleHub — server-side SignalR hub"
+    description: >
+      Create RuckR.Server.Hubs.BattleHub inheriting from Hub. Add [Authorize] attribute.
+      Methods: SendChallenge(targetUsername, playerId) — validates against DbContext
+      directly (not via controller for MVP; same validation logic), creates battle,
+      notifies target user via Clients.User(). AcceptChallenge(challengeId, playerId) —
+      validates, resolves battle, adds both to group, notifies both via Clients.Group.
+      DeclineChallenge(challengeId) — updates status, notifies challenger.
+      UpdateLocation(lat, lng) — validates coordinates, stores in ILocationTracker
+      singleton from W3-03. On update, checks if user entered proximity of any
+      undiscovered pitch and sends "PitchDiscovered" notification to Clients.Caller.
+      JoinBattleGroup(battleId) — adds to group for real-time updates.
+      OnConnectedAsync — expects client to immediately send UpdateLocation (client sends
+      position on connect; if not received within 30s, no action needed).
+      OnDisconnectedAsync — removes from all groups, cleans up location from ILocationTracker.
+      Register hub in Server Program.cs: app.MapHub<BattleHub>("/battlehub"). Add AddSignalR().
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W2-01, W3-03, W3-04]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Add SignalR registration and hub mapping"
+    estimated_effort: large
+    estimated_files: 2
+    estimated_lines: 280
+    focus_area: signalr-pvp-battles
+    tech_stack: [ASP.NET Core SignalR, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "BattleHub registers at /battlehub"
+      - "SignalR connection establishes between client and server"
+      - "SendChallenge notifies target user"
+      - "AcceptChallenge transitions battle and notifies both"
+      - "UpdateLocation stores position in ILocationTracker"
+      - "PitchDiscovered notification sent when entering undiscovered pitch proximity"
+    acceptance_criteria:
+      - "[Authorize] BattleHub : Hub in RuckR.Server.Hubs namespace (block-scoped)"
+      - "builder.Services.AddSignalR() in Program.cs"
+      - "app.MapHub<BattleHub>(\"/battlehub\") after MapControllers"
+      - "SendChallenge: validates via direct DbContext access (MVP pattern; validates opponent exists, player owned, not self, ≤3 pending), notifies target user"
+      - "AcceptChallenge: resolves battle synchronously, creates group battle_{id}, notifies both"
+      - "DeclineChallenge: updates battle status, notifies challenger"
+      - "UpdateLocation: validates coordinates, stores in ILocationTracker.UpdatePosition(userId, position)"
+      - "UpdateLocation: after storing position, queries nearby pitches via DbContext; for any undiscovered pitch within 100m, sends SendAsync(\"PitchDiscovered\", pitch) to Clients.Caller"
+      - "JoinBattleGroup / LeaveBattleGroup: manages SignalR group membership"
+      - "OnConnectedAsync: client expected to call UpdateLocation immediately after connect"
+      - "OnDisconnectedAsync: removes from ILocationTracker, removes from all groups"
+      - "Hub uses Context.UserIdentifier for user identification"
+      - "Security: [Authorize] on hub; input validation on all hub method parameters; ConnectionId validation"
+
+  - id: W6-04
+    title: "Create SignalRClientService — client-side connection manager"
+    description: >
+      Create RuckR.Client/Services/SignalRClientService.cs. Manages HubConnection
+      lifecycle: builds connection to /battlehub with WithAutomaticReconnect(),
+      starts on app load, handles Reconnecting/Reconnected/Closed events.
+      Accepts IDispatcher via DI constructor injection for Fluxor dispatch.
+      Dispatches Fluxor GameState.SetConnectionStateAction on connection state changes.
+      Exposes methods: SendChallengeAsync, AcceptChallengeAsync, DeclineChallengeAsync,
+      UpdateLocationAsync. Registers handlers for server→client events:
+      ReceiveChallenge, ChallengeResponded, BattleResolved, PitchDiscovered, NearbyPlayersUpdated.
+      All server→client handler callbacks call Dispatcher.Dispatch(action). Service owns
+      no state — purely a bridge between SignalR events and Fluxor store.
+      On Reconnected event: re-joins active battle groups by fetching user's
+      pending/accepted battles from REST API and calling JoinBattleGroup for each.
+      On Connected event: immediately calls UpdateLocationAsync with current GPS position.
+      Implements IAsyncDisposable. Register as Singleton in Client Program.cs.
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-03, W4-01, W4-03]
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Register SignalRClientService"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 250
+    focus_area: signalr-pvp-battles
+    tech_stack: [SignalR .NET Client 10.0.7, Blazor WASM, Fluxor]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "SignalR connection established on app load"
+      - "Connection state changes reflected in Fluxor GameState"
+      - "ReceiveChallenge handler dispatches ChallengeReceivedAction"
+      - "Reconnection works with automatic retry"
+      - "On reconnect, active battle groups are re-joined"
+      - "Fluxor actions dispatched via injected IDispatcher, not direct store access"
+    acceptance_criteria:
+      - "HubConnection built with .WithUrl(Navigation.ToAbsoluteUri(\"/battlehub\"))"
+      - "WithAutomaticReconnect() with default retry intervals [0, 2, 10, 30] seconds"
+      - "Accepts IDispatcher via DI: SignalRClientService(IDispatcher dispatcher, ...)"
+      - "Reconnecting event: dispatches SetConnectionStateAction(false, 'Reconnecting...')"
+      - "Reconnected event: dispatches SetConnectionStateAction(true, null); then fetches active battles and calls JoinBattleGroup for each"
+      - "Closed event: dispatches SetConnectionStateAction(false, 'Connection lost')"
+      - "Server→Client handlers: On<ChallengeNotification>('ReceiveChallenge'), On<BattleResult>('BattleResolved'), On<PitchModel>('PitchDiscovered')"
+      - "All server→client handler callbacks call Dispatcher.Dispatch(action) — service owns no state"
+      - "OnConnected callback: immediately sends UpdateLocation with current GPS position"
+      - "Methods: SendChallengeAsync(ChallengeRequest), AcceptChallengeAsync(int, int), DeclineChallengeAsync(int), UpdateLocationAsync(lat, lng)"
+      - "UpdateLocationAsync called from GeolocationService, throttled to 30s"
+      - "Registered as Singleton in DI (single connection per app)"
+      - "Implements IAsyncDisposable"
+
+  - id: W6-05
+    title: "Create NotificationToast and ConnectionStatus components"
+    description: >
+      Create RuckR.Client/Shared/NotificationToast.razor — a toast notification system
+      for real-time events. Listens to BattleState.ActiveChallenges and displays toast
+      popups for incoming challenges (with Accept/Decline buttons). Shows battle result
+      toasts. Shows pitch discovery toasts. Create ConnectionStatus.razor — a small
+      indicator in the app shell showing SignalR connection state (green dot = connected,
+      yellow = reconnecting, red = disconnected).
+      Both components subscribe to Fluxor state and react to changes.
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W4-02, W4-03, W6-04]
+    context_files:
+      - path: RuckR/Client/Shared/MainLayout.razor
+        description: "Where to embed connection status"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 160
+    focus_area: signalr-pvp-battles
+    tech_stack: [Blazor WASM, Bootstrap 5 Toast, Fluxor]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "Incoming challenge shows toast notification"
+      - "Toast has working accept/decline buttons"
+      - "Connection status dot changes color with connection state"
+      - "Battle result toast shows winner/loser"
+      - "Pitch discovery toast appears"
+    acceptance_criteria:
+      - "NotificationToast.razor: Bootstrap 5 toast component in fixed position (top-right)"
+      - "Subscribes to IState<BattleState> — shows toast on new ActiveChallenge"
+      - "Challenge toast: '{username} challenges you with {playerName}!' + Accept/Decline buttons"
+      - "Accept button navigates to /battle tab, Decline calls DeclineChallengeAsync"
+      - "Battle result toast: 'Battle complete! {winner} defeated {loser}'"
+      - "Pitch discovery toast: 'New pitch discovered: {pitchName}!'"
+      - "ConnectionStatus.razor: small dot + text in navbar or footer"
+      - "Green dot + 'Connected' when GameState.IsSignalRConnected = true"
+      - "Yellow pulsing dot + 'Reconnecting...' when reconnecting"
+      - "Red dot + 'Disconnected' + manual reconnect button when closed"
+      - "Embed ConnectionStatus in MainLayout.razor"
+
+  # ========================================================================
+  # WAVE 7: PVP Battle System — Resolution Engine
+  # ========================================================================
+  - id: W7-01
+    title: "Create BattleResolver — stat-based battle engine"
+    description: >
+      Create RuckR.Server.Services.BattleResolver.cs. Implements stat-based battle
+      resolution logic used by BattleHub when a challenge is accepted.
+      Resolution formula: each player's score = (baseStatSum * positionMultiplier * rarityMultiplier)
+      + randomFactor. Position matchup bonuses: e.g., Prop vs Wing (strength matters more),
+      FlyHalf vs ScrumHalf (kicking matters more). Rarity multipliers: Common 1.0x,
+      Uncommon 1.2x, Rare 1.5x, Epic 2.0x, Legendary 3.0x. Random factor: ±15%.
+      Returns BattleResult with winner, loser, method description (e.g., "Speed Advantage",
+      "Power Overwhelming"). Pure stateless service, injectable.
+    wave: 7
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W1-05]
+    context_files:
+      - path: RuckR/Shared/Models/PlayerModel.cs
+        description: "PlayerModel with stats used in resolution"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 130
+    focus_area: signalr-pvp-battles
+    tech_stack: [C#, System.Random, dependency injection]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "Resolve method returns deterministic result for same inputs (fixed seed)"
+      - "Higher rarity player wins more often against lower rarity (statistically)"
+      - "Position matchups affect outcome (Prop beats Wing in power scenario)"
+      - "Random factor prevents 100% deterministic outcomes"
+    acceptance_criteria:
+      - "IBattleResolver interface: Resolve(PlayerModel challengerPlayer, PlayerModel opponentPlayer) -> BattleResult"
+      - "Base stat sum = (Speed + Strength + Agility + Kicking) / 4"
+      - "Position multiplier: derived from a matchup matrix (e.g., 9x9 position table)"
+      - "Rarity multiplier: Common=1.0, Uncommon=1.2, Rare=1.5, Epic=2.0, Legendary=3.0"
+      - "Random factor: score * (0.85 + Random.Shared.NextDouble() * 0.3) — range 0.85-1.15"
+      - "Final score = baseStatSum * positionMultiplier * rarityMultiplier * randomFactor"
+      - "Winner = higher final score; if equal, random tiebreaker"
+      - "BattleResult includes: WinnerUsername, LoserUsername, method description string"
+      - "Method descriptions: e.g., 'Speed Advantage', 'Power Overwhelming', 'Kicking Mastery', 'Close Contest'"
+      - "Registered as Scoped service in Server DI"
+
+  - id: W7-02
+    title: "Wire BattleHub to BattleResolver — complete challenge flow"
+    description: >
+      Integrate BattleResolver into BattleHub.AcceptChallenge method. When opponent accepts
+      a challenge, the hub: (1) validates challenge is still pending and opponent is target,
+      (2) validates both players exist and are owned by respective users, (3) calls
+      IBattleResolver.Resolve(challengerPlayer, opponentPlayer) to determine winner,
+      (4) updates BattleModel in DB: Status=Completed, WinnerId, ResolvedAt=UtcNow,
+      (5) notifies both users via Clients.Group($"battle_{id}").SendAsync("BattleResolved", result).
+      Handle edge cases: disconnect during resolution (atomic DB update first, then notify),
+      concurrent accept attempts — handle DbUpdateConcurrencyException by returning 409 Conflict
+      with message "Battle was already accepted or modified by another request".
+      Wrap DB update in try/catch for DbUpdateConcurrencyException.
+    wave: 7
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W6-03, W7-01]
+    context_files:
+      - path: RuckR/Server/Hubs/BattleHub.cs
+        description: "Hub to integrate resolver into"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: signalr-pvp-battles
+    tech_stack: [ASP.NET Core SignalR, EF Core, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "Accepting challenge resolves battle immediately"
+      - "Both users receive BattleResolved notification via SignalR"
+      - "Battle record updated in database with winner"
+      - "Concurrent accept on same challenge returns 409 Conflict"
+    acceptance_criteria:
+      - "AcceptChallenge validates: challenge status = Pending, accepting user = OpponentId"
+      - "Validates both ChallengePlayer and OpponentPlayer exist in respective collections"
+      - "Calls IBattleResolver.Resolve() to determine winner"
+      - "Updates BattleModel: Status=Completed, WinnerId, ResolvedAt=DateTime.UtcNow"
+      - "DB update is atomic (SaveChangesAsync before notifications)"
+      - "Handle DbUpdateConcurrencyException: catch and return error via Clients.Caller.SendAsync(\"Error\", \"Battle was already accepted or modified\") — returns 409 Conflict equivalent"
+      - "Sends BattleResolved to Clients.Group(battle_{id})"
+      - "Removes both users from SignalR group after resolution"
+      - "Handles edge case: if user disconnected, result still persisted (they see it on next /battle load)"
+      - "Error handling: HubException for invalid state (already accepted, not your challenge, etc.)"
+
+  - id: W7-03
+    title: "Create BattleHistory.razor page"
+    description: >
+      Create RuckR.Client/Pages/BattleHistory.razor at route /battles/history.
+      Displays user's past battle results in a timeline/list layout. Each entry shows:
+      result (Win/Loss badge), opponent username, players used, method of victory,
+      timestamp. Fetches from GET /battles/history. Requires authentication.
+      Responsive list design.
+    wave: 7
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W4-03, W4-06]
+    context_files:
+      - path: RuckR/Client/Pages/FetchData.razor
+        description: "Data table pattern"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 100
+    focus_area: signalr-pvp-battles
+    tech_stack: [Blazor WASM, Bootstrap 5, Fluxor]
+    verification:
+      - "Battle history page shows past battles"
+      - "Win/loss correctly indicated"
+      - "Timestamp formatted"
+      - "Empty state for new users"
+    acceptance_criteria:
+      - "@page \"/battles/history\" — requires authentication"
+      - "Fetches battle history from GET /battles/history"
+      - "Timeline/list layout: newest first"
+      - "Each entry: Win (green badge) / Loss (red badge), opponent username, player names"
+      - "Victory method shown (e.g., 'Won by Speed Advantage')"
+      - "Timestamp displayed as relative time or formatted date"
+      - "Empty state: 'No battles yet! Head to /players/nearby to find opponents'"
+      - "Loading and error states"
+
+  # ========================================================================
+  # WAVE 8: Polish, Cleanup & Documentation
+  # ========================================================================
+  - id: W8-01
+    title: "Remove demo pages, update NavMenu, and set default route to /map"
+    description: >
+      Remove WeatherForecastController.cs from Server.Controllers.
+      Remove WeatherForecast.cs from Shared. Remove Counter.razor and FetchData.razor
+      from Client.Pages. Update NavMenu.razor: replace Home/Counter/FetchData links
+      with game navigation: Map, Catalog, Collection, Nearby Players, Battles,
+      Battle History, Create Pitch. Add conditional auth links: show Login/Register
+      when not authenticated, show username + Logout when authenticated.
+      Remove /fetchdata and /counter routes. Set default route: in App.razor, redirect
+      root path "/" to /map (change the default page reference so that navigating to the
+      app's base URL goes to the map page). This serves as the MVP home page.
+    wave: 8
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W5-01, W5-02, W5-03, W6-01, W6-02, W7-03]
+    context_files:
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "Navigation menu to update"
+      - path: RuckR/Client/App.razor
+        description: "Set default route to /map"
+      - path: RuckR/Server/Controllers/WeatherForecastController.cs
+        description: "To be removed"
+      - path: RuckR/Shared/WeatherForecast.cs
+        description: "To be removed"
+      - path: RuckR/Client/Pages/Counter.razor
+        description: "To be removed"
+      - path: RuckR/Client/Pages/FetchData.razor
+        description: "To be removed"
+    estimated_effort: small
+    estimated_files: 7
+    estimated_lines: 90
+    focus_area: null
+    tech_stack: [Blazor WASM, Bootstrap 5]
+    verification:
+      - "dotnet build RuckR.sln succeeds with no errors"
+      - "No references to WeatherForecast remain in codebase"
+      - "NavMenu shows game navigation links"
+      - "Auth state reflects in nav (login vs logout)"
+      - "Navigating to app root redirects to /map"
+    acceptance_criteria:
+      - "WeatherForecastController.cs deleted"
+      - "WeatherForecast.cs deleted"
+      - "Counter.razor and FetchData.razor deleted"
+      - "NavMenu.razor shows: Map (/map), Catalog (/catalog), Collection (/collection)"
+      - "NavMenu shows: Nearby Players (/players/nearby), Battles (/battle), History (/battles/history)"
+      - "NavMenu shows: Create Pitch (/pitches/create)"
+      - "NavMenu shows Login/Register links when unauthenticated (link to /Identity/Account/Login)"
+      - "NavMenu shows username + Logout when authenticated"
+      - "App.razor default route set to /map (root URL loads the map page)"
+      - "dotnet build RuckR.sln succeeds with zero errors and zero warnings"
+
+  - id: W8-02
+    title: "Audit loading, error, and empty states across all pages"
+    description: >
+      Review all 7 game pages for loading states (spinner/skeleton during data fetch),
+      error states (message + retry button on API failure), and empty states (friendly
+      message + CTA for new users). Ensure consistent patterns: loading = Bootstrap
+      spinner with <em>Loading...</em> text, error = alert-danger with retry button,
+      empty = friendly message with link to next action. Verify Profile.razor
+      still works correctly alongside game pages.
+    wave: 8
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W5-01, W5-02, W5-03, W5-04, W6-01, W6-02, W7-03]
+    context_files:
+      - path: RuckR/Client/Pages/Profile.razor
+        description: "Reference for loading/error pattern"
+    estimated_effort: medium
+    estimated_files: 7
+    estimated_lines: 160
+    focus_area: null
+    tech_stack: [Blazor WASM, Bootstrap 5]
+    verification:
+      - "Every page has loading indicator during data fetch"
+      - "Every page has error state with retry"
+      - "Every page has empty state for new users"
+      - "Profile.razor still functional"
+    acceptance_criteria:
+      - "Map.razor: loading spinner during map init, error fallback if module fails"
+      - "Catalog.razor: loading spinner, empty 'no players match filters', error with retry"
+      - "Collection.razor: loading spinner, empty with CTA to /map, error with retry"
+      - "PlayerGrid.razor: loading spinner, empty 'no players nearby', error with retry"
+      - "Battle.razor: loading tabs, empty challenges, error on submit"
+      - "BattleHistory.razor: loading, empty CTA, error with retry"
+      - "PitchCreate.razor: loading during submit, error on validation/network fail"
+      - "All loading states use consistent Bootstrap spinner pattern"
+      - "All error states show user-friendly message + retry/cancel button"
+
+  - id: W8-03
+    title: "Update PWA manifest and service worker for game app"
+    description: >
+      Update Client/wwwroot/manifest.json: change app name to "RuckR — Rugby Creature Collector",
+      short_name "RuckR", description about the game, theme_color and background_color to
+      rugby-themed dark green (#1B5E20 or similar). Update icon references if custom icons
+      are added. Review service-worker.js and service-worker.published.js for game assets
+      caching (Leaflet tiles don't need caching since they're from CDN). Ensure PWA
+      install prompt works on mobile browsers.
+    wave: 8
+    agent: gem-implementer
+    prototype: false
+    priority: low
+    status: pending
+    dependencies: [W5-01]
+    context_files:
+      - path: RuckR/Client/wwwroot/manifest.json
+        description: "PWA manifest to update"
+      - path: RuckR/Client/wwwroot/service-worker.js
+        description: "Dev service worker"
+      - path: RuckR/Client/wwwroot/service-worker.published.js
+        description: "Production service worker"
+    estimated_effort: small
+    estimated_files: 3
+    estimated_lines: 30
+    focus_area: null
+    tech_stack: [PWA, Service Worker]
+    verification:
+      - "manifest.json has correct app name and colors"
+      - "PWA install prompt appears on supported browsers"
+    acceptance_criteria:
+      - "manifest.json: name='RuckR — Rugby Creature Collector', short_name='RuckR'"
+      - "theme_color and background_color set to rugby green (#1B5E20)"
+      - "Description updated to reflect creature-collector game"
+      - "Icons still reference existing 192x192 and 512x512 PNGs"
+      - "Service worker files reviewed for game asset patterns (no breaking changes needed)"
+
+  - id: W8-04
+    title: "Security review — auth flow, API authorization, SignalR auth"
+    description: >
+      Review authentication and authorization across the application. Verify:
+      [Authorize] attributes on all game controllers (POST endpoints), [Authorize] on
+      BattleHub, cookie auth flowing to SignalR, no sensitive data exposed via APIs,
+      user GPS coordinates never exposed to other users (only fuzzy distance),
+      SQL injection protection via EF Core parameterized queries, connection string
+      not in source control (User Secrets for dev), HTTPS enforced.
+    wave: 8
+    agent: gem-reviewer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [W3-01, W3-02, W3-03, W3-04, W6-03]
+    context_files:
+      - path: RuckR/Server/Controllers/
+        description: "All controllers to review for [Authorize]"
+      - path: RuckR/Server/Hubs/BattleHub.cs
+        description: "Hub auth review"
+      - path: RuckR/Server/Program.cs
+        description: "Middleware order review"
+    estimated_effort: medium
+    estimated_files: 8
+    estimated_lines: 0
+    focus_area: null
+    tech_stack: [ASP.NET Core Identity, SignalR, EF Core]
+    requires_review: true
+    review_depth: full
+    review_security_sensitive: true
+    verification:
+      - "All POST endpoints require authentication"
+      - "User coordinates never returned to other users"
+      - "Connection string not hardcoded"
+      - "HTTPS enforced in production"
+    acceptance_criteria:
+      - "Audit all API endpoints for [Authorize] where required"
+      - "Verify PlayersController /nearby returns fuzzy distance only (not exact coordinates)"
+      - "Verify BattleHub requires authentication"
+      - "Verify cookie auth flows to SignalR (same-origin, no token leak)"
+      - "Verify connection string in appsettings uses User Secrets or environment variables for passwords"
+      - "Verify EF Core uses parameterized queries (default) — no SQL injection risk"
+      - "Verify HTTPS redirect enabled"
+      - "Document any security findings with severity and remediation"
+
+  - id: W8-05
+    title: "Create developer documentation"
+    description: >
+      Document the complete architecture, setup instructions, and API reference.
+      Topics: (1) Getting started — prerequisites, SQL Server setup (LocalDB or Docker),
+      dotnet ef database update, running the app. (2) Architecture overview — 3-project
+      structure, MVC pattern, Fluxor state flow, SignalR real-time flow, Leaflet map
+      integration. (3) API reference — all endpoints with request/response examples.
+      (4) Spatial data guide — NTS coordinate convention (X=lng, Y=lat), geography type,
+      proximity queries. (5) Adding new player positions or rarities. Document in
+      docs/plan/20260505-creature-collector-rugby-gps/DEVELOPER_GUIDE.md.
+    wave: 8
+    agent: gem-documentation-writer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [W8-01, W8-02]
+    context_files:
+      - path: AGENTS.md
+        description: "Architectural decisions reference"
+      - path: docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml
+        description: "Scope and user stories reference"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 300
+    focus_area: null
+    tech_stack: [Markdown]
+    task_type: documentation
+    audience: developers
+    coverage_matrix:
+      - "Getting started setup guide"
+      - "Architecture diagram (text-based)"
+      - "API endpoint reference"
+      - "Spatial data conventions"
+      - "Fluxor state store reference"
+      - "SignalR event flow"
+    verification:
+      - "DEVELOPER_GUIDE.md exists with all sections"
+      - "Setup instructions are complete and reproducible"
+      - "API reference matches implemented controllers"
+    acceptance_criteria:
+      - "Setup instructions: SQL Server (LocalDB or Docker), EF migrations, dotnet run"
+      - "Architecture section: project roles, data flow diagrams (ASCII art or Mermaid)"
+      - "API reference: all endpoints with HTTP method, path, request/response examples"
+      - "Spatial guide: NTS X=lng Y=lat convention, geography type usage, IsWithinDistance patterns"
+      - "Fluxor guide: feature structure, action dispatch flow, state subscription"
+      - "SignalR guide: hub connection, event flow, auto-reconnect behavior, IDispatcher injection pattern"
+      - "FAQ: common gotchas (map div height, NTS coordinate order, GPS permission, capture GPS validation, recovery on reconnect)"

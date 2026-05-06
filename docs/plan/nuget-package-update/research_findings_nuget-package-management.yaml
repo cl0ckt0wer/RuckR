@@ -1,0 +1,330 @@
+plan_id: nuget-package-update
+objective: Research how to update NuGet packages in this .NET project using dotnet CLI tools
+focus_area: nuget-package-management
+created_at: 2026-05-05T21:50:00Z
+created_by: RESEARCHER
+status: completed
+tldr: |
+  - 3 projects in solution (Server, Client, Shared) all targeting net8.0 with 3 top-level NuGet packages pinned to 8.0.0
+  - dotnet list package --outdated shows 10.0.7 as latest for WASM packages; dotnet-outdated (TFM-aware) shows 8.0.26 as max compatible
+  - No Directory.Packages.props — each csproj has inline PackageReference with explicit versions
+  - dotnet-outdated-tool v4.7.0 already installed globally; built-in dotnet package update available in SDK 10
+  - Critical: Blazor WASM packages (Microsoft.AspNetCore.Components.WebAssembly*) are TFM-locked — 10.x requires net10.0 target framework
+  - Shared project has zero NuGet dependencies
+  - Auto-referenced packages (ILLink.Tasks, Sdk.WebAssembly.Pack) are SDK-managed and already current
+
+research_metadata:
+  methodology: |
+    semantic_search + grep_search (glob *.csproj, Directory.Packages.props),
+    dotnet list package --outdated, dotnet list package --include-transitive,
+    dotnet-outdated tool (with and without --version-lock),
+    dotnet package update --help, dotnet tool list --global,
+    dotnet workload list, manual csproj inspection
+  scope: full-solution
+  confidence: high
+  coverage: 100
+  decision_blockers: 1
+  research_blockers: 0
+
+files_analyzed:
+  - file: RuckR.Server.csproj
+    path: RuckR/Server/RuckR.Server.csproj
+    purpose: ASP.NET Core host; API controllers; serves WASM files
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: RuckR/Server/RuckR.Server.csproj:4
+        description: net8.0 — must change to net10.0 to accept 10.x packages
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly.Server
+        type: dependency
+        location: RuckR/Server/RuckR.Server.csproj:10
+        description: Version="8.0.0" — pinned exact; latest compatible is 8.0.26; absolute latest is 10.0.7
+        language: xml
+      - element: ProjectReference to Client and Shared
+        type: dependency
+        location: RuckR/Server/RuckR.Server.csproj:14-15
+        description: References RuckR.Client and RuckR.Shared via ProjectReference
+        language: xml
+    lines: 19
+
+  - file: RuckR.Client.csproj
+    path: RuckR/Client/RuckR.Client.csproj
+    purpose: Blazor WebAssembly SPA (runs in browser)
+    key_elements:
+      - element: Sdk
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:1
+        description: Microsoft.NET.Sdk.BlazorWebAssembly — WASM-specific SDK
+        language: xml
+      - element: TargetFramework
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:4
+        description: net8.0
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly
+        type: dependency
+        location: RuckR/Client/RuckR.Client.csproj:11
+        description: Version="8.0.0" — runtime WASM components; latest compatible 8.0.26; absolute latest 10.0.7
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly.DevServer
+        type: dependency
+        location: RuckR/Client/RuckR.Client.csproj:12
+        description: Version="8.0.0" PrivateAssets="all" — dev-only; not published
+        language: xml
+      - element: ServiceWorkerAssetsManifest
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:7
+        description: PWA service worker manifest
+        language: xml
+    lines: 23
+
+  - file: RuckR.Shared.csproj
+    path: RuckR/Shared/RuckR.Shared.csproj
+    purpose: Shared models/types used by both Server and Client
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: RuckR/Shared/RuckR.Shared.csproj:4
+        description: net8.0
+        language: xml
+      - element: SupportedPlatform
+        type: property
+        location: RuckR/Shared/RuckR.Shared.csproj:10
+        description: browser — marks assembly for WASM compatibility
+        language: xml
+      - element: Zero NuGet packages
+        type: pattern
+        location: RuckR/Shared/RuckR.Shared.csproj:9
+        description: No PackageReference elements — pure class library
+        language: xml
+    lines: 12
+
+  - file: RuckR.sln
+    path: RuckR.sln
+    purpose: Solution file binding all 3 projects
+    key_elements:
+      - element: SolutionGuid
+        type: property
+        location: RuckR.sln:35
+        description: 0AC5AFF7-70F1-46DE-BFF5-48033919F500
+        language: text
+    lines: 37
+
+patterns_found:
+  - category: structure
+    pattern: Inline PackageReference with exact version pinning
+    description: All PackageReference elements use Version="8.0.0" (exact, not floating). No Version="8.0.*" or central package management in use.
+    examples:
+      - file: RuckR/Server/RuckR.Server.csproj
+        location: "10"
+        snippet: '<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.0" />'
+      - file: RuckR/Client/RuckR.Client.csproj
+        location: "11"
+        snippet: '<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.0" />'
+    prevalence: common
+
+  - category: architecture
+    pattern: Blazor WASM hosted model with Server project serving Client
+    description: |
+      Standard "ASP.NET Core hosted" Blazor WASM pattern:
+      - Server references Client via ProjectReference
+      - Server references Microsoft.AspNetCore.Components.WebAssembly.Server to serve WASM assets
+      - Client uses BlazorWebAssembly SDK with WebAssembly + DevServer packages
+      - Shared is a netstandard-style bridge with SupportedPlatform browser
+    examples:
+      - file: RuckR/Server/RuckR.Server.csproj
+        location: "14"
+        snippet: '<ProjectReference Include="..\Client\RuckR.Client.csproj" />'
+    prevalence: common
+
+  - category: structure
+    pattern: Auto-referenced SDK packages not in csproj
+    description: |
+      Microsoft.NET.ILLink.Tasks and Microsoft.NET.Sdk.WebAssembly.Pack are auto-referenced (A)
+      by the BlazorWebAssembly SDK. Not declared in any csproj — managed by SDK version.
+      ILLink.Tasks is [8.0.25, ) resolved to 8.0.25.
+      Sdk.WebAssembly.Pack is [10.0.7, ) resolved to 10.0.7 (because SDK 10.0.x is installed).
+    examples:
+      - file: RuckR/Client/RuckR.Client.csproj
+        location: "(transitive, auto-referenced)"
+        snippet: 'Microsoft.NET.Sdk.WebAssembly.Pack (A) [10.0.7, ) -> 10.0.7'
+    prevalence: common
+
+  - category: structure
+    pattern: PrivateAssets="all" for dev-only packages
+    description: DevServer package marked PrivateAssets="all" — consumed at dev time only, never flows to publish output
+    examples:
+      - file: RuckR/Client/RuckR.Client.csproj
+        location: "12"
+        snippet: '<PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.0" PrivateAssets="all" />'
+    prevalence: occasional
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: RuckR.Server
+      responsibility: ASP.NET Core host; serves API controllers + Blazor WASM static files
+      location: RuckR/Server/
+      relationship_to_domain: Direct consumer of Microsoft.AspNetCore.Components.WebAssembly.Server package
+    - component: RuckR.Client
+      responsibility: Blazor WebAssembly SPA running in browser
+      location: RuckR/Client/
+      relationship_to_domain: Direct consumer of WebAssembly and WebAssembly.DevServer packages
+    - component: RuckR.Shared
+      responsibility: Shared models/types
+      location: RuckR/Shared/
+      relationship_to_domain: No NuGet dependencies
+  interfaces_used_by_domain:
+    - interface: Microsoft.AspNetCore.Components.WebAssembly.Server
+      location: RuckR/Server/RuckR.Server.csproj:10
+      usage_pattern: Referenced as PackageReference; enables serving Blazor WASM from ASP.NET Core host
+    - interface: Microsoft.AspNetCore.Components.WebAssembly
+      location: RuckR/Client/RuckR.Client.csproj:11
+      usage_pattern: Runtime package for Blazor WebAssembly components in browser
+  data_flow_involving_domain: |
+    Server hosts API → Client (WASM) calls API over HTTP → Shared models used for serialization.
+    NuGet packages flow: SDK → Client (WASM runtime + dev server) → Server (WASM hosting middleware).
+  key_relationships_to_domain:
+    - from: RuckR.Server
+      to: Microsoft.AspNetCore.Components.WebAssembly.Server
+      relationship: depends (PackageReference)
+    - from: RuckR.Client
+      to: Microsoft.AspNetCore.Components.WebAssembly
+      relationship: depends (PackageReference)
+    - from: RuckR.Client
+      to: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      relationship: depends (PackageReference, PrivateAssets=all)
+    - from: RuckR.Server
+      to: RuckR.Client
+      relationship: projects (ProjectReference)
+    - from: RuckR.Server
+      to: RuckR.Shared
+      relationship: projects (ProjectReference)
+    - from: RuckR.Client
+      to: RuckR.Shared
+      relationship: projects (ProjectReference)
+
+related_technology_stack:
+  languages_used_in_domain: [C#, XML (csproj), MSBuild]
+  frameworks_used_in_domain:
+    - name: Microsoft.NET.Sdk.Web (Server)
+      usage_in_domain: ASP.NET Core web host SDK
+    - name: Microsoft.NET.Sdk.BlazorWebAssembly (Client)
+      usage_in_domain: Blazor WebAssembly SPA SDK
+    - name: Microsoft.NET.Sdk (Shared)
+      usage_in_domain: Standard class library SDK
+  libraries_used_in_domain:
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server
+      purpose_in_domain: Middleware to serve Blazor WASM assets from ASP.NET Core host (Server)
+    - name: Microsoft.AspNetCore.Components.WebAssembly
+      purpose_in_domain: Blazor WebAssembly runtime components (Client)
+    - name: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      purpose_in_domain: Development-time Blazor WASM debugging server (Client, PrivateAssets=all)
+  external_apis_used_in_domain:
+    - name: nuget.org
+      integration_point: Standard NuGet package source; all packages resolved from here
+
+related_conventions:
+  naming_patterns_in_domain: PascalCase project names (RuckR.Server, RuckR.Client, RuckR.Shared); standard Microsoft package naming
+  structure_of_domain: |
+    3-project solution: Server (host) → Client (WASM) + Shared (models).
+    Packages declared inline in each .csproj — no Directory.Packages.props.
+    Versions hardcoded as exact strings (8.0.0) — no CentralPackageManagement, no floating versions.
+  error_handling_in_domain: N/A (package management pattern — no error handling code involved)
+  testing_in_domain: No test projects exist. No test-related NuGet packages (xunit, nunit, coverlet, etc.).
+  documentation_in_domain: AGENTS.md documents the architecture and active goals (Upgrade to .NET 10, Finish Profile, Update NuGet)
+
+related_dependencies:
+  internal:
+    - component: RuckR.Client
+      relationship_to_domain: Referenced by Server via ProjectReference; must be built before Server
+      direction: inbound (Server depends on Client)
+    - component: RuckR.Shared
+      relationship_to_domain: Referenced by both Server and Client via ProjectReference
+      direction: inbound (both depend on Shared)
+  external:
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server
+      purpose_for_domain: Enables ASP.NET Core to serve Blazor WebAssembly static files and handle fallback routing
+    - name: Microsoft.AspNetCore.Components.WebAssembly
+      purpose_for_domain: Provides the Blazor component model, routing, and JS interop in the browser
+    - name: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      purpose_for_domain: Development-time hot reload and debugging support for Blazor WASM
+    - name: Microsoft.NET.ILLink.Tasks (auto-referenced)
+      purpose_for_domain: IL trimming/linking for WASM publish size optimization
+    - name: Microsoft.NET.Sdk.WebAssembly.Pack (auto-referenced)
+      purpose_for_domain: Build-time WebAssembly packaging tooling (AOT, relinking)
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: Package supply chain
+      location: All .csproj files
+      concern: Pinned to 8.0.0 — missing 6+ months of security patches in 8.0.x line
+    - area: Transitive dependency chain
+      location: 24 transitive packages (System.Text.Json, Extensions.*, etc.)
+      concern: All resolved to 8.0.0; may have known vulnerabilities fixed in later patches
+  authentication_patterns_in_domain: N/A (no auth packages referenced)
+  authorization_patterns_in_domain: N/A (Microsoft.AspNetCore.Authorization appears only as transitive dependency)
+  data_validation_in_domain: N/A (no validation packages referenced)
+
+testing_patterns:
+  framework: None
+  coverage_areas: []
+  test_organization: No test projects exist in solution
+  mock_patterns: []
+
+open_questions:
+  - question: Should packages be updated within the 8.0.x line (compatible, safe) or jump to 10.0.x (requires TFM upgrade)?
+    context: |
+      ADR-001 calls for .NET 10 upgrade. dotnet-outdated (TFM-aware) shows 8.0.26 as max. 
+      dotnet list package --outdated shows 10.0.7 as latest. The 10.x packages require net10.0 TFM.
+      Two strategies:
+        A) Update packages to 8.0.26 now (safe, no TFM change), then do TFM + packages together later.
+        B) Do TFM + packages in one atomic change per ADR-001.
+    type: decision_blocker
+    affects: [RuckR.Server.csproj, RuckR.Client.csproj, RuckR.sln]
+
+  - question: Should the DevServer package (PrivateAssets=all) be updated to 10.0.7 even if TFM stays at net8.0?
+    context: |
+      DevServer 8.0.0 → 10.0.7 is a major jump shown by dotnet-outdated (with --version-lock None).
+      Since it's PrivateAssets=all and dev-only, TFM compatibility may be less strict, but needs verification.
+      dotnet-outdated flags this as red (major version, possible breaking changes).
+    type: research
+    affects: [RuckR.Client.csproj]
+
+  - question: Are there any known vulnerabilities in the 24 transitive dependencies currently resolved to 8.0.0?
+    context: |
+      dotnet package update --vulnerable would check this, but requires NuGet vulnerability database access.
+      All transitive packages (System.Text.Json 8.0.0, Extensions.* 8.0.0) are 6 major patch versions behind.
+    type: research
+    affects: [RuckR.Server.csproj, RuckR.Client.csproj]
+
+gaps:
+  - area: Central Package Management
+    description: |
+      No Directory.Packages.props exists. All versions are duplicated across csproj files.
+      For a 3-project solution this is manageable, but adopting CPM would make future updates a single-line change
+      and prevent version drift between Server and Client packages.
+    impact: nice_to_know
+    affects: [All .csproj files]
+
+  - area: Package version floating/range constraints
+    description: |
+      All packages use exact Version="8.0.0". No floating versions (8.0.*) or version ranges.
+      This means every update requires manual csproj edits. Floating versions would auto-absorb patches.
+    impact: nice_to_know
+    affects: [RuckR.Server.csproj, RuckR.Client.csproj]
+
+  - area: Vulnerability scanning
+    description: |
+      No automated vulnerability scanning in place. The dotnet package update --vulnerable command exists
+      but has not been run. The project is 6+ patch versions behind on all packages.
+    impact: research_blocker
+    affects: [Security posture]
+
+  - area: Blazor WASM workload
+    description: |
+      No wasm-tools workload installed (only android, ios, maccatalyst, maui-windows).
+      The wasm-tools workload may be needed for AOT compilation or advanced WASM scenarios in .NET 10.
+      Currently not required for basic Blazor WASM operation.
+    impact: nice_to_know
+    affects: [RuckR.Client build/publish]

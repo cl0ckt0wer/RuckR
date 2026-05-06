@@ -1,21 +1,21 @@
 {
-  "name": "RuckR",
+  "name": "RuckR — Rugby Creature Collector",
   "short_name": "RuckR",
-  "start_url": "./",
+  "description": "Explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players in this location-based PVP game.",
+  "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#03173d",
-  "prefer_related_applications": false,
+  "background_color": "#1B5E20",
+  "theme_color": "#1B5E20",
   "icons": [
-    {
-      "src": "icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512"
-    },
     {
       "src": "icon-192.png",
       "type": "image/png",
       "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
   ]
 }

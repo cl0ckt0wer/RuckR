@@ -1,0 +1,10 @@
+name: RuckR
+version: 1.0.0
+description: APM project for RuckR
+author: Trip
+dependencies:
+  apm:
+  - mubaidr/gem-team
+  mcp: []
+includes: auto
+scripts: {}

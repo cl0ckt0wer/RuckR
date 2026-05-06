@@ -1,0 +1,310 @@
+@page "/battles/history"
+@using RuckR.Shared.Models
+@inject ApiClientService ApiClient
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+
+<PageTitle>Battle History</PageTitle>
+
+<h1>📜 Battle History</h1>
+
+@* --- AUTH CHECK --- *@
+@if (_requiresAuth)
+{
+    <p><em>Checking authentication...</em></p>
+    return;
+}
+
+@* --- LOADING --- *@
+@if (_isLoading)
+{
+    <div class="d-flex justify-content-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <span class="ms-3 align-self-center"><em>Loading battle history...</em></span>
+    </div>
+    return;
+}
+
+@* --- ERROR --- *@
+@if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <span>@_errorMessage</span>
+        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadHistoryAsync">Retry</button>
+    </div>
+    return;
+}
+
+@* --- EMPTY STATE --- *@
+@if (_battles is null || _battles.Count == 0)
+{
+    <div class="text-center py-5">
+        <div style="font-size: 4rem;">⚔️</div>
+        <h4 class="mt-3">No battles yet!</h4>
+        <p class="text-muted">
+            Head to /players/nearby to find opponents and start your legacy.
+        </p>
+        <a href="/players/nearby" class="btn btn-primary btn-lg">
+            Find Opponents
+        </a>
+    </div>
+    return;
+}
+
+@* --- BATTLE HISTORY LIST --- *@
+<div class="list-group list-group-flush">
+    @foreach (var battle in _battles)
+    {
+        var isExpanded = _expandedId == battle.Id;
+        var isUserChallenger = string.Equals(battle.ChallengerId, _currentUsername, StringComparison.OrdinalIgnoreCase);
+        var opponentDisplay = isUserChallenger ? battle.OpponentId : battle.ChallengerId;
+        var userPlayerDisplay = isUserChallenger
+            ? $"Player #{battle.ChallengerPlayerId}"
+            : $"Player #{battle.OpponentPlayerId}";
+        var opponentPlayerDisplay = isUserChallenger
+            ? $"Player #{battle.OpponentPlayerId}"
+            : $"Player #{battle.ChallengerPlayerId}";
+        var result = GetBattleResult(battle);
+
+        <div class="list-group-item list-group-item-action p-0 border-0 mb-3">
+            <div class="card @(isExpanded ? "border-primary border-2" : "")">
+                @* --- CARD BODY (always visible) --- *@
+                <div class="card-body" role="button" @onclick="() => ToggleExpand(battle.Id)">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            @* --- Result Badge + Opponent --- *@
+                            <div class="mb-2">
+                                <span class="badge @ResultBadgeClass(result) fs-6 me-2">@ResultLabel(result)</span>
+                                <strong>vs</strong> <span class="text-body">@opponentDisplay</span>
+                            </div>
+
+                            @* --- Players Used --- *@
+                            <p class="mb-1">
+                                <small class="text-muted">
+                                    @userPlayerDisplay vs @opponentPlayerDisplay
+                                </small>
+                            </p>
+
+                            @* --- Method / Outcome --- *@
+                            <p class="mb-1">
+                                <small>@GetOutcomeDescription(battle, isUserChallenger)</small>
+                            </p>
+
+                            @* --- Time --- *@
+                            <p class="mb-0">
+                                <small class="text-muted">
+                                    @GetRelativeTime(battle.ResolvedAt ?? battle.CreatedAt)
+                                    <span class="badge @StatusBadgeClass(battle.Status) ms-2">@StatusLabel(battle.Status)</span>
+                                </small>
+                            </p>
+                        </div>
+
+                        @* --- Expand/Collapse indicator --- *@
+                        <div class="ms-2">
+                            <span class="text-muted">@(isExpanded ? "▲" : "▼")</span>
+                        </div>
+                    </div>
+                </div>
+
+                @* --- EXPANDED DETAIL --- *@
+                @if (isExpanded)
+                {
+                    <div class="card-footer bg-light">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Your Side</h6>
+                                <ul class="list-unstyled small">
+                                    <li><strong>Role:</strong> @(isUserChallenger ? "Challenger" : "Opponent")</li>
+                                    <li><strong>Player:</strong> @userPlayerDisplay</li>
+                                </ul>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Opponent</h6>
+                                <ul class="list-unstyled small">
+                                    <li><strong>User:</strong> @opponentDisplay</li>
+                                    <li><strong>Player:</strong> @opponentPlayerDisplay</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <hr />
+                        <div class="small text-muted">
+                            <div><strong>Status:</strong> @StatusLabel(battle.Status)</div>
+                            <div><strong>Created:</strong> @battle.CreatedAt.ToString("MMM dd, yyyy HH:mm") UTC</div>
+                            @if (battle.ResolvedAt.HasValue)
+                            {
+                                <div><strong>Resolved:</strong> @battle.ResolvedAt.Value.ToString("MMM dd, yyyy HH:mm") UTC</div>
+                            }
+                            @if (!string.IsNullOrEmpty(battle.WinnerId))
+                            {
+                                <div><strong>Winner:</strong> @battle.WinnerId</div>
+                            }
+                            <div><strong>Battle ID:</strong> @battle.Id</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool _requiresAuth = true;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private string _currentUsername = string.Empty;
+    private IReadOnlyList<BattleModel>? _battles;
+    private int? _expandedId;
+
+    private enum BattleResultDisplay
+    {
+        Victory,
+        Defeat,
+        Expired,
+        Declined,
+        Unknown
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity is null || !user.Identity.IsAuthenticated)
+        {
+            var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+            Navigation.NavigateTo($"/Identity/Account/Login?returnUrl={returnUrl}", forceLoad: true);
+            return;
+        }
+
+        _requiresAuth = false;
+        _currentUsername = user.Identity.Name ?? string.Empty;
+
+        await LoadHistoryAsync();
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            var history = await ApiClient.GetBattleHistoryAsync();
+            _battles = history.AsReadOnly();
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to load battle history: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void ToggleExpand(int battleId)
+    {
+        _expandedId = _expandedId == battleId ? null : battleId;
+    }
+
+    private BattleResultDisplay GetBattleResult(BattleModel battle)
+    {
+        if (battle.Status == BattleStatus.Expired)
+            return BattleResultDisplay.Expired;
+        if (battle.Status == BattleStatus.Declined)
+            return BattleResultDisplay.Declined;
+        if (battle.Status == BattleStatus.Completed)
+        {
+            if (!string.IsNullOrEmpty(battle.WinnerId)
+                && string.Equals(battle.WinnerId, _currentUsername, StringComparison.OrdinalIgnoreCase))
+                return BattleResultDisplay.Victory;
+            if (!string.IsNullOrEmpty(battle.WinnerId))
+                return BattleResultDisplay.Defeat;
+        }
+        return BattleResultDisplay.Unknown;
+    }
+
+    private string GetOutcomeDescription(BattleModel battle, bool isUserChallenger)
+    {
+        if (battle.Status == BattleStatus.Completed)
+        {
+            if (!string.IsNullOrEmpty(battle.WinnerId)
+                && string.Equals(battle.WinnerId, _currentUsername, StringComparison.OrdinalIgnoreCase))
+                return "Won — your player prevailed!";
+            if (!string.IsNullOrEmpty(battle.WinnerId))
+                return "Lost — opponent's player prevailed.";
+            return "Completed";
+        }
+        if (battle.Status == BattleStatus.Declined)
+            return isUserChallenger ? "Opponent declined your challenge." : "You declined this challenge.";
+        if (battle.Status == BattleStatus.Expired)
+            return "Challenge expired before resolution.";
+        return battle.Status.ToString();
+    }
+
+    private static string ResultBadgeClass(BattleResultDisplay result) => result switch
+    {
+        BattleResultDisplay.Victory => "bg-success",
+        BattleResultDisplay.Defeat => "bg-danger",
+        BattleResultDisplay.Expired => "bg-secondary",
+        BattleResultDisplay.Declined => "bg-secondary",
+        _ => "bg-dark"
+    };
+
+    private static string ResultLabel(BattleResultDisplay result) => result switch
+    {
+        BattleResultDisplay.Victory => "🏆 Victory",
+        BattleResultDisplay.Defeat => "💔 Defeat",
+        BattleResultDisplay.Expired => "⏳ Expired",
+        BattleResultDisplay.Declined => "🚫 Declined",
+        _ => "Unknown"
+    };
+
+    private static string GetRelativeTime(DateTime utcTime)
+    {
+        var elapsed = DateTime.UtcNow - utcTime;
+
+        if (elapsed.TotalSeconds < 0)
+            return "just now";
+        if (elapsed.TotalSeconds < 60)
+            return "just now";
+        if (elapsed.TotalMinutes < 60)
+            return $"{(int)elapsed.TotalMinutes} min ago";
+        if (elapsed.TotalHours < 24)
+        {
+            var hours = (int)elapsed.TotalHours;
+            return hours == 1 ? "1 hour ago" : $"{hours} hours ago";
+        }
+        if (elapsed.TotalDays < 2)
+            return "Yesterday";
+        if (elapsed.TotalDays < 7)
+            return $"{(int)elapsed.TotalDays} days ago";
+        return utcTime.ToString("MMM d");
+    }
+
+    private static string StatusBadgeClass(BattleStatus status) => status switch
+    {
+        BattleStatus.Pending => "bg-warning text-dark",
+        BattleStatus.Accepted => "bg-info",
+        BattleStatus.Completed => "bg-success",
+        BattleStatus.Declined => "bg-secondary",
+        BattleStatus.Expired => "bg-dark",
+        _ => "bg-secondary"
+    };
+
+    private static string StatusLabel(BattleStatus status) => status switch
+    {
+        BattleStatus.Pending => "Pending",
+        BattleStatus.Accepted => "Accepted",
+        BattleStatus.Completed => "Completed",
+        BattleStatus.Declined => "Declined",
+        BattleStatus.Expired => "Expired",
+        _ => status.ToString()
+    };
+}

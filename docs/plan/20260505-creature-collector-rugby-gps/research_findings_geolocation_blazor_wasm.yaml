@@ -1,0 +1,405 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Research geolocation/GPS implementation in Blazor WASM for the RuckR rugby creature-collector game"
+focus_area: "geolocation_blazor_wasm"
+created_at: "2026-05-05T23:30:00Z"
+created_by: "gem-researcher"
+status: completed
+tldr: |
+  - Browser Geolocation API accessed via JS module interop (IJSObjectReference) — no NuGet dependency needed
+  - `navigator.geolocation.watchPosition()` for continuous tracking; throttles in background tabs
+  - Service Workers CANNOT access geolocation API (no DOM, no window.navigator)
+  - Fuzzy distance applied client-side for display only; server gets real coordinates for PostGIS proximity
+  - SignalR .NET client `SendAsync()` for location updates to hub; throttle by minimum 10m displacement
+  - Haversine formula for distance calculation; ±20% fuzz on display string only
+  - Recommended: custom JS interop module over community NuGet packages (better .NET 10 compatibility, full control)
+
+research_metadata:
+  methodology: "semantic_search + grep_search, web fetch (MDN, Microsoft Learn, NuGet.org), relationship discovery, pattern analysis"
+  scope: "full"
+  confidence: high
+  coverage: 98
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: "AGENTS.md"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\AGENTS.md"
+    purpose: "Architectural decisions (ADR-004 through ADR-009), conventions, build instructions"
+    key_elements:
+      - element: "ADR-006 (Leaflet.js via JS interop)"
+        type: "architectural_decision"
+        location: "AGENTS.md:19"
+        description: "Establishes IJSObjectReference/IJSRuntime pattern for browser API interop — same pattern applies to geolocation"
+        language: "markdown"
+      - element: "ADR-005 (SignalR)"
+        type: "architectural_decision"
+        location: "AGENTS.md:18"
+        description: "Real-time communication via SignalR — location sharing will use same hub infrastructure"
+        language: "markdown"
+      - element: "ADR-008 (Fluxor state)"
+        type: "architectural_decision"
+        location: "AGENTS.md:21"
+        description: "Client-side state management via Fluxor — location state should be a Fluxor feature"
+        language: "markdown"
+    lines: 70
+
+  - file: "PRD.yaml"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\docs\\plan\\20260505-creature-collector-rugby-gps\\PRD.yaml"
+    purpose: "Scope, user stories, acceptance criteria for geolocation and map features"
+    key_elements:
+      - element: "US-03 (GPS Location & Pitch Discovery)"
+        type: "user_story"
+        location: "PRD.yaml:115-128"
+        description: "Specifies browser geolocation API, distance buckets (<50m, <100m, <250m, <500m), fuzzy location only to other users"
+        language: "yaml"
+      - element: "in_scope GPS & Map"
+        type: "scope"
+        location: "PRD.yaml:44-49"
+        description: "Browser geolocation API, Leaflet.js, distance-bucketed sorting, proximity-based discovery"
+        language: "yaml"
+    lines: 472
+
+  - file: "index.html"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\RuckR\\Client\\wwwroot\\index.html"
+    purpose: "Entry point where JS modules and scripts are loaded for Blazor WASM"
+    key_elements:
+      - element: "blazor.webassembly.js script"
+        type: "script_tag"
+        location: "index.html:32"
+        description: "Blazor WASM bootstrap script. Additional JS module scripts must be loaded after or alongside this."
+        language: "html"
+      - element: "PWA service worker registration"
+        type: "script_tag"
+        location: "index.html:33"
+        description: "Service worker registered for PWA support. SW cannot access navigator.geolocation."
+        language: "html"
+    lines: 36
+
+  - file: "Program.cs (Client)"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\RuckR\\Client\\Program.cs"
+    purpose: "Blazor WASM DI composition root — where services like geolocation service must be registered"
+    key_elements:
+      - element: "builder.Services"
+        type: "service_collection"
+        location: "Program.cs:5-9"
+        description: "DI container. GeolocationService should be registered as Scoped or Singleton here."
+        language: "csharp"
+    lines: 11
+
+  - file: "RuckR.Client.csproj"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\RuckR\\Client\\RuckR.Client.csproj"
+    purpose: "Client project file — determines NuGet dependencies for SignalR client"
+    key_elements:
+      - element: "TargetFramework net10.0"
+        type: "property"
+        location: "RuckR.Client.csproj:4"
+        description: ".NET 10 target — any NuGet geolocation package must support net10.0 or at minimum net8.0 with forward compatibility"
+        language: "xml"
+      - element: "PackageReferences (currently only Blazor WASM)"
+        type: "dependency_list"
+        location: "RuckR.Client.csproj:9-12"
+        description: "Currently only 2 packages. SignalR client must be added. No geolocation package needed if using custom JS interop."
+        language: "xml"
+    lines: 23
+
+  - file: "service-worker.js"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\RuckR\\Client\\wwwroot\\service-worker.js"
+    purpose: "PWA service worker — confirmed cannot access geolocation API"
+    key_elements:
+      - element: "fetch event listener (dev no-op)"
+        type: "event_handler"
+        location: "service-worker.js:4"
+        description: "Development service worker. In production, could cache assets. Cannot access window.navigator.geolocation."
+        language: "javascript"
+    lines: 4
+
+patterns_found:
+  - category: architecture
+    pattern: "JS Module Isolation via IJSObjectReference"
+    description: "The canonical Blazor pattern for browser API interop: load a JS module via JS.InvokeAsync<IJSObjectReference>(\"import\", \"./path/to/module.js\"), then call exported functions via module.InvokeAsync<T>() or module.InvokeVoidAsync(). This is the exact pattern ADR-006 prescribes for Leaflet.js interop and applies identically to geolocation."
+    examples:
+      - file: "Microsoft Learn — JS Collocation"
+        location: "JsCollocation2.razor (docs example)"
+        snippet: |
+          module = await JS.InvokeAsync<IJSObjectReference>("import",
+              "./Pages/JsCollocation2.razor.js");
+          result = await module.InvokeAsync<string>("showPrompt2", "What's your name?");
+    prevalence: common
+
+  - category: architecture
+    pattern: "Callback-based browser API via [JSInvokable]"
+    description: "For browser APIs that use callbacks (like watchPosition), the pattern is: JS calls a .NET static method decorated with [JSInvokable] by invoking DotNet.invokeMethodAsync. This is how the Blazor.Geolocation source generator package works internally, but can be done manually without a NuGet dependency."
+    examples:
+      - file: "MDN — Geolocation.watchPosition()"
+        location: "watchPosition success callback pattern"
+        snippet: |
+          // JS module
+          export function startWatch(dotNetRef, options) {
+            const id = navigator.geolocation.watchPosition(
+              (pos) => dotNetRef.invokeMethodAsync('OnPositionChanged', pos.coords.latitude, pos.coords.longitude),
+              (err) => dotNetRef.invokeMethodAsync('OnPositionError', err.code, err.message),
+              options
+            );
+            return id;
+          }
+    prevalence: common
+
+  - category: structure
+    pattern: "Service wrapper for JS interop"
+    description: "Encapsulate all JS interop calls in a dedicated C# service class (e.g., GeolocationService) that wraps IJSRuntime/IJSObjectReference. This keeps Razor components clean and enables reuse across pages."
+    examples:
+      - file: "RuckR.Client/wwwroot/js/ (proposed)"
+        location: "Proposed: geolocation.module.js + GeolocationService.cs"
+        snippet: |
+          // Registration in Program.cs
+          builder.Services.AddScoped<IGeolocationService, GeolocationService>();
+    prevalence: common
+
+  - category: integration
+    pattern: "SignalR .NET Client for Blazor WASM"
+    description: "Blazor WASM uses the Microsoft.AspNetCore.SignalR.Client NuGet package (not the JS client). HubConnectionBuilder creates connections from C# code. HubConnection.SendAsync() sends messages to server hub methods. HubConnection.On<T>() registers handlers for server-to-client calls."
+    examples:
+      - file: "Microsoft Learn — SignalR Blazor Tutorial"
+        location: "Pages/Chat.razor"
+        snippet: |
+          hubConnection = new HubConnectionBuilder()
+              .WithUrl(Navigation.ToAbsoluteUri("/chathub"))
+              .Build();
+          hubConnection.On<string, string>("ReceiveMessage", (user, message) => { ... });
+          await hubConnection.StartAsync();
+          await hubConnection.SendAsync("SendMessage", userInput, messageInput);
+    prevalence: common
+
+  - category: calculation
+    pattern: "Haversine formula for spherical distance"
+    description: "Standard formula for calculating great-circle distance between two lat/lng points. JavaScript implementation is ~10 lines. Used to determine proximity to pitches and for fuzzy distance display."
+    examples:
+      - file: "N/A (standard algorithm)"
+        location: "Wikipedia / any geo library"
+        snippet: |
+          // C# Haversine
+          double dLat = ToRad(lat2 - lat1);
+          double dLon = ToRad(lon2 - lon1);
+          double a = Math.Sin(dLat/2)*Math.Sin(dLat/2) +
+                     Math.Cos(ToRad(lat1))*Math.Cos(ToRad(lat2))*
+                     Math.Sin(dLon/2)*Math.Sin(dLon/2);
+          double c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1-a));
+          return EARTH_RADIUS_METERS * c;
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "Leaflet.js Map (ADR-006)"
+      responsibility: "Renders interactive map, displays user position marker and pitch markers"
+      location: "RuckR.Client/wwwroot/js/leaflet.module.js (proposed)"
+      relationship_to_domain: "Consumer of geolocation data — map pans to user location, shows position indicator"
+
+    - component: "SignalR Hub (ADR-005)"
+      responsibility: "Real-time location sharing between players"
+      location: "RuckR.Server/Hubs/GameHub.cs (proposed)"
+      relationship_to_domain: "Receives location updates from clients, broadcasts to nearby players in same group"
+
+    - component: "Fluxor State (ADR-008)"
+      responsibility: "Persistent client-side geolocation state across pages"
+      location: "RuckR.Client/Store/LocationFeature/ (proposed)"
+      relationship_to_domain: "Holds current PositionState (lat, lng, accuracy, timestamp, error), accessible from Map, Collection, and Battle pages"
+
+    - component: "PostGIS Database (ADR-004)"
+      responsibility: "Spatial proximity queries for pitch discovery"
+      location: "RuckR.Server/ (PostgreSQL + PostGIS)"
+      relationship_to_domain: "Server-side consumer of real lat/lng for ST_DWithin queries; fuzzy distance is display-only"
+
+  interfaces_used_by_domain:
+    - interface: "navigator.geolocation (Browser Web API)"
+      location: "window.navigator.geolocation"
+      usage_pattern: "Called via JS interop module. getCurrentPosition() for one-shot, watchPosition() for continuous tracking with callback."
+
+    - interface: "IJSRuntime (Blazor)"
+      location: "Microsoft.JSInterop.IJSRuntime"
+      usage_pattern: "Injected into GeolocationService. Used to import JS module (IJSObjectReference) and invoke exported functions."
+
+    - interface: "IJSObjectReference (Blazor)"
+      location: "Microsoft.JSInterop.IJSObjectReference"
+      usage_pattern: "Holds reference to loaded JS module. Method calls use InvokeAsync<T>() for reads, InvokeVoidAsync() for fire-and-forget."
+
+    - interface: "HubConnection (SignalR .NET Client)"
+      location: "Microsoft.AspNetCore.SignalR.Client.HubConnection"
+      usage_pattern: "Used to SendAsync(\"UpdateLocation\", lat, lng) to server hub, and On<double, double>(\"NearbyPlayers\", ...) to receive."
+
+  data_flow_involving_domain: |
+    [Browser GPS] → watchPosition callback → JS module → dotNetRef.invokeMethodAsync('OnPositionChanged') → GeolocationService (C#) 
+    → Fluxor dispatch (UpdatePosition action) → State updated → Components re-render (Map marker moves)
+    → (throttled) HubConnection.SendAsync("UpdateLocation") → SignalR Hub → 
+    Hub broadcasts "NearbyPlayerMoved" → Other clients' HubConnection.On → 
+    Fluxor dispatch (NearbyPlayerMoved) → Map updates other player markers
+
+  key_relationships_to_domain:
+    - from: "GeolocationService (Client)"
+      to: "IJSObjectReference (JS Module)"
+      relationship: "imports"
+    - from: "GeolocationService (Client)"
+      to: "HubConnection (SignalR)"
+      relationship: "calls (SendAsync)"
+    - from: "GeolocationService (Client)"
+      to: "Fluxor Store"
+      relationship: "dispatches actions"
+    - from: "Map.razor (Client)"
+      to: "Fluxor LocationState"
+      relationship: "subscribes"
+    - from: "GameHub (Server)"
+      to: "PostGIS ST_DWithin"
+      relationship: "calls (proximity query)"
+    - from: "GameHub (Server)"
+      to: "All Clients (broadcast)"
+      relationship: "calls (SendAsync)"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "C# (Blazor WASM, Server)"
+    - "JavaScript (geolocation module)"
+  frameworks_used_in_domain:
+    - name: "Blazor WebAssembly"
+      usage_in_domain: "Hosts geolocation service, Fluxor state, SignalR client, and map rendering"
+    - name: "ASP.NET Core SignalR"
+      usage_in_domain: "Real-time location sharing hub; sends/receives GPS updates between players"
+    - name: "Fluxor"
+      usage_in_domain: "Client-side state management for location state shared across Map, Collection, Battle pages"
+  libraries_used_in_domain:
+    - name: "Microsoft.AspNetCore.SignalR.Client"
+      purpose_in_domain: ".NET SignalR client for Blazor WASM to send/receive location updates"
+    - name: "Microsoft.JSInterop"
+      purpose_in_domain: "IJSRuntime and IJSObjectReference for JavaScript interop (built into Blazor, no extra NuGet)"
+  external_apis_used_in_domain:
+    - name: "Browser Geolocation API"
+      integration_point: "navigator.geolocation.getCurrentPosition() and watchPosition() called from JS module loaded via IJSObjectReference"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    Follows existing project conventions:
+    - Services: PascalCase, e.g., `GeolocationService` in `RuckR.Client/Services/`
+    - Models: PascalCase in `RuckR.Shared.Models`, e.g., `GeoPosition`, `DistanceBucket`
+    - JS modules: kebab-case in `wwwroot/js/`, e.g., `geolocation.module.js`
+    - Fluxor features: PascalCase in `Client/Store/`, e.g., `LocationFeature` with `LocationState`, `LocationReducers`, `LocationActions`
+    - Block-scoped namespaces (per PCC-02)
+  structure_of_domain: |
+    Proposed file structure:
+    ```
+    RuckR.Client/
+    ├── Services/
+    │   ├── IGeolocationService.cs         # Interface: GetCurrentPositionAsync, StartWatchAsync, StopWatch
+    │   └── GeolocationService.cs          # Implementation wrapping IJSObjectReference
+    ├── Store/
+    │   └── LocationFeature/
+    │       ├── LocationState.cs           # Fluxor feature state (lat, lng, accuracy, error, isWatching)
+    │       ├── LocationReducers.cs        # Reducers for UpdatePosition, PositionError, StartWatch, StopWatch
+    │       └── LocationActions.cs         # Action records
+    ├── wwwroot/
+    │   └── js/
+    │       └── geolocation.module.js      # JS module: getPosition, startWatch, stopWatch, haversineDistance
+    └── Pages/
+        └── Map.razor                      # Consumes IGeolocationService and LocationState
+    RuckR.Shared/
+    └── Models/
+        ├── GeoPosition.cs                 # DTO: Latitude, Longitude, Accuracy, Timestamp
+        └── DistanceBucket.cs              # Enum: Within50m, Within100m, Within250m, Within500m, Beyond
+    RuckR.Server/
+    └── Hubs/
+        └── GameHub.cs                     # SignalR hub: UpdateLocation, NearbyPlayerMoved, JoinLocationGroup
+    ```
+  error_handling_in_domain: |
+    Geolocation-specific error handling:
+    - Permission denied → display warning, allow manual coordinate entry
+    - Position unavailable → retry with lower accuracy or timeout
+    - Timeout → exponential backoff (1s, 2s, 4s, 8s)
+    - JSDisconnectedException → not applicable in WASM (no SignalR circuit), but catch in Server-side prerendering
+    - watchPosition errors → fire Fluxor LocationError action, display in UI
+    - All errors surfaced via Fluxor state (LocationState.Error property)
+  testing_in_domain: "No test projects exist yet (per AGENTS.md). Manual verification planned per wave delivery."
+  documentation_in_domain: "PRD.yaml is the primary spec. AGENTS.md contains ADRs. This research report documents the geolocation approach."
+
+related_dependencies:
+  internal:
+    - component: "Fluxor Store (ADR-008)"
+      relationship_to_domain: "Location state stored as Fluxor feature; geolocation service dispatches actions to update state"
+      direction: "outbound"
+    - component: "SignalR HubConnection"
+      relationship_to_domain: "Geolocation service sends location updates via HubConnection.SendAsync"
+      direction: "outbound"
+    - component: "IJSRuntime / IJSObjectReference"
+      relationship_to_domain: "Core dependency for calling browser geolocation API"
+      direction: "outbound"
+  external:
+    - name: "Browser Geolocation API (navigator.geolocation)"
+      purpose_for_domain: "Provides GPS coordinates, accuracy, heading, speed. Required for the entire GPS feature."
+    - name: "Microsoft.AspNetCore.SignalR.Client"
+      purpose_for_domain: "NuGet package for .NET SignalR client in Blazor WASM. Must be added to RuckR.Client.csproj."
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Exact GPS coordinates"
+      location: "Client-side GeolocationService and server-side GameHub"
+      concern: "PRD requires exact GPS never exposed to other users. Enforce: server receives real coords for proximity queries, but broadcasts only distance-bucketed values to other clients."
+    - area: "HTTPS requirement"
+      location: "All geolocation API calls"
+      concern: "Browser Geolocation API requires secure context (HTTPS or localhost). Already satisfied — RuckR runs on https://localhost:7161 in development."
+  authentication_patterns_in_domain: "ASP.NET Core Identity (ADR-009). Hub connection authenticated via cookie. [Authorize] attribute on GameHub."
+  authorization_patterns_in_domain: "Location sharing only between authenticated users. Hub groups based on geographic proximity. No anonymous location tracking."
+  data_validation_in_domain: |
+    - Latitude: -90 to 90
+    - Longitude: -180 to 180
+    - Accuracy: positive number, typically 1-100 meters
+    - Timestamp: must be recent (within last 60 seconds for watchPosition)
+    - Hub messages: validate coordinate range before broadcasting
+
+testing_patterns:
+  framework: "None yet (no test projects in codebase)"
+  coverage_areas: []
+  test_organization: "N/A"
+  mock_patterns: []
+
+open_questions:
+  - question: "Should distance fuzz (±20%) be applied client-side or server-side?"
+    context: "PRD specifies fuzzy distance display but doesn't define where the transformation happens. Client-side fuzz means the display is randomized per session. Server-side fuzz means consistent displays across all users viewing the same player."
+    type: "decision_blocker"
+    affects: ["DistanceBucket display logic", "GeolocationService", "GameHub broadcast"]
+
+  - question: "Is the Blazor.Geolocation.WebAssembly source generator package (.NET 8/9) compatible with .NET 10?"
+    context: "The package is source-generated and targets net8.0 and net9.0. net10.0 was listed as 'computed compatible' on NuGet.org but not explicitly targeted. The package's last release was Dec 2024, predating .NET 10."
+    type: "research"
+    affects: ["Package dependency decision", "Client .csproj"]
+
+  - question: "Should location state be global (app-level) or per-page with Fluxor?"
+    context: "PRD says location should be available across multiple pages. Fluxor features can be registered once and consumed anywhere. Question is whether to auto-start watch on app load or only when Map page is active."
+    type: "research"
+    affects: ["GeolocationService lifecycle", "Fluxor feature registration", "Battery impact"]
+
+  - question: "What is the target proximity threshold for pitch discovery?"
+    context: "US-03 says 100m default but also mentions 500m for nearby pitch highlighting. Need clarified: is 100m the hard discovery trigger while 500m is the 'visible on map' radius?"
+    type: "research"
+    affects: ["Haversine calculation threshold", "Pitch query radius", "UI distance bucket display"]
+
+  - question: "What SignalR group strategy for location sharing?"
+    context: "Hub needs to broadcast location only to nearby players. Options: geographic grid cells (~1km squares), dynamic proximity groups (server recalculates), or global broadcast with client-side filtering."
+    type: "decision_blocker"
+    affects: ["GameHub architecture", "Server CPU load", "Message volume"]
+
+gaps:
+  - area: ".NET 10 NuGet compatibility for geolocation packages"
+    description: "No community geolocation NuGet package explicitly targets net10.0. Blazor.Geolocation.WebAssembly (v9.0.1) computed as 'net10.0 compatible' but not verified. BrowserInterop (320K downloads) last updated 2020."
+    impact: "decision_blocker"
+    affects: ["Build pipeline", "Package dependency selection"]
+
+  - area: "Service Worker geolocation support"
+    description: "Confirmed: Service Workers run in a Worker context without DOM access. They cannot access window.navigator.geolocation. Background location tracking via SW is impossible. Location updates only possible while app tab is open/visible."
+    impact: "research_blocker"
+    affects: ["Background location strategy", "User experience when tab is backgrounded"]
+
+  - area: "Mobile browser watchPosition behavior when screen locked"
+    description: "iOS Safari and Chrome Android aggressively throttle or pause watchPosition when the screen locks or tab is backgrounded. Research needed on exactly when updates resume (on unlock? on tab focus?)."
+    impact: "research_blocker"
+    affects: ["Location update frequency strategy", "Reconnection behavior"]
+
+  - area: "Fluxor middleware for location throttling"
+    description: "No existing Fluxor middleware in the codebase. Need to design: should location updates be throttled at the geolocation service level (pre-dispatch) or via Fluxor middleware (post-dispatch)? Recommended: throttle at service level (only dispatch when position changes >10m or >5s elapsed)."
+    impact: "nice_to_know"
+    affects: ["Fluxor action frequency", "Component re-render performance"]

@@ -1,0 +1,378 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Implement real-time PVP battles using SignalR in ASP.NET Core + Blazor WASM hosted app"
+focus_area: "SignalR real-time communication for PVP battles"
+created_at: "2026-05-05T23:30:00Z"
+created_by: "gem-researcher"
+status: completed
+tldr: |
+  - SignalR setup follows standard ASP.NET Core pattern: `AddSignalR()` + `MapHub<BattleHub>("/battlehub")` in Server Program.cs, `Microsoft.AspNetCore.SignalR.Client` NuGet (v10.0.7) on Client.
+  - Cookie-based auth flows automatically from ASP.NET Core Identity to SignalR connections in hosted Blazor WASM (same-origin); `[Authorize]` on Hub and `Context.UserIdentifier` for per-user routing.
+  - PVP battle uses SignalR Groups for battle rooms: each battle instance is a group (`battle_{battleId}`). Matchmaking flow: challenge → notify opponent via `Clients.User()` → accept/decline → resolve → notify both.
+  - PRD specifies async turn-based (not real-time synchronous) PVP; battle state machine: Pending→Accepted→Completed|Declined|Expired. No real-time move-by-move exchange needed.
+  - Location-based matchmaking: clients send GPS coords to hub → server filters nearby players using in-memory proximity check (Haversine) → return distance-bucketed results; GPS updates throttled to every 30s.
+  - For MVP, in-memory Hub state is sufficient (no Redis backplane needed). Connection count limitations: ~10K concurrent per server with WebSockets.
+  - Key gotcha: `InvokeAsync(StateHasChanged)` required in SignalR callbacks; `IAsyncDisposable` for cleanup; `WithAutomaticReconnect()` for dropped connections; `SetBrowserRequestCredentials` if cross-origin.
+research_metadata:
+  methodology: "semantic_search + grep_search codebase exploration, web fetch of official Microsoft docs (learn.microsoft.com) for SignalR introduction, Blazor+SignalR tutorial, authn/authz, groups, .NET client, configuration, and Blazor WASM additional security scenarios"
+  scope: "comprehensive — covers server-side Hub setup, client-side connection management, PVP battle architecture, matchmaking flow, location-based filtering, scaling, auth integration, and known compatibility issues"
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+files_analyzed:
+  - file: RuckR.Server.csproj
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Server\RuckR.Server.csproj
+    purpose: "Verify current NuGet package versions (10.0.7) and project structure for dependency addition"
+    key_elements:
+      - element: TargetFramework
+        type: property
+        location: "RuckR.Server.csproj:4"
+        description: "net10.0 — all SignalR packages should match the 10.0.7 version already in use"
+        language: xml
+    lines: 19
+  - file: RuckR.Client.csproj
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Client\RuckR.Client.csproj
+    purpose: "Identify where to add Microsoft.AspNetCore.SignalR.Client NuGet package (v10.0.7)"
+    key_elements:
+      - element: Existing Blazor WASM package refs
+        type: package_reference
+        location: "RuckR.Client.csproj:11-12"
+        description: "Microsoft.AspNetCore.Components.WebAssembly and DevServer at 10.0.7 — SignalR client should match"
+        language: xml
+    lines: 23
+  - file: RuckR.Server/Program.cs
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Server\Program.cs
+    purpose: "Understand current middleware pipeline for SignalR and Identity insertion points"
+    key_elements:
+      - element: "builder.Services.AddControllersWithViews()"
+        type: service_registration
+        location: "Program.cs:7"
+        description: "Services registration point — AddSignalR() and AddIdentity() go here"
+        language: csharp
+      - element: "app.UseRouting()"
+        type: middleware
+        location: "Program.cs:29"
+        description: "Place UseAuthentication()/UseAuthorization() before this; MapHub<>() after MapControllers()"
+        language: csharp
+      - element: "app.MapControllers()"
+        type: endpoint
+        location: "Program.cs:33"
+        description: "MapHub<BattleHub>(\"/battlehub\") goes after this and before MapFallbackToFile()"
+        language: csharp
+    lines: 36
+  - file: RuckR.Client/Program.cs
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Client\Program.cs
+    purpose: "Current client DI setup — no SignalR yet, scoped HttpClient pattern exists"
+    key_elements:
+      - element: "builder.Services.AddScoped(sp => new HttpClient { BaseAddress = ... })"
+        type: service_registration
+        location: "Client/Program.cs:9"
+        description: "Existing HttpClient registration — SignalR hub connection builder does not need HttpClient DI, but auth cookies flow automatically in same-origin hosted model"
+        language: csharp
+    lines: 11
+  - file: RuckR.Client/_Imports.razor
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Client\_Imports.razor
+    purpose: "Verify existing global usings for adding SignalR namespace"
+    key_elements:
+      - element: "@using Microsoft.AspNetCore.Components.WebAssembly.Http"
+        type: import
+        location: "_Imports.razor:7"
+        description: "Add `@using Microsoft.AspNetCore.SignalR.Client` here for global availability"
+        language: razor
+    lines: 11
+  - file: RuckR.Shared.Models/ProfileModel.cs
+    path: C:\Users\clock\source\repos\RuckR\RuckR\Shared\Models\ProfileModel.cs
+    purpose: "Reference convention for new BattleModel, ChallengeModel shared types"
+    key_elements:
+      - element: "namespace RuckR.Shared.Models"
+        type: namespace
+        location: "ProfileModel.cs:4"
+        description: "Block-scoped namespace convention for shared models — BattleModel, ChallengeRequest, BattleResult go here"
+        language: csharp
+    lines: 25
+  - file: PRD.yaml
+    path: C:\Users\clock\source\repos\RuckR\docs\plan\20260505-creature-collector-rugby-gps\PRD.yaml
+    purpose: "Requirements source of truth for PVP battle scope, state machine, and location constraints"
+    key_elements:
+      - element: BattleModel state machine
+        type: state_machine
+        location: "PRD.yaml:283-303"
+        description: "States: Pending, Accepted, Completed, Declined, Expired; triggers: opponent accepts/declines, 24h timeout"
+        language: yaml
+      - element: "in_scope: async turn-based PVP"
+        type: scope
+        location: "PRD.yaml:57-61"
+        description: "Turn-based asynchronous PVP challenge system — not real-time synchronous battles"
+        language: yaml
+      - element: "out_of_scope: real-time synchronous battles"
+        type: scope
+        location: "PRD.yaml:78"
+        description: "Explicitly excludes real-time synchronous battles — only async turn-based"
+        language: yaml
+    lines: 472
+patterns_found:
+  - category: architecture
+    pattern: "Hosted Blazor WASM + SignalR Hub pattern"
+    description: "In the hosted Blazor WASM model, the Server project hosts the SignalR hub. The Client project uses `Microsoft.AspNetCore.SignalR.Client` NuGet to build a `HubConnection`. Cookie authentication flows automatically because the client and server share the same origin. No token management needed for same-origin cookie-based Identity auth."
+    examples:
+      - file: "Microsoft Docs: Blazor SignalR tutorial"
+        location: "Server: Program.cs adds AddSignalR() + MapHub(); Client: HubConnectionBuilder.WithUrl(Navigation.ToAbsoluteUri(\"/battlehub\"))"
+        snippet: |
+          // Server Program.cs
+          builder.Services.AddSignalR();
+          app.MapHub<BattleHub>("/battlehub");
+          
+          // Client component
+          hubConnection = new HubConnectionBuilder()
+              .WithUrl(Navigation.ToAbsoluteUri("/battlehub"))
+              .WithAutomaticReconnect()
+              .Build();
+    prevalence: common
+  - category: architecture
+    pattern: "Group-based battle room pattern"
+    description: "Each PVP battle creates a SignalR group (`battle_{battleId}`). Both players join the group on battle start. All battle-related messages (challenge accepted, result) are sent to the group. When battle ends, both players are removed from the group."
+    examples:
+      - file: "Microsoft Docs: SignalR Groups"
+        location: "SignalR: Groups.AddToGroupAsync / Groups.RemoveFromGroupAsync / Clients.Group()"
+        snippet: |
+          await Groups.AddToGroupAsync(Context.ConnectionId, $"battle_{battleId}");
+          await Clients.Group($"battle_{battleId}").SendAsync("BattleResolved", result);
+          await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"battle_{battleId}");
+    prevalence: common
+  - category: architecture
+    pattern: "User-targeted notification pattern"
+    description: "For 1:1 notifications (challenge received, opponent disconnected), use `Clients.User(userId).SendAsync()`. SignalR's default `IUserIdProvider` uses `ClaimTypes.NameIdentifier` from Identity. For custom user ID mapping, implement `IUserIdProvider`."
+    examples:
+      - file: "Microsoft Docs: SignalR authn-and-authz"
+        location: "Hub: Clients.User(userId).SendAsync(\"ReceiveChallenge\", challenge)"
+        snippet: |
+          [Authorize]
+          public async Task SendChallenge(string targetUserId, ChallengeRequest challenge)
+          {
+              await Clients.User(targetUserId).SendAsync("ReceiveChallenge", challenge);
+          }
+    prevalence: common
+  - category: error_handling
+    pattern: "Automatic reconnect with exponential backoff"
+    description: "The .NET SignalR client supports `WithAutomaticReconnect()` using default retry delays [0s, 2s, 10s, 30s]. For Blazor WASM, subscribe to `Reconnecting`, `Reconnected`, and `Closed` events to update UI state. Must rejoin groups after reconnect since group membership is in-memory."
+    examples:
+      - file: "Microsoft Docs: SignalR .NET Client"
+        location: "HubConnectionBuilder: WithAutomaticReconnect()"
+        snippet: |
+          hubConnection = new HubConnectionBuilder()
+              .WithUrl(Navigation.ToAbsoluteUri("/battlehub"))
+              .WithAutomaticReconnect(new[] { TimeSpan.Zero, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30) })
+              .Build();
+          
+          hubConnection.Reconnecting += error => { /* show reconnecting banner */ return Task.CompletedTask; };
+          hubConnection.Reconnected += async connectionId => { /* rejoin battle groups */ };
+    prevalence: common
+  - category: structure
+    pattern: "Block-scoped namespace convention"
+    description: "All server-side classes (controllers, hubs) use block-scoped namespaces (`namespace X { ... }`). The Hub class should follow this convention in `RuckR.Server.Hubs`."
+    examples:
+      - file: "ProfileController.cs"
+        location: "ProfileController.cs:4-5"
+        snippet: |
+          namespace RuckR.Server.Controllers
+          {
+              [ApiController]
+              public class ProfileController : ControllerBase { ... }
+          }
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: BattleHub
+      responsibility: "SignalR hub for real-time PVP battle communication: challenge delivery, accept/decline, battle result notifications, location updates"
+      location: "RuckR.Server/Hubs/BattleHub.cs (to be created)"
+      relationship_to_domain: "Core real-time communication channel for all PVP battle interactions"
+    - component: BattleService
+      responsibility: "Server-side business logic for battle state management, stat-based resolution, timeout handling"
+      location: "RuckR.Server/Services/BattleService.cs (to be created)"
+      relationship_to_domain: "Orchestrates battle lifecycle outside of hub — invoked by hub methods and by background timer for expiry"
+    - component: BattleManager (client)
+      responsibility: "Client-side SignalR connection wrapper: manages HubConnection lifecycle, reconnection, and event dispatching to Fluxor"
+      location: "RuckR.Client/Services/BattleManager.cs (to be created)"
+      relationship_to_domain: "Single client-side owner of the HubConnection; injectable as scoped service"
+  interfaces_used_by_domain:
+    - interface: "Hub (Microsoft.AspNetCore.SignalR.Hub)"
+      location: "Microsoft.AspNetCore.SignalR NuGet (built into ASP.NET Core shared framework)"
+      usage_pattern: "BattleHub : Hub — defines server-side methods callable by clients (SendChallenge, AcceptChallenge, DeclineChallenge, UpdateLocation)"
+    - interface: "HubConnection (Microsoft.AspNetCore.SignalR.Client.HubConnection)"
+      location: "Microsoft.AspNetCore.SignalR.Client NuGet v10.0.7"
+      usage_pattern: "Built via HubConnectionBuilder in Blazor component; registers handlers via `.On<T>()`; called via `.SendAsync()` / `.InvokeAsync()`"
+    - interface: "IUserIdProvider"
+      location: "Microsoft.AspNetCore.SignalR"
+      usage_pattern: "Optional custom implementation to map Identity claims to SignalR user IDs; default uses ClaimTypes.NameIdentifier"
+  data_flow_involving_domain: |
+    1. Player A selects opponent and creature → calls hub.SendAsync("SendChallenge", targetUserId, challengeDto)
+    2. Hub validates (auth, not self, <3 pending) → persists challenge to DB → calls Clients.User(targetUserId).SendAsync("ReceiveChallenge", challengeDto)
+    3. Player B receives notification → UI shows accept/decline → calls hub.SendAsync("AcceptChallenge", challengeId, creatureId) or SendAsync("DeclineChallenge", challengeId)
+    4. Hub resolves battle (stat comparison service) → updates DB → calls Clients.Group($"battle_{id}").SendAsync("BattleResolved", result)
+    5. Both players see result via SignalR callback → Fluxor state updated
+    6. Location updates: client sends throttle GPS → hub stores in-memory → hub recalculates nearby players → pushes updated nearby list to all connected clients
+  key_relationships_to_domain:
+    - from: BattleHub
+      to: BattleService
+      relationship: calls
+    - from: BattleHub
+      to: RuckRDbContext
+      relationship: calls (persist challenges, battles)
+    - from: BattleManager (client)
+      to: HubConnection
+      relationship: composes
+    - from: BattlePage.razor
+      to: BattleManager
+      relationship: injects
+    - from: HubConnection (client)
+      to: BattleHub (server)
+      relationship: connects (WebSocket via SignalR)
+related_technology_stack:
+  languages_used_in_domain:
+    - C# (.NET 10)
+    - Razor (.razor markup)
+  frameworks_used_in_domain:
+    - name: ASP.NET Core SignalR
+      usage_in_domain: "Server-side hub hosting, client-side real-time messaging for battles and location updates. Built into Microsoft.AspNetCore.App shared framework — no additional server NuGet needed."
+    - name: Blazor WebAssembly
+      usage_in_domain: "Client-side SPA that hosts SignalR .NET client connection; UI updates via StateHasChanged and Fluxor state dispatch"
+    - name: ASP.NET Core Identity
+      usage_in_domain: "Provides authentication cookies that automatically flow to SignalR connections in same-origin hosted model; `[Authorize]` on Hub; `Context.UserIdentifier` for per-user routing"
+  libraries_used_in_domain:
+    - name: Microsoft.AspNetCore.SignalR.Client
+      purpose_in_domain: "NuGet package (v10.0.7) for Blazor WASM Client project to build HubConnection to the server-side BattleHub"
+    - name: Microsoft.AspNetCore.SignalR (built-in)
+      purpose_in_domain: "Server-side hub infrastructure — included in ASP.NET Core shared framework, no separate NuGet needed for Server project"
+  external_apis_used_in_domain:
+    - name: Browser WebSocket API
+      integration_point: "SignalR automatically uses WebSockets (preferred transport) then falls back to Server-Sent Events or Long Polling in the browser"
+related_conventions:
+  naming_patterns_in_domain: |
+    - Hub class: `BattleHub` in `RuckR.Server.Hubs` namespace (block-scoped)
+    - Hub route: `/battlehub` (lowercase, kebab-case convention from templates)
+    - Hub methods: PascalCase (`SendChallenge`, `AcceptChallenge`, `UpdateLocation`)
+    - Client event handlers: PascalCase after `On` prefix (`"ReceiveChallenge"`, `"BattleResolved"`, `"NearbyPlayersUpdated"`)
+    - Group names: `battle_{battleId}` (lowercase with underscore separator)
+    - Shared DTOs/Models: `ChallengeRequest`, `ChallengeNotification`, `BattleResult` under `RuckR.Shared.Models`
+  structure_of_domain: |
+    - Server: `RuckR.Server/Hubs/BattleHub.cs` — hub class
+    - Server: `RuckR.Server/Services/BattleService.cs` — battle business logic
+    - Server: `RuckR.Server/Services/ProximityService.cs` — location filtering
+    - Client: `RuckR.Client/Services/BattleManager.cs` — HubConnection wrapper
+    - Client: `RuckR.Client/Pages/Battle.razor` — battle UI page
+    - Shared: `RuckR.Shared/Models/BattleModel.cs`, `ChallengeRequest.cs`, `BattleResult.cs`
+  error_handling_in_domain: |
+    - Hub methods throw `HubException` for client-actionable errors (e.g., "Cannot challenge yourself", "Too many pending challenges")
+    - Client catches `HubException` and displays via toast/banner
+    - `WithAutomaticReconnect()` handles transient network drops
+    - `Closed` event fires after all retry attempts exhausted → show manual reconnect button
+    - Server-side: `EnableDetailedErrors = false` in production (default); enable in Development
+  testing_in_domain: "No test projects exist yet (PRD out_of_scope). Manual verification: two browser sessions with different users, verify challenge delivery and battle resolution"
+  documentation_in_domain: "Official Microsoft docs: SignalR introduction, Blazor+SignalR tutorial, authn/authz, groups, .NET client, and Blazor WASM additional security scenarios — all referenced at learn.microsoft.com for ASP.NET Core 10.0"
+related_dependencies:
+  internal:
+    - component: RuckRDbContext (EF Core)
+      relationship_to_domain: "Persistence for challenges, battles, and battle results. BattleHub/BattleService inject DbContext for CRUD operations."
+      direction: outbound
+    - component: ASP.NET Core Identity
+      relationship_to_domain: "Provides [Authorize] on Hub, Context.User for user identification, cookie auth for automatic SignalR auth in same-origin hosted model"
+      direction: inbound
+    - component: Fluxor (client state)
+      relationship_to_domain: "BattleManager dispatches SignalR events to Fluxor store; battle page components subscribe to Fluxor state slices for reactive UI"
+      direction: outbound
+  external:
+    - name: Microsoft.AspNetCore.SignalR.Client (NuGet)
+      purpose_for_domain: "Client-side SignalR library for building HubConnection in Blazor WASM. Version must match server framework: 10.0.7."
+    - name: Microsoft.AspNetCore.SignalR (built-in)
+      purpose_for_domain: "Server-side hub infrastructure. Included in ASP.NET Core shared framework (net10.0). No additional NuGet needed."
+domain_security_considerations:
+  sensitive_areas:
+    - area: "User GPS coordinates"
+      location: "Hub method: UpdateLocation(lat, lng)"
+      concern: "Exact GPS must never be exposed to other players. Server only sends distance buckets (< 50m, < 100m, < 250m, < 500m). Raw coordinates stored only for proximity calculation."
+    - area: "Challenge forgery prevention"
+      location: "Hub method: SendChallenge(targetUserId, ...)"
+      concern: "Verify Context.UserIdentifier matches the sender; verify target exists; verify sender cannot challenge self; enforce max 3 pending challenges"
+    - area: "Connection hijacking"
+      location: "SignalR connection"
+      concern: "Cookie auth in same-origin hosted model prevents token theft. Use HTTPS (already configured). Add CloseOnAuthenticationExpiration = true on hub options so expired auth closes connections."
+  authentication_patterns_in_domain: |
+    Cookie-based authentication via ASP.NET Core Identity:
+    - Server hosts Razor pages for login/register at /Identity/Account/*
+    - Identity sets auth cookie in browser
+    - SignalR connection (same origin) automatically includes cookie
+    - `[Authorize]` on BattleHub class ensures only authenticated users can connect
+    - `Context.UserIdentifier` returns the authenticated user's ID for per-user routing
+    - No bearer token or access token factory needed for same-origin hosted Blazor WASM
+  authorization_patterns_in_domain: |
+    - `[Authorize]` attribute on BattleHub class restricts all connections to authenticated users
+    - Individual hub methods could use `[Authorize("PolicyName")]` for role-based restrictions if needed
+    - Challenge validation in hub method logic (not self, not exceeding limits) — custom business rules in code
+  data_validation_in_domain: |
+    - ChallengeRequest DTO: validate targetUserId not null/empty, not same as sender
+    - Creature selection: validate creature belongs to sender's collection
+    - LocationUpdate DTO: validate lat/lng are within valid ranges (-90..90, -180..180)
+    - Max 3 pending challenges per user — validated server-side before persisting
+testing_patterns:
+  framework: "None (out of scope per PRD). Manual testing: two browser sessions."
+  coverage_areas:
+    - "Challenge request delivery between two authenticated users"
+    - "Challenge accept/decline flow"
+    - "Battle resolution calculation"
+    - "Reconnection after browser tab suspend/resume"
+    - "Location update throttling"
+  test_organization: "Manual verification via two browser sessions (incognito + normal, or two different browsers)"
+  mock_patterns: []
+open_questions:
+  - question: "MSSQL vs PostgreSQL — the research task header says 'MSSQL for persistence' but PRD ADR-004 explicitly selects PostgreSQL + PostGIS. Which is the correct database for the Server project?"
+    context: "Research task header states 'MSSQL for persistence' but the PRD's ADR-004 accepts PostgreSQL + PostGIS with Npgsql EF Core provider. SignalR itself is database-agnostic, but the DbContext configuration and spatial queries differ significantly between MSSQL and PostgreSQL."
+    type: decision_blocker
+    affects:
+      - "RuckR.Server.csproj NuGet packages (Npgsql vs SqlServer)"
+      - "RuckRDbContext configuration in Program.cs"
+      - "BattleService spatial proximity queries"
+  - question: "Should location updates be sent via SignalR or a separate REST endpoint?"
+    context: "GPS location updates could go through the SignalR hub (low latency, persistent connection) or via periodic POST to a REST API (simpler, decoupled). SignalR is better for real-time but REST is easier to throttle. The PRD mentions SignalR for 'player location sharing' but also describes browser geolocation API."
+    type: research
+    affects:
+      - "BattleHub method design"
+      - "Client-side GPS polling/throttling strategy"
+      - "Server-side proximity calculation frequency"
+  - question: "Should expired challenges use a background service (IHostedService) or be checked lazily when user reconnects?"
+    context: "PRD specifies challenges expire after 24 hours (Pending→Expired). A background service (e.g., periodic timer) would proactively expire challenges. Lazy checking defers to when the user views pending challenges. Background service is more correct but adds complexity."
+    type: research
+    affects:
+      - "Server-side architecture — need IHostedService or similar"
+      - "BattleService design"
+  - question: "What happens when a player disconnects mid-battle (after accepting but before resolution)?"
+    context: "Since battles are async turn-based and resolved instantly upon acceptance, the window for mid-battle disconnect is tiny (only between accept and instant resolution). If disconnect occurs during the accept→resolve chain, the Hub method should complete atomically (persist result before sending notification). The opponent should see the result when they reconnect (via REST API to check battle history)."
+    type: research
+    affects:
+      - "Battle resolution atomicity"
+      - "Reconnection logic — re-fetch pending battle results on reconnect"
+  - question: "Should the SignalR hub use strongly-typed hubs (Hub<T>) or string-based method names?"
+    context: "Strongly-typed hubs (`Hub<IBattleClient>`) provide compile-time safety for client method names but require a shared interface in the Shared project. String-based (`SendAsync(\"MethodName\", ...)`) is simpler and used in all official Blazor WASM tutorials. For MVP, string-based is sufficient."
+    type: nice_to_know
+    affects:
+      - "Hub class design"
+      - "Shared project interfaces"
+gaps:
+  - area: "Database provider decision"
+    description: "Ambiguity between MSSQL (research task header) and PostgreSQL+PostGIS (PRD ADR-004). SignalR itself has no database dependency, but the BattleService will need to persist battles. The project's DbContext configuration must be settled before implementing persistence."
+    impact: decision_blocker
+    affects:
+      - "Server Program.cs DbContext registration"
+      - "BattleService data access layer"
+      - "NuGet package selection"
+  - area: "Fluxor integration pattern with SignalR"
+    description: "How SignalR callbacks dispatch to Fluxor actions/reducers was not researched in this pass. The PRD specifies Fluxor for client state. Pattern: BattleManager receives SignalR event → dispatches Fluxor action → reducer updates state → components re-render. This needs a dedicated research pass."
+    impact: research_blocker
+    affects:
+      - "Client-side BattleManager implementation"
+      - "Fluxor state slice for battles"
+  - area: "No test infrastructure"
+    description: "The project has no unit test projects, integration tests, or test framework configured. SignalR hubs are testable via `TestServer` + `WebSocketClient`, but this requires setting up test infrastructure first. Out of scope for MVP per PRD but worth noting."
+    impact: nice_to_know
+    affects:
+      - "Verification strategy"
+      - "Future CI/CD pipeline"

@@ -1,0 +1,171 @@
+@page "/pitches/create"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using RuckR.Shared.Models
+@using System.Net
+@attribute [Authorize]
+@inject ApiClientService ApiClient
+@inject IGeolocationService GeolocationService
+@inject NavigationManager Navigation
+
+<h3>Create Pitch</h3>
+
+<div class="card mx-auto" style="max-width: 600px;">
+    <div class="card-body">
+
+        <div class="alert alert-info">
+            You can create up to 5 pitches per day.
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                @errorMessage
+                <button type="button" class="btn-close" @onclick="ClearError" aria-label="Close"></button>
+            </div>
+        }
+
+        <EditForm Model="formModel" OnValidSubmit="HandleSubmit">
+            <DataAnnotationsValidator />
+
+            <div class="mb-3">
+                <label for="name" class="form-label">Pitch Name</label>
+                <InputText id="name" @bind-Value="formModel.Name" class="form-control"
+                           placeholder="e.g., Twickenham Training Ground" />
+                <ValidationMessage For="() => formModel.Name" />
+            </div>
+
+            <div class="mb-3">
+                <label for="type" class="form-label">Pitch Type</label>
+                <InputSelect id="type" @bind-Value="formModel.Type" class="form-select">
+                    <option value="Standard">Standard</option>
+                    <option value="Training">Training</option>
+                    <option value="Stadium">Stadium</option>
+                </InputSelect>
+                <ValidationMessage For="() => formModel.Type" />
+            </div>
+
+            <div class="mb-3">
+                <label for="latitude" class="form-label">Latitude</label>
+                <div class="input-group">
+                    <InputNumber id="latitude" @bind-Value="formModel.Latitude" class="form-control"
+                                 step="0.0001" />
+                    @if (gpsUsed)
+                    {
+                        <span class="input-group-text" title="Using your current location">
+                            📍 Using your current location
+                        </span>
+                    }
+                </div>
+                <ValidationMessage For="() => formModel.Latitude" />
+            </div>
+
+            <div class="mb-3">
+                <label for="longitude" class="form-label">Longitude</label>
+                <div class="input-group">
+                    <InputNumber id="longitude" @bind-Value="formModel.Longitude" class="form-control"
+                                 step="0.0001" />
+                    @if (gpsUsed)
+                    {
+                        <span class="input-group-text" title="Using your current location">
+                            📍 Using your current location
+                        </span>
+                    }
+                </div>
+                <ValidationMessage For="() => formModel.Longitude" />
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        <span>Creating...</span>
+                    }
+                    else
+                    {
+                        <span>Create Pitch</span>
+                    }
+                </button>
+                <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@isSubmitting">
+                    Cancel
+                </button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private PitchFormModel formModel = new();
+    private bool isSubmitting;
+    private bool gpsUsed;
+    private string errorMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await TryAutoFillLocation();
+    }
+
+    private async Task TryAutoFillLocation()
+    {
+        try
+        {
+            var pos = await GeolocationService.GetCurrentPositionAsync();
+            if (pos is not null)
+            {
+                formModel.Latitude = pos.Latitude;
+                formModel.Longitude = pos.Longitude;
+                gpsUsed = true;
+            }
+        }
+        catch
+        {
+            // GPS unavailable; user can enter coordinates manually.
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        errorMessage = string.Empty;
+        isSubmitting = true;
+
+        try
+        {
+            await ApiClient.CreatePitchAsync(
+                formModel.Name,
+                formModel.Latitude,
+                formModel.Longitude,
+                formModel.Type);
+
+            Navigation.NavigateTo("/map");
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = ex.StatusCode switch
+            {
+                HttpStatusCode.Conflict => "A pitch with this name already exists nearby. Please choose a different name.",
+                HttpStatusCode.TooManyRequests => "You've reached the limit of 5 pitches per day. Try again tomorrow.",
+                HttpStatusCode.BadRequest => "Please fix the validation errors and try again.",
+                _ => $"An unexpected error occurred ({(int?)ex.StatusCode}). Please try again."
+            };
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private void ClearError()
+    {
+        errorMessage = string.Empty;
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/map");
+    }
+}

@@ -10,25 +10,60 @@
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
     <nav class="flex-column">
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="profile" Match="NavLinkMatch.All">
-                <span class="oi oi-home" aria-hidden="true"></span> Profile
+            <NavLink class="nav-link" href="map">
+                <span class="oi oi-map" aria-hidden="true"></span> Map
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="oi oi-home" aria-hidden="true"></span> Home
+            <NavLink class="nav-link" href="catalog">
+                <span class="oi oi-list" aria-hidden="true"></span> Catalog
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="oi oi-plus" aria-hidden="true"></span> Counter
+            <NavLink class="nav-link" href="collection">
+                <span class="oi oi-star" aria-hidden="true"></span> Collection
             </NavLink>
         </div>
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="fetchdata">
-                <span class="oi oi-list-rich" aria-hidden="true"></span> Fetch data
+            <NavLink class="nav-link" href="players/nearby">
+                <span class="oi oi-people" aria-hidden="true"></span> Nearby Players
             </NavLink>
         </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="battle">
+                <span class="oi oi-flash" aria-hidden="true"></span> Battles
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="battles/history">
+                <span class="oi oi-clock" aria-hidden="true"></span> History
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="pitches/create">
+                <span class="oi oi-plus" aria-hidden="true"></span> Create Pitch
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <span class="nav-link-text">Hello, @context.User.Identity?.Name!</span>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Identity/Account/LogOut">
+                        <span class="oi oi-account-logout" aria-hidden="true"></span> Logout
+                    </NavLink>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Identity/Account/Login">
+                        <span class="oi oi-account-login" aria-hidden="true"></span> Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
     </nav>
 </div>
 

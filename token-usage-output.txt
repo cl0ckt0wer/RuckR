@@ -1,0 +1,228 @@
+═══════════════════════════════════════════════════════════════════════════
+Token Analysis: Session ses_204c622d0ffekqzUPXzjQLyrvG
+Model: deepseek-v4-pro
+═══════════════════════════════════════════════════════════════════════════
+
+WARNINGS
+───────────────────────────────────────────────────
+- Pricing for 'deepseek/deepseek-v4-pro' was not found in models.json. Cost estimates use the default fallback rates ($1/M input, $3/M output, no cache pricing).
+
+TOKEN BREAKDOWN BY CATEGORY
+─────────────────────────────────────────────────────────────────────────
+Estimated using tokenizer analysis of message content:
+
+Input Categories:
+  SYSTEM    ████████████████░░░░░░░░░░░░░░    54.0% (71,412)
+  USER      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (99)
+  TOOLS     ██████████████░░░░░░░░░░░░░░░░    46.0% (60,800)
+
+  Subtotal: 132,311 estimated input tokens
+  Note: inferred system/overhead values are heuristic estimates from API telemetry.
+
+Output Categories:
+  ASSISTANT ███████░░░░░░░░░░░░░░░░░░░░░░░     23.7% (2,394)
+  REASONING ███████████████████████░░░░░░░     76.3% (7,726)
+
+  Subtotal: 10,120 estimated output tokens
+
+Local Total: 142,431 tokens (estimated)
+
+TOOL USAGE BREAKDOWN
+─────────────────────────────────────────────────────────────────────────
+task                 ███████████████░░░░░░░░░░░░░░░    51.4% (31,224)   50x
+read                 █████████████░░░░░░░░░░░░░░░░░    43.4% (26,416)    2x
+todowrite            █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      2.3% (1,385)    6x
+grep                 █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      2.2% (1,345)    1x
+question             ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        0.6% (373)    2x
+agentmemory_memory_save ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (57)    3x
+
+TOP CONTRIBUTORS
+─────────────────────────────────────────────────────────────────────────
+• System (inferred from API telemetry) 71,412 tokens (50.1%)
+• task                         31,224 tokens (21.9%)
+• read                         26,416 tokens (18.5%)
+• todowrite                    1,385 tokens (1.0%)
+• grep                         1,345 tokens (0.9%)
+
+═══════════════════════════════════════════════════════════════════════════
+MOST RECENT API CALL
+─────────────────────────────────────────────────────────────────────────
+
+Raw telemetry from last API response:
+  Input (fresh):            215 tokens
+  Cache read:           132,096 tokens
+  Output:                   581 tokens
+  Reasoning:                 71 tokens
+  Provider total:       132,963 tokens
+  Cost:              $0.0218
+  ─────────────────────────────────────
+  Total:                132,963 tokens
+
+═══════════════════════════════════════════════════════════════════════════
+SESSION TOTALS (All 31 API calls)
+─────────────────────────────────────────────────────────────────────────
+
+Assistant messages observed: 32 (structural count)
+
+Total tokens processed across the entire session (for cost calculation):
+
+  Input tokens:         357,829 (fresh tokens across all calls)
+  Cache read:         2,059,136 (cached tokens across all calls)
+  Cache write:                0 (tokens written to cache)
+  Output tokens:         52,775 (all model responses)
+  Reasoning tokens:       7,702 (thinking/reasoning)
+  ─────────────────────────────────────
+  Session Total:      2,477,442 tokens (for billing)
+  Cache read calls:          29 / 31
+  Cache write calls:          0 / 31
+
+═══════════════════════════════════════════════════════════════════════════
+SESSION COST
+─────────────────────────────────────────────────────────────────────────
+
+Token usage breakdown:
+  Input tokens:         357,829
+  Output tokens:         52,775
+  Reasoning tokens:       7,702
+  Cache read:         2,059,136
+
+─────────────────────────────────────────────────────────────────────────
+ACTUAL COST (from API):  $1.1317
+Estimated cost:          $0.5393 (-52.3% diff)
+
+Note: Actual cost from OpenCode includes provider-specific pricing
+and 200K+ context adjustments.
+
+═══════════════════════════════════════════════════════════════════════════
+AVAILABLE SUBAGENTS (in task tool definition)
+─────────────────────────────────────────────────────────────────────────
+
+These subagents are embedded in the task tool description and consume tokens on every API call.
+
+  Subagent               Description                                        Tokens
+  ───────────────────────────────────────────────────────────────────────
+  explore                Fast agent specialized for exploring codebases. U…    ~105
+  general                General-purpose agent for researching complex que…     ~28
+  gem-designer-mobile    Mobile UI/UX specialist — HIG, Material Design, s…     ~25
+  gem-mobile-tester      Mobile E2E testing — Detox, Maestro, iOS/Android …     ~25
+  gem-documentation-wri… Technical documentation, README files, API docs, …     ~24
+  gem-implementer        TDD code implementation — features, bugs, refacto…     ~24
+  gem-code-simplifier    Refactoring specialist — removes dead code, reduc…     ~23
+  gem-designer           UI/UX design specialist — layouts, themes, color …     ~23
+  gem-implementer-mobile Mobile implementation — React Native, Expo, Flutt…     ~22
+  gem-browser-tester     E2E browser testing, UI/UX validation, visual reg…     ~21
+  gem-debugger           Root-cause analysis, stack trace diagnosis, regre…     ~21
+  gem-reviewer           Security auditing, code review, OWASP scanning, P…     ~21
+  gem-critic             Challenges assumptions, finds edge cases, spots o…     ~20
+  gem-planner            DAG-based execution plans — task decomposition, w…     ~20
+  gem-researcher         Codebase exploration — patterns, dependencies, ar…     ~16
+  gem-devops             Infrastructure deployment, CI/CD pipelines, conta…     ~15
+  ───────────────────────────────────────────────────────────────────────
+  Total: ~433 tokens (16 subagents available)
+
+  Note: Full task tool description is ~1,283 tokens (includes instructions/examples).
+
+═══════════════════════════════════════════════════════════════════════════
+TOOL DEFINITION COSTS (Estimated from argument analysis)
+─────────────────────────────────────────────────────────────────────────
+
+  Tool                Est. Tokens   Args   Complexity
+  ───────────────────────────────────────────────────────────────────
+  agentmemory_memory_save         ~400       4   simple
+  todowrite                  ~380       1   complex (arrays/objects)
+  question                   ~380       1   complex (arrays/objects)
+  task                       ~370       3   simple
+  grep                       ~370       3   simple
+  read                       ~340       2   simple
+  tokenscope                 ~310       1   simple
+  ───────────────────────────────────────────────────────────────────
+  Total:             ~      2,550 tokens (7 enabled tools)
+
+  Note: Estimates inferred from tool call arguments in this session.
+        Actual schema tokens may vary +/-20%.
+
+═══════════════════════════════════════════════════════════════════════════
+CACHE EFFICIENCY
+─────────────────────────────────────────────────────────────────────────
+
+  Token Distribution:
+    Cache Read:         2,059,136 tokens   ██████████████████████████░░░░  85.2%
+    Fresh Input:          357,829 tokens   ████░░░░░░░░░░░░░░░░░░░░░░░░░░  14.8%
+  ───────────────────────────────────────────────────────────────────
+  Cache Hit Rate:      85.2% (cache read / (cache read + fresh input))
+
+  Cost Analysis (deepseek-v4-pro @ $1.00/M input, $0.00/M cache read, $0.00/M cache write):
+    Without caching:   $2.4170  (2,416,965 tokens x $1.00/M)
+    With caching:      $0.3578  (fresh x $1.00/M + cache read x $0.00/M + cache write x $0.00/M)
+  ───────────────────────────────────────────────────────────────────
+  Cost Savings:        $2.0591  (85.2% reduction)
+  Effective Rate:      $0.15/M tokens  (vs. $1.00/M standard)
+
+═══════════════════════════════════════════════════════════════════════════
+SUBAGENT COSTS (50 child sessions, 775 API calls)
+─────────────────────────────────────────────────────────────────────────
+
+  gem-researcher               $0.0798  (163,663 tokens, 9 calls)
+  gem-documentation-writer     $0.3287  (373,422 tokens, 13 calls)
+  gem-researcher               $0.3792  (1,218,246 tokens, 19 calls)
+  gem-researcher               $0.2464  (668,418 tokens, 15 calls)
+  gem-researcher               $0.3678  (1,299,040 tokens, 20 calls)
+  gem-researcher               $0.2621  (679,256 tokens, 13 calls)
+  gem-planner                  $0.4281  (1,345,381 tokens, 20 calls)
+  gem-reviewer                 $0.3035  (205,442 tokens, 4 calls)
+  gem-critic                   $0.1925  (357,078 tokens, 8 calls)
+  gem-planner                  $0.2867  (523,207 tokens, 8 calls)
+  gem-implementer              $0.1951  (734,601 tokens, 19 calls)
+  gem-implementer              $0.0496  (96,085 tokens, 6 calls)
+  gem-implementer              $0.0204  (68,402 tokens, 5 calls)
+  gem-implementer              $0.1550  (520,599 tokens, 13 calls)
+  gem-implementer              $0.0571  (104,693 tokens, 7 calls)
+  gem-documentation-writer     $0.1776  (597,231 tokens, 25 calls)
+  gem-implementer              $0.0626  (120,270 tokens, 7 calls)
+  gem-implementer              $0.1523  (611,802 tokens, 24 calls)
+  gem-implementer              $0.1538  (657,564 tokens, 28 calls)
+  gem-implementer              $0.1744  (657,537 tokens, 19 calls)
+  gem-implementer              $0.0710  (249,464 tokens, 13 calls)
+  gem-implementer              $0.2285  (921,674 tokens, 25 calls)
+  gem-implementer              $0.1443  (498,904 tokens, 16 calls)
+  gem-implementer              $0.1272  (390,928 tokens, 12 calls)
+  gem-implementer              $0.0739  (237,340 tokens, 11 calls)
+  gem-implementer              $0.1460  (491,064 tokens, 17 calls)
+  gem-implementer              $0.0662  (237,889 tokens, 13 calls)
+  gem-implementer              $0.1084  (384,711 tokens, 17 calls)
+  gem-implementer              $0.0567  (200,576 tokens, 11 calls)
+  gem-implementer              $0.0705  (264,615 tokens, 14 calls)
+  gem-implementer              $0.1475  (559,086 tokens, 18 calls)
+  gem-implementer              $0.0664  (250,773 tokens, 13 calls)
+  gem-implementer              $0.2689  (892,953 tokens, 20 calls)
+  gem-implementer              $0.3581  (1,621,614 tokens, 41 calls)
+  gem-implementer              $0.3101  (1,186,372 tokens, 23 calls)
+  gem-implementer              $0.1841  (725,703 tokens, 24 calls)
+  gem-implementer              $0.1766  (649,319 tokens, 19 calls)
+  gem-implementer              $0.1274  (467,329 tokens, 18 calls)
+  gem-implementer              $0.2274  (773,955 tokens, 18 calls)
+  gem-implementer              $0.4924  (1,608,590 tokens, 26 calls)
+  gem-implementer              $0.2364  (775,928 tokens, 25 calls)
+  gem-implementer              $0.0637  (224,987 tokens, 12 calls)
+  gem-implementer              $0.1477  (423,423 tokens, 13 calls)
+  gem-implementer              $0.2179  (755,742 tokens, 15 calls)
+  gem-implementer              $0.0821  (206,809 tokens, 11 calls)
+  gem-implementer              $0.2907  (774,725 tokens, 15 calls)
+  gem-implementer              $0.0248  (55,956 tokens, 4 calls)
+  gem-reviewer                 $0.1667  (232,564 tokens, 9 calls)
+  gem-implementer              $0.0224  (67,479 tokens, 5 calls)
+  gem-documentation-writer     $0.3556  (1,105,559 tokens, 15 calls)
+─────────────────────────────────────────────────────────────────────────
+Subagent Total:            $9.1321  (28,237,968 tokens, 775 calls)
+
+═══════════════════════════════════════════════════════════════════════════
+SUMMARY
+─────────────────────────────────────────────────────────────────────────
+
+                          Cost        Tokens          API Calls
+  Main session:      $    1.1317     2,477,442            31
+  Subagents:         $    9.1321    28,237,968           775
+─────────────────────────────────────────────────────────────────────────
+  TOTAL:             $   10.2637    30,715,410           806
+
+═══════════════════════════════════════════════════════════════════════════
