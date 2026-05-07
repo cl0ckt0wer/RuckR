@@ -1,0 +1,465 @@
+plan_id: "20260506-logging-otel-audit"
+objective: "Inventory current logging/observability state across the RuckR codebase — all projects, all layers."
+focus_area: "logging-otel-state"
+created_at: "2026-05-06T12:00:00Z"
+created_by: "RESEARCHER"
+status: completed
+tldr: |
+  - No OpenTelemetry, Serilog, NLog, or ApplicationInsights NuGet packages exist anywhere in the solution (4 .csproj files checked).
+  - Standard ASP.NET Core logging (console provider) is active via `CreateBuilder` defaults on both Server and Client.
+  - LogLevel configured in `appsettings.json` + `appsettings.Development.json`: Default=Information, Microsoft.AspNetCore=Warning.
+  - ILogger DI present in 4 server-side classes (ProfileController, PlayersController, SeedService, ErrorModel) but absent from 3 controllers (Collection, Battles, Pitches), the BattleHub, all 3 remaining server services (BattleResolver, LocationTracker, PlayerGeneratorService), and all 5 client-side services.
+  - Observability/monitoring is explicitly out-of-scope per PRD (20260505-creature-collector-rugby-gps).
+  - `System.Diagnostics.Activity.Current?.Id` used in Error.cshtml.cs (ambient trace ID capture, not OTEL).
+research_metadata:
+  methodology: "file_read + grep_search across all .cs, .csproj, .json, .yaml; cross-reference with PRD.yaml"
+  scope: "full solution (Server, Client, Shared, Tests) + PRD"
+  confidence: high
+  coverage: 100
+  decision_blockers: 0
+  research_blockers: 0
+files_analyzed:
+  - file: "RuckR.Server.csproj"
+    path: "RuckR/Server/RuckR.Server.csproj"
+    purpose: "Server project — NuGet package inventory"
+    key_elements:
+      - element: "PackageReference collection"
+        type: "build_config"
+        location: "RuckR/Server/RuckR.Server.csproj:9-19"
+        description: "6 packages: Blazor WASM Server, Identity EF Core, Identity UI, EF Core SqlServer, EF Design, SqlServer NetTopologySuite. Zero telemetry/logging packages."
+        language: "xml/msbuild"
+    lines: 30
+  - file: "RuckR.Client.csproj"
+    path: "RuckR/Client/RuckR.Client.csproj"
+    purpose: "Client project — NuGet package inventory"
+    key_elements:
+      - element: "PackageReference collection"
+        type: "build_config"
+        location: "RuckR/Client/RuckR.Client.csproj:10-18"
+        description: "7 packages: Blazor WASM, Components Auth, WASM DevServer, Fluxor (3x), SignalR Client. Zero telemetry/logging packages."
+        language: "xml/msbuild"
+    lines: 28
+  - file: "RuckR.Shared.csproj"
+    path: "RuckR/Shared/RuckR.Shared.csproj"
+    purpose: "Shared project — NuGet package inventory"
+    key_elements:
+      - element: "PackageReference"
+        type: "build_config"
+        location: "RuckR/Shared/RuckR.Shared.csproj:14"
+        description: "1 package: NetTopologySuite 2.6.0. Zero telemetry/logging packages."
+        language: "xml/msbuild"
+    lines: 16
+  - file: "RuckR.Tests.csproj"
+    path: "RuckR.Tests/RuckR.Tests.csproj"
+    purpose: "Test project — NuGet package inventory"
+    key_elements:
+      - element: "PackageReference collection"
+        type: "build_config"
+        location: "RuckR.Tests/RuckR.Tests.csproj:11-26"
+        description: "9 packages: coverlet, FluentAssertions, ASP.NET Test SDK, Playwright (3x), Testcontainers, xUnit (2x). Zero telemetry/logging packages."
+        language: "xml/msbuild"
+    lines: 44
+  - file: "Program.cs (Server)"
+    path: "RuckR/Server/Program.cs"
+    purpose: "Server entry point — logging/OTEL configuration check"
+    key_elements:
+      - element: "WebApplication.CreateBuilder(args)"
+        type: "method_call"
+        location: "RuckR/Server/Program.cs:9"
+        description: "Default builder — enables standard ASP.NET Core logging providers (Console, Debug, EventSource, EventLog). No custom builder.Logging configuration."
+        language: "csharp"
+      - element: "ILogger<Program> usage (seed warning)"
+        type: "log_statement"
+        location: "RuckR/Server/Program.cs:118-119"
+        description: "Single LogWarning call in seed-data catch block — the only logging in Program.cs."
+        language: "csharp"
+      - element: "Middleware pipeline"
+        type: "pipeline"
+        location: "RuckR/Server/Program.cs:74-121"
+        description: "No UseHttpLogging() or UseW3CLogging() middleware registered."
+        language: "csharp"
+    lines: 124
+  - file: "Program.cs (Client)"
+    path: "RuckR/Client/Program.cs"
+    purpose: "Client entry point — logging/OTEL configuration check"
+    key_elements:
+      - element: "WebAssemblyHostBuilder.CreateDefault(args)"
+        type: "method_call"
+        location: "RuckR/Client/Program.cs:9"
+        description: "Default WASM builder — enables standard Blazor WASM logging providers. No custom builder.Logging configuration."
+        language: "csharp"
+    lines: 25
+  - file: "appsettings.json"
+    path: "RuckR/Server/appsettings.json"
+    purpose: "Server logging configuration"
+    key_elements:
+      - element: "Logging.LogLevel"
+        type: "config_section"
+        location: "RuckR/Server/appsettings.json:2-7"
+        description: "Default=Information, Microsoft.AspNetCore=Warning"
+        language: "json"
+    lines: 21
+  - file: "appsettings.Development.json"
+    path: "RuckR/Server/appsettings.Development.json"
+    purpose: "Server development logging configuration"
+    key_elements:
+      - element: "Logging.LogLevel"
+        type: "config_section"
+        location: "RuckR/Server/appsettings.Development.json:2-7"
+        description: "Same as production: Default=Information, Microsoft.AspNetCore=Warning"
+        language: "json"
+    lines: 13
+  - file: "ProfileController.cs"
+    path: "RuckR/Server/Controllers/ProfileController.cs"
+    purpose: "Controller with ILogger DI and LogInformation calls"
+    key_elements:
+      - element: "ILogger<ProfileController> _logger"
+        type: "field"
+        location: "RuckR/Server/Controllers/ProfileController.cs:12"
+        description: "ILogger injected via constructor DI"
+        language: "csharp"
+      - element: "LogInformation calls"
+        type: "log_statement"
+        location: "RuckR/Server/Controllers/ProfileController.cs:31,38"
+        description: "Two LogInformation calls (GET /Profile, PUT /Profile)"
+        language: "csharp"
+    lines: 43
+  - file: "PlayersController.cs"
+    path: "RuckR/Server/Controllers/PlayersController.cs"
+    purpose: "Controller with ILogger DI but no log calls in methods"
+    key_elements:
+      - element: "ILogger<PlayersController> _logger"
+        type: "field"
+        location: "RuckR/Server/Controllers/PlayersController.cs:16"
+        description: "ILogger injected via constructor DI but never invoked in any method body"
+        language: "csharp"
+    lines: 107
+  - file: "CollectionController.cs"
+    path: "RuckR/Server/Controllers/CollectionController.cs"
+    purpose: "Controller — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Controllers/CollectionController.cs:16-204"
+        description: "Dependencies: RuckRDbContext, UserManager<IdentityUser>, ILocationTracker. No ILogger."
+        language: "csharp"
+    lines: 205
+  - file: "BattlesController.cs"
+    path: "RuckR/Server/Controllers/BattlesController.cs"
+    purpose: "Controller — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Controllers/BattlesController.cs:14-284"
+        description: "Dependencies: RuckRDbContext, UserManager<IdentityUser>. No ILogger."
+        language: "csharp"
+    lines: 285
+  - file: "PitchesController.cs"
+    path: "RuckR/Server/Controllers/PitchesController.cs"
+    purpose: "Controller — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Controllers/PitchesController.cs:13-174"
+        description: "Dependencies: RuckRDbContext only. No ILogger."
+        language: "csharp"
+    lines: 175
+  - file: "SeedService.cs"
+    path: "RuckR/Server/Services/SeedService.cs"
+    purpose: "Service with ILogger and extensive LogInformation calls"
+    key_elements:
+      - element: "ILogger<SeedService> _logger"
+        type: "field"
+        location: "RuckR/Server/Services/SeedService.cs:23"
+        description: "ILogger injected via constructor DI"
+        language: "csharp"
+      - element: "LogInformation calls"
+        type: "log_statement"
+        location: "RuckR/Server/Services/SeedService.cs:43,47,57,78,98"
+        description: "Five LogInformation calls covering skip, start, pitch creation, player seeding counts"
+        language: "csharp"
+    lines: 101
+  - file: "BattleResolver.cs"
+    path: "RuckR/Server/Services/BattleResolver.cs"
+    purpose: "Service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Services/BattleResolver.cs:5-153"
+        description: "Pure stateless resolver. No ILogger."
+        language: "csharp"
+    lines: 154
+  - file: "LocationTracker.cs"
+    path: "RuckR/Server/Services/LocationTracker.cs"
+    purpose: "Service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Services/LocationTracker.cs:6-38"
+        description: "In-memory ConcurrentDictionary tracker. No ILogger."
+        language: "csharp"
+    lines: 39
+  - file: "PlayerGeneratorService.cs"
+    path: "RuckR/Server/Services/PlayerGeneratorService.cs"
+    purpose: "Service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Services/PlayerGeneratorService.cs:6-216"
+        description: "Deterministic procedural generator. No ILogger."
+        language: "csharp"
+    lines: 216
+  - file: "BattleHub.cs"
+    path: "RuckR/Server/Hubs/BattleHub.cs"
+    purpose: "SignalR hub — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Server/Hubs/BattleHub.cs:13-291"
+        description: "Dependencies: RuckRDbContext, UserManager, ILocationTracker, IBattleResolver. No ILogger."
+        language: "csharp"
+    lines: 292
+  - file: "Error.cshtml.cs"
+    path: "RuckR/Server/Pages/Error.cshtml.cs"
+    purpose: "Error page model — ILogger DI present, Activity.Current usage (not OTEL)"
+    key_elements:
+      - element: "ILogger<ErrorModel> _logger"
+        type: "field"
+        location: "RuckR/Server/Pages/Error.cshtml.cs:15"
+        description: "ILogger injected but never called in OnGet()"
+        language: "csharp"
+      - element: "Activity.Current?.Id"
+        type: "trace_id_capture"
+        location: "RuckR/Server/Pages/Error.cshtml.cs:24"
+        description: "Uses System.Diagnostics.Activity (built-in, not OpenTelemetry) to capture ambient trace ID for RequestId display"
+        language: "csharp"
+    lines: 27
+  - file: "SignalRClientService.cs"
+    path: "RuckR/Client/Services/SignalRClientService.cs"
+    purpose: "Client SignalR service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Client/Services/SignalRClientService.cs:10-188"
+        description: "Handles reconnection without logging. Dependencies: IDispatcher, NavigationManager. No ILogger."
+        language: "csharp"
+    lines: 189
+  - file: "GeolocationService.cs"
+    path: "RuckR/Client/Services/GeolocationService.cs"
+    purpose: "Client GPS service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Client/Services/GeolocationService.cs:8-130"
+        description: "JS interop GPS. Dependencies: IJSRuntime, IDispatcher. No ILogger."
+        language: "csharp"
+    lines: 131
+  - file: "MapService.cs"
+    path: "RuckR/Client/Services/MapService.cs"
+    purpose: "Client Leaflet map service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Client/Services/MapService.cs:9-96"
+        description: "JS interop Leaflet. Dependencies: IJSRuntime, IDispatcher. No ILogger."
+        language: "csharp"
+    lines: 97
+  - file: "ApiClientService.cs"
+    path: "RuckR/Client/Services/ApiClientService.cs"
+    purpose: "Client HTTP API service — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Client/Services/ApiClientService.cs:7-132"
+        description: "Typed HttpClient wrapper. No ILogger."
+        language: "csharp"
+    lines: 133
+  - file: "CookieAuthenticationStateProvider.cs"
+    path: "RuckR/Client/Services/CookieAuthenticationStateProvider.cs"
+    purpose: "Client auth state provider — no ILogger"
+    key_elements:
+      - element: "No ILogger dependency"
+        type: "gap"
+        location: "RuckR/Client/Services/CookieAuthenticationStateProvider.cs:7-54"
+        description: "Auth state via cookie/UserInfo endpoint. Swallows exceptions silently (catch block line 39-43). No ILogger."
+        language: "csharp"
+    lines: 55
+  - file: "CustomWebApplicationFactory.cs"
+    path: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs"
+    purpose: "Test infrastructure — no OTEL configuration"
+    key_elements:
+      - element: "No OTEL/telemetry setup"
+        type: "gap"
+        location: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs:20-273"
+        description: "Full Kestrel + TestContainers setup. No observability configuration."
+        language: "csharp"
+    lines: 274
+  - file: "PRD.yaml"
+    path: "docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml"
+    purpose: "Product requirements — observability scope boundary"
+    key_elements:
+      - element: "out_of_scope entry"
+        type: "requirement"
+        location: "docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml:83"
+        description: "CI/CD pipelines, automated tests, or monitoring infrastructure — explicitly out-of-scope for creature-collector PRD"
+        language: "yaml"
+    lines: 482
+patterns_found:
+  - category: "naming"
+    pattern: "ILogger<T> DI convention"
+    description: "ILogger is injected via constructor DI as private readonly field `_logger`. Used in ProfileController, PlayersController, SeedService, ErrorModel."
+    examples:
+      - file: "ProfileController.cs"
+        location: "RuckR/Server/Controllers/ProfileController.cs:12"
+        snippet: "private readonly ILogger<ProfileController> _logger;"
+    prevalence: "occasional"
+  - category: "naming"
+    pattern: "No ILogger in non-seed controllers/services"
+    description: "CollectionController, BattlesController, PitchesController, BattleHub, BattleResolver, LocationTracker, PlayerGeneratorService — all lack ILogger despite performing critical operations (captures, challenges, GPS tracking, procedural generation)."
+    examples:
+      - file: "BattlesController.cs"
+        location: "RuckR/Server/Controllers/BattlesController.cs:25-29"
+        snippet: "public BattlesController(RuckRDbContext db, UserManager<IdentityUser> userManager) { _db = db; _userManager = userManager; }"
+    prevalence: "common"
+  - category: "architecture"
+    pattern: "Silent exception swallowing in Client services"
+    description: "Both CookieAuthenticationStateProvider and GeolocationService catch exceptions without logging. SignalRClientService reconnect error handler swallows exceptions (line 165: empty catch)."
+    examples:
+      - file: "CookieAuthenticationStateProvider.cs"
+        location: "RuckR/Client/Services/CookieAuthenticationStateProvider.cs:39-43"
+        snippet: "catch { _currentUser = new ClaimsPrincipal(new ClaimsIdentity()); }"
+      - file: "GeolocationService.cs"
+        location: "RuckR/Client/Services/GeolocationService.cs:44-47"
+        snippet: "catch (JSException) { return null; }"
+    prevalence: "common"
+  - category: "architecture"
+    pattern: "Standard ASP.NET Core logging only — no structured logging provider"
+    description: "Both Server (WebApplication.CreateBuilder) and Client (WebAssemblyHostBuilder.CreateDefault) use default providers (Console) with no custom builder.Logging configuration."
+    examples:
+      - file: "Program.cs"
+        location: "RuckR/Server/Program.cs:9"
+        snippet: "var builder = WebApplication.CreateBuilder(args);"
+    prevalence: "common"
+  - category: "error_handling"
+    pattern: "Activity.Current?.Id for ambient trace context"
+    description: "Error.cshtml.cs captures Activity.Current?.Id ?? HttpContext.TraceIdentifier for the RequestId display — uses System.Diagnostics (not OTEL)."
+    examples:
+      - file: "Error.cshtml.cs"
+        location: "RuckR/Server/Pages/Error.cshtml.cs:24"
+        snippet: "RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;"
+    prevalence: "rare"
+related_architecture:
+  components_relevant_to_domain:
+    - component: "ASP.NET Core default logging pipeline"
+      responsibility: "Console, Debug, EventSource, EventLog providers; appsettings.json LogLevel filtering"
+      location: "RuckR/Server/Program.cs:9 (implicit); appsettings.json:2-7"
+      relationship_to_domain: "The ONLY observability infrastructure in the codebase"
+    - component: "System.Diagnostics.Activity"
+      responsibility: "Ambient trace context propagation (built into ASP.NET Core, not OTEL)"
+      location: "RuckR/Server/Pages/Error.cshtml.cs:3,24"
+      relationship_to_domain: "Captures request trace ID for error page display"
+  interfaces_used_by_domain:
+    - interface: "ILogger<T>"
+      location: "Microsoft.Extensions.Logging (framework)"
+      usage_pattern: "Constructor-injected into 4 server classes; used for LogInformation/LogWarning"
+  data_flow_involving_domain: "ASP.NET Core pipeline → ILogger<T> → configured providers (Console) → stdout/stderr. No export, no aggregation, no external sink."
+  key_relationships_to_domain:
+    - from: "ProfileController"
+      to: "ILogger<ProfileController>"
+      relationship: "injects"
+    - from: "PlayersController"
+      to: "ILogger<PlayersController>"
+      relationship: "injects (unused)"
+    - from: "SeedService"
+      to: "ILogger<SeedService>"
+      relationship: "injects"
+    - from: "ErrorModel"
+      to: "ILogger<ErrorModel>"
+      relationship: "injects (unused in OnGet)"
+    - from: "ErrorModel"
+      to: "System.Diagnostics.Activity"
+      relationship: "uses"
+related_technology_stack:
+  languages_used_in_domain: ["C#"]
+  frameworks_used_in_domain:
+    - name: "Microsoft.Extensions.Logging"
+      usage_in_domain: "Built-in ASP.NET Core logging abstraction — the sole logging framework in use"
+    - name: "System.Diagnostics"
+      usage_in_domain: "Activity.Current for ambient trace ID capture (not OTEL)"
+  libraries_used_in_domain: []
+  external_apis_used_in_domain: []
+related_conventions:
+  naming_patterns_in_domain: "ILogger<T> stored as private readonly field `_logger`, injected via constructor DI. Category name matches containing class."
+  structure_of_domain: |
+    Logging is sparse and inconsistent:
+    - Server: 4 classes use ILogger (ProfileController, PlayersController, SeedService, ErrorModel), but players logs are unused.
+    - Server: 3 controllers (Collection, Battles, Pitches), 1 hub (BattleHub), 3 services (BattleResolver, LocationTracker, PlayerGeneratorService) have zero logging.
+    - Client: 0 of 5 services use ILogger.
+    - LogLevel configuration: Information for defaults, Warning for Microsoft.AspNetCore namespace.
+  error_handling_in_domain: "Client-side exception handling silently swallows errors (empty catch blocks in CookieAuthenticationStateProvider, GeolocationService, SignalRClientService reconnect loop). Server-side error page uses Activity.Current for trace ID. No structured logging of exceptions."
+  testing_in_domain: "Test project uses services.AddLogging() in DI validation tests — only for test DI setup, not for OTEL/observability testing."
+  documentation_in_domain: "Observability/monitoring is explicitly out-of-scope in PRD.yaml line 83."
+related_dependencies:
+  internal:
+    - component: "Microsoft.Extensions.Logging (built-in)"
+      relationship_to_domain: "Core logging abstraction used by all ILogger<T> consumers"
+      direction: "inbound"
+  external: []
+domain_security_considerations:
+  sensitive_areas:
+    - area: "appsettings.json"
+      location: "RuckR/Server/appsettings.json"
+      concern: "Connection string with trusted connection; no secrets exposed in LogLevel config"
+    - area: "Error.cshtml.cs"
+      location: "RuckR/Server/Pages/Error.cshtml.cs"
+      concern: "RequestId (Activity.Current?.Id) displayed on error page in Development mode only"
+  authentication_patterns_in_domain: "No logging of auth events (login success/failure, registration) — CookieAuthenticationStateProvider silently handles auth failures"
+  authorization_patterns_in_domain: "No logging of authorization failures in any controller"
+  data_validation_in_domain: "No logging of validation failures (BadRequest returns, GPS range errors, rate-limit 429 responses) in any controller"
+testing_patterns:
+  framework: "xUnit 2.9.3 + FluentAssertions + coverlet"
+  coverage_areas: ["DI validation tests use services.AddLogging() for test setup"]
+  test_organization: "RuckR.Tests project; no observability-specific test fixtures or OTEL test infrastructure"
+  mock_patterns: ["TestLocationTracker replaces ILocationTracker; TestAuthHandler replaces auth; no logging mock/verification patterns"]
+open_questions:
+  - question: "Is observability intentionally deferred (per PRD out-of-scope) or is it a gap to be addressed in a future PRD?"
+    context: "PRD.yaml line 83 explicitly lists monitoring infrastructure as out-of-scope. The current state aligns with that decision."
+    type: "research"
+    affects: ["future PRD scope", "production readiness"]
+  - question: "Should SignalR hub connection/disconnection events be logged for diagnostics?"
+    context: "BattleHub has OnConnectedAsync/OnDisconnectedAsync overrides but no logging. Reconnection failures on the client also produce no logs."
+    type: "research"
+    affects: ["production diagnostics", "SignalR reliability monitoring"]
+  - question: "Should GPS/permission errors, capture failures, and rate-limit hits be logged?"
+    context: "Current error responses (400, 429, 404) in CollectionController, BattlesController, PitchesController produce no server-side logs. Only HTTP status codes are returned."
+    type: "research"
+    affects: ["operational visibility", "abuse detection"]
+gaps:
+  - area: "OpenTelemetry SDK"
+    description: "Zero OpenTelemetry NuGet packages across all 4 .csproj files. No ActivitySource, Meter, TracerProvider, or OTLP exporter anywhere in code."
+    impact: "research_blocker"
+    affects: ["distributed tracing", "custom metrics", "production observability"]
+  - area: "Structured logging library (Serilog/NLog/etc.)"
+    description: "No structured/semantic logging library. Console provider only. Logs are unstructured text to stdout."
+    impact: "research_blocker"
+    affects: ["log aggregation", "searchability", "log-based alerting"]
+  - area: "Server-side logging in game-critical controllers"
+    description: "CollectionController (captures, rate limits, GPS validation), BattlesController (challenges, accepts, declines, concurrency), PitchesController (creation, proximity, rate limits) — zero ILogger usage."
+    impact: "research_blocker"
+    affects: ["operational visibility", "error diagnosis", "abuse detection"]
+  - area: "Client-side logging"
+    description: "All 5 client services (SignalR, GPS, Map, API, Auth) lack ILogger. Reconnection failures, GPS errors, auth failures, and API errors produce no client-side logs."
+    impact: "research_blocker"
+    affects: ["client-side diagnostics", "user experience monitoring"]
+  - area: "SignalR hub logging"
+    description: "BattleHub (292 lines, 7 methods, critical game operations) has zero ILogger. Connection/disconnection events, challenge sends/accepts/declines, and battle resolutions are unlogged."
+    impact: "research_blocker"
+    affects: ["real-time diagnostics", "connection health monitoring"]
+  - area: "HTTP request logging middleware"
+    description: "No UseHttpLogging() or UseW3CLogging() middleware in the server pipeline. No request/response logging at all."
+    impact: "research_blocker"
+    affects: ["request tracing", "latency analysis", "error rate monitoring"]
+  - area: "Rate-limit/abuse logging"
+    description: "Rate-limit returns (HTTP 429) in CollectionController, BattlesController, PitchesController are completely silent — no log to detect abuse patterns."
+    impact: "research_blocker"
+    affects: ["security monitoring", "abuse detection"]

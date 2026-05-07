@@ -1,8 +1,42 @@
-﻿<Fluxor.Blazor.Web.StoreInitializer />
+﻿@using Microsoft.Extensions.Logging
+@inject ILogger<App> Logger
 
-<Router AppAssembly="@typeof(App).Assembly" NotFoundPage="@typeof(NotFound)">
-    <Found Context="routeData">
-        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-    </Found>
-</Router>
+<Fluxor.Blazor.Web.StoreInitializer />
+
+<ErrorBoundary>
+    <ChildContent>
+        <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="@typeof(NotFound)">
+            <Found Context="routeData">
+                <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+        </Router>
+    </ChildContent>
+    <ErrorContent Context="ex">
+        <div class="alert alert-danger m-3">
+            <h3>Startup Error</h3>
+            <pre style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">@FormatException(ex)</pre>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    private static string FormatException(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        var current = ex;
+        while (current is not null)
+        {
+            sb.AppendLine($"[{current.GetType().FullName}] {current.Message}");
+            sb.AppendLine(current.StackTrace);
+            sb.AppendLine();
+            current = current.InnerException;
+        }
+        return sb.ToString();
+    }
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation("App component initialized");
+    }
+}

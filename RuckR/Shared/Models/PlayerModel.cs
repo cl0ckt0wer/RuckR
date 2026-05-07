@@ -34,7 +34,10 @@ namespace RuckR.Shared.Models
         /// <summary>
         /// Spawn location as a geography point (SRID 4326).
         /// X = longitude, Y = latitude. Nullable — players may not have a spawn location yet.
+        /// Excluded from JSON serialization due to NetTopologySuite geometry cycle.
+        /// Use /players/nearby endpoint for spatial queries.
         /// </summary>
+        [System.Text.Json.Serialization.JsonIgnore]
         public Point? SpawnLocation { get; set; }
 
         [MaxLength(500)]

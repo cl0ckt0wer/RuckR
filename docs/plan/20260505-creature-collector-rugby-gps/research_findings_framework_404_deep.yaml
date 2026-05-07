@@ -1,0 +1,317 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Investigate why _framework/*.wasm files still 404 even with UseBlazorFrameworkFiles() restored before MapStaticAssets()"
+focus_area: "framework_files_404_deep_diagnosis"
+created_at: "2026-05-06T23:00:00Z"
+created_by: "RESEARCHER"
+status: completed
+tldr: |
+  - UseBlazorFrameworkFiles() IS present at line 76 (restored per prior research). 404s still occur.
+  - Framework files EXIST on disk: `RuckR\Client\bin\Debug\net10.0\wwwroot\_framework\` has 452 files including `RuckR.Client.t0u3ng1931.wasm`
+  - Server bin output has NO wwwroot directory — no _framework files copied to Server output
+  - `_framework` is NOT in `staticwebassets.development.json` tree (only source wwwroot files like favicon.png, index.html)
+  - `_framework` is NOT in `staticwebassets.build.endpoints.json` (only Identity/ routes from NuGet)
+  - `DiscoveryPatterns` in `staticwebassets.build.json` only scans Client's SOURCE wwwroot, NOT build output
+  - ROOT CAUSE: `UseBlazorFrameworkFiles()` requires a physical `_framework` directory under WebRootPath, but Server's WebRootPath is empty. The static web assets system (ContentRootIndex 6 = Client bin wwwroot) knows about the files but `MapStaticAssets()` doesn't register them as endpoint routes, so neither middleware can serve them.
+  - FIX OPTION A: Set `WebRootPath` explicitly in Program.cs to the Client's build output directory (what test fixture does)
+  - FIX OPTION B: Add `app.UseStaticFiles()` alongside `MapStaticAssets()` for fallback physical file serving
+  - FIX OPTION C: Build the Client project to populate the static web assets properly, then verify endpoints
+research_metadata:
+  methodology: "file_existence_verification + staticwebassets JSON analysis + middleware pipeline inspection + glob_search"
+  scope: "medium"
+  confidence: high
+  coverage: 95
+  decision_blockers: 1
+  research_blockers: 0
+files_analyzed:
+  - file: "RuckR/Server/Program.cs"
+    path: "RuckR/Server/Program.cs"
+    purpose: "Middleware pipeline configuration — source of the issue"
+    key_elements:
+      - element: "app.UseBlazorFrameworkFiles()"
+        type: "method_call"
+        location: "RuckR/Server/Program.cs:76"
+        description: "PRESENT (restored) — creates middleware branch for _framework/* paths. But cannot find files because Server's WebRootPath (RuckR\\Server\\wwwroot\\) does not exist and contains no _framework directory."
+        language: "C#"
+      - element: "app.MapStaticAssets()"
+        type: "method_call"
+        location: "RuckR/Server/Program.cs:77"
+        description: "PRESENT — creates endpoint routes for static assets. Does NOT have _framework routes in its endpoint table. Intercepts _framework requests after UseBlazorFrameworkFiles and returns 404."
+        language: "C#"
+      - element: "app.UseWebAssemblyDebugging()"
+        type: "method_call"
+        location: "RuckR/Server/Program.cs:65"
+        description: "PRESENT (dev only) — should configure the file provider for UseBlazorFrameworkFiles to find Client build output. May not work with .NET 10 MapStaticAssets."
+        language: "C#"
+      - element: "app.MapFallbackToFile(\"index.html\")"
+        type: "method_call"
+        location: "RuckR/Server/Program.cs:96"
+        description: "Catch-all: returns index.html for 404s. Blazor runtime interprets HTML as WASM binary → cryptic error"
+        language: "C#"
+    lines: 113
+  - file: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/"
+    path: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/"
+    purpose: "Client build output with all 452 _framework files — VERIFIED ON DISK"
+    key_elements:
+      - element: "blazor.webassembly.js"
+        type: "file"
+        location: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/blazor.webassembly.js"
+        description: "Blazor bootstrap loader — EXISTS (1 file, minified)"
+        language: "JavaScript"
+      - element: "RuckR.Client.t0u3ng1931.wasm"
+        type: "file"
+        location: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/RuckR.Client.t0u3ng1931.wasm"
+        description: "The specific failing WASM file — EXISTS on disk alongside .gz variant"
+        language: "binary"
+      - element: "dotnet.native.imnhyiqpc9.wasm"
+        type: "file"
+        location: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/dotnet.native.imnhyiqpc9.wasm"
+        description: "dotnet native WASM runtime — EXISTS on disk"
+        language: "binary"
+      - element: "RuckR.Shared.mxqtr11r4a.wasm"
+        type: "file"
+        location: "RuckR/Client/bin/Debug/net10.0/wwwroot/_framework/RuckR.Shared.mxqtr11r4a.wasm"
+        description: "Shared library WASM — EXISTS on disk"
+        language: "binary"
+    lines: 0
+  - file: "RuckR/Server/bin/Debug/net10.0/"
+    path: "RuckR/Server/bin/Debug/net10.0/"
+    purpose: "Server build output — VERIFIED: NO wwwroot directory"
+    key_elements:
+      - element: "wwwroot/ directory"
+        type: "directory"
+        location: "RuckR/Server/bin/Debug/net10.0/wwwroot/"
+        description: "DOES NOT EXIST — Server build output has no wwwroot. No _framework files are present. This is expected in dev mode with static web assets system."
+        language: "N/A"
+      - element: "RuckR.Client.dll"
+        type: "file"
+        location: "RuckR/Server/bin/Debug/net10.0/RuckR.Client.dll"
+        description: "PRESENT — Client DLL is referenced. But static web assets from Client are not copied."
+        language: "binary"
+    lines: 0
+  - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json"
+    path: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json"
+    purpose: "Static web assets development tree — defines what MapStaticAssets serves in dev mode"
+    key_elements:
+      - element: "ContentRoots array"
+        type: "json_array"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json:1"
+        description: "9 content roots including: [0]=Client source wwwroot, [6]=Client bin wwwroot (where _framework lives), [7]=hotreload, [8]=Identity.UI NuGet. ContentRoot [6] IS present."
+        language: "JSON"
+      - element: "Root.Children"
+        type: "json_object"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json:1"
+        description: "Tree has: favicon.png, icon-192.png, icon-512.png, index.html, manifest.json, RuckR.Client.styles.css, RuckR.Server.modules.json, css/, js/, service-worker.js — ALL from source wwwroot (ContentRootIndex 0). NO _framework entry in tree at all."
+        language: "JSON"
+      - element: "_framework key in tree"
+        type: "json_key"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json:1"
+        description: "NOT FOUND — grep for '_framework' only matches the ContentRoots path, NOT a tree entry. MapStaticAssets cannot route _framework/* requests."
+        language: "JSON"
+    lines: 1
+  - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json"
+    path: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json"
+    purpose: "Static web assets build manifest — defines discovery and assets"
+    key_elements:
+      - element: "DiscoveryPatterns"
+        type: "json_array"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json:1"
+        description: "Single pattern: Name='RuckR.Client\\wwwroot', ContentRoot=Client SOURCE wwwroot, BasePath='/', Pattern='**'. Only discovers files from Client's SOURCE wwwroot (css/, favicon.png, index.html, js/, manifest.json, service-worker.js). Build output _framework files NOT in discovery pattern."
+        language: "JSON"
+      - element: "ReferencedProjectsConfiguration"
+        type: "json_array"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json:1"
+        description: "Client project configured with GetBuildAssetsTargets='GetCurrentProjectBuildStaticWebAssetItems'. The target exists but its output (Client's bin/wwwroot/_framework) is NOT incorporated into endpoint routes."
+        language: "JSON"
+      - element: "Assets array"
+        type: "json_array"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json:1"
+        description: "Only contains Identity.UI assets (site.css, favicon.ico, etc. from NuGet package). No _framework assets from Client project."
+        language: "JSON"
+    lines: 1
+  - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.endpoints.json"
+    path: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.endpoints.json"
+    purpose: "Static web assets endpoint routes — MapStaticAssets serves these exact routes"
+    key_elements:
+      - element: "Endpoints array"
+        type: "json_array"
+        location: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.endpoints.json:1"
+        description: "Routes present: Identity/css/site.css (+.gz), Identity/favicon.ico, Identity/lib/**, etc. — all from Microsoft.AspNetCore.Identity.UI NuGet. NO _framework/ routes AT ALL. MapStaticAssets cannot serve _framework requests."
+        language: "JSON"
+    lines: 1
+  - file: "RuckR/Server/obj/Debug/net10.0/jsmodules/jsmodules.build.manifest.json"
+    path: "RuckR/Server/obj/Debug/net10.0/jsmodules/jsmodules.build.manifest.json"
+    purpose: "JavaScript module import map — includes one _framework reference"
+    key_elements:
+      - element: "_framework/Microsoft.DotNet.HotReload.WebAssembly.Browser.99zm1jdh75.lib.module.js"
+        type: "json_string"
+        location: "RuckR/Server/obj/Debug/net10.0/jsmodules/jsmodules.build.manifest.json:2"
+        description: "This ONE _framework file is registered as a JS module via import map. All other 451 _framework files (WASM, JS, dat, pdb) are NOT registered anywhere visible to MapStaticAssets."
+        language: "JSON"
+    lines: 3
+  - file: "RuckR/Server/RuckR.Server.csproj"
+    path: "RuckR/Server/RuckR.Server.csproj"
+    purpose: "Server project configuration"
+    key_elements:
+      - element: "Microsoft.AspNetCore.Components.WebAssembly.Server 10.0.7"
+        type: "PackageReference"
+        location: "RuckR/Server/RuckR.Server.csproj:10"
+        description: "PRESENT — provides UseBlazorFrameworkFiles() and MSBuild targets for Client asset discovery"
+        language: "XML"
+      - element: "ProjectReference to RuckR.Client"
+        type: "ProjectReference"
+        location: "RuckR/Server/RuckR.Server.csproj:22"
+        description: "PRESENT — Client project reference. Client's static web assets should be discovered."
+        language: "XML"
+    lines: 30
+  - file: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs"
+    path: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs"
+    purpose: "Working test fixture — shows how to fix WebRootPath"
+    key_elements:
+      - element: "WebRootPath = clientWwwrootDir"
+        type: "assignment"
+        location: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs:77"
+        description: "Test fixture EXPLICITLY sets WebRootPath to Client build output. This is why the test works but the real app doesn't — the real Program.cs never sets WebRootPath."
+        language: "C#"
+    lines: 274
+patterns_found:
+  - category: architecture
+    pattern: "UseBlazorFrameworkFiles requires WebRootPath to contain _framework files"
+    description: "UseBlazorFrameworkFiles() middleware serves _framework/* files from the WebRootPath/_framework directory. In development mode, WebRootPath defaults to the Server project's wwwroot directory (which is empty in RuckR). The test fixture works because it explicitly sets WebRootPath to the Client's build output. Without this, UseBlazorFrameworkFiles can't find any _framework files and passes requests through to MapStaticAssets, which also can't serve them."
+    examples:
+      - file: "RuckR.Tests/Fixtures/CustomWebApplicationFactory.cs"
+        location: "line 77"
+        snippet: "WebRootPath = clientWwwrootDir; // Explicitly set to Client build output"
+      - file: "RuckR/Server/Program.cs"
+        location: "lines 76-77"
+        snippet: "app.UseBlazorFrameworkFiles(); // Cannot find files: WebRootPath is empty\napp.MapStaticAssets(); // No _framework routes"
+    prevalence: common
+  - category: architecture
+    pattern: "MapStaticAssets does not create _framework endpoint routes for Hosted Blazor WASM"
+    description: "MapStaticAssets() creates endpoint routes from the static web assets build manifest. In the Hosted Blazor WASM model, the Client's _framework build output files are NOT registered as static web assets in the build manifest's Assets array or endpoint routes. Only the Client's source wwwroot files (favicon.png, index.html, css/, js/) and NuGet package assets (Identity.UI) get endpoints. The _framework directory from the Client's build output is present in ContentRoots but has no tree entries or endpoints."
+    examples:
+      - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.endpoints.json"
+        location: "line 1"
+        snippet: "Endpoints: [Identity/css/site.css, Identity/favicon.ico, ...] // NO _framework routes"
+      - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.development.json"
+        location: "line 1"
+        snippet: "Root.Children: {favicon.png, index.html, manifest.json, ...} // NO _framework entry"
+    prevalence: common
+  - category: architecture
+    pattern: "Static web assets discovery only scans source wwwroot, not build output"
+    description: "The DiscoveryPatterns in staticwebassets.build.json defines a single pattern that scans the Client's SOURCE wwwroot directory (ContentRoot=C:\\...\\RuckR\\Client\\wwwroot\\, Pattern=**). The _framework directory is in the BUILD OUTPUT wwwroot (C:\\...\\RuckR\\Client\\bin\\Debug\\net10.0\\wwwroot\\_framework\\), which is NOT in any discovery pattern. The build output directory is registered as ContentRoot[6] in the development.json but is only used for hot reload module discovery, not general static asset serving."
+    examples:
+      - file: "RuckR/Server/obj/Debug/net10.0/staticwebassets.build.json"
+        location: "line 1"
+        snippet: "DiscoveryPatterns: [{ContentRoot: '...Client\\wwwroot\\', Pattern: '**'}] // Only source wwwroot"
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: "UseBlazorFrameworkFiles middleware"
+      responsibility: "Creates branched pipeline for /_framework/* paths using StaticFileMiddleware serving from WebRootPath"
+      location: "Microsoft.AspNetCore.Components.WebAssembly.Server"
+      relationship_to_domain: "IS present but INEFFECTIVE — no _framework files at WebRootPath"
+    - component: "MapStaticAssets endpoint conventions"
+      responsibility: "Serves static assets via optimized endpoint routing from static web assets manifest"
+      location: "Microsoft.AspNetCore.Builder.StaticAssetsEndpointRouteBuilderExtensions"
+      relationship_to_domain: "IS present but has NO _framework routes — cannot serve these URLs"
+    - component: "Static web assets build system"
+      responsibility: "Discovers and registers static assets at build time; generates development.json and build.endpoints.json"
+      location: "MSBuild targets in Microsoft.NET.Sdk.Web / Microsoft.AspNetCore.Components.WebAssembly.Server"
+      relationship_to_domain: "Discovers Client source wwwroot files but NOT Client build output _framework files"
+    - component: "IWebHostEnvironment.WebRootPath"
+      responsibility: "Defines the physical root directory for static file serving (UseStaticFiles, UseBlazorFrameworkFiles)"
+      location: "ASP.NET Core hosting"
+      relationship_to_domain: "Defaults to Server project's wwwroot/ (empty) — must be set to Client output for framework serving"
+  interfaces_used_by_domain:
+    - interface: "IApplicationBuilder.UseBlazorFrameworkFiles()"
+      location: "Microsoft.AspNetCore.Builder.ComponentsWebApplicationBuilderExtensions"
+      usage_pattern: "Called at line 76 — creates middleware but cannot find files"
+    - interface: "IEndpointRouteBuilder.MapStaticAssets()"
+      location: "Microsoft.AspNetCore.Builder.StaticAssetsEndpointRouteBuilderExtensions"
+      usage_pattern: "Called at line 77 — creates endpoints but no _framework routes"
+  data_flow_involving_domain: |
+    Browser requests _framework/RuckR.Client.t0u3ng1931.wasm
+      → UseBlazorFrameworkFiles checks WebRootPath/_framework/ → NOT FOUND (WebRootPath is empty)
+      → MapStaticAssets checks endpoint table → NOT FOUND (no _framework routes)
+      → UseRouting → UseAuthentication → UseAuthorization → MapRazorPages/Controllers → NOT MATCHED
+      → MapFallbackToFile("index.html") → serves index.html as HTML
+      → Blazor WASM runtime receives HTML instead of WASM binary → error / silent failure
+  key_relationships_to_domain:
+    - from: "UseBlazorFrameworkFiles middleware"
+      to: "WebRootPath (Server wwwroot)"
+      relationship: "depends_on — needs _framework/ at WebRootPath to serve files (MISSING)"
+    - from: "MapStaticAssets endpoint table"
+      to: "staticwebassets.build.endpoints.json"
+      relationship: "reads — no _framework routes registered (MISSING)"
+    - from: "staticwebassets.build.json DiscoveryPatterns"
+      to: "Client SOURCE wwwroot"
+      relationship: "scans — but _framework files are in Client BUILD OUTPUT, not source (MISMATCH)"
+    - from: "Test fixture CustomWebApplicationFactory"
+      to: "WebRootPath = clientWwwrootDir"
+      relationship: "configures — explicitly sets WebRootPath to Client build output (WORKING PATTERN)"
+related_technology_stack:
+  languages_used_in_domain: ["C#", "JSON", "MSBuild XML"]
+  frameworks_used_in_domain:
+    - name: "ASP.NET Core 10.0"
+      usage_in_domain: "Hosting, middleware pipeline, static file serving, endpoint routing"
+    - name: "Blazor WebAssembly 10.0"
+      usage_in_domain: "Client SPA runtime; _framework files are its boot payload"
+  libraries_used_in_domain:
+    - name: "Microsoft.AspNetCore.Components.WebAssembly.Server 10.0.7"
+      purpose_in_domain: "Provides UseBlazorFrameworkFiles() middleware and MSBuild integration"
+  external_apis_used_in_domain: []
+related_conventions:
+  naming_patterns_in_domain: "Middleware: Use* (UseBlazorFrameworkFiles). Endpoint conventions: Map* (MapStaticAssets). Static web assets: ContentRoots, DiscoveryPatterns, Endpoints."
+  structure_of_domain: "3-project Hosted Blazor WASM: Server (host) → Client (WASM app) + Shared (models). Client build generates _framework/ in bin output. Server references Client project and serves its assets."
+  error_handling_in_domain: "404 from MapStaticAssets → falls through to MapFallbackToFile → serves index.html (HTML 200) instead of WASM binary → Blazor runtime fails to parse HTML as WASM"
+  testing_in_domain: "CustomWebApplicationFactory explicitly sets WebRootPath to Client build output — this is the proven fix pattern"
+  documentation_in_domain: "MS docs say 'MapStaticAssets also replaces calling UseBlazorFrameworkFiles' — this applies to Blazor Web App model (.Client + AddInteractiveWebAssemblyComponents), NOT Hosted Blazor WASM"
+related_dependencies:
+  internal:
+    - component: "RuckR.Client project build output"
+      relationship_to_domain: "Produces _framework directory with 452 files — must be served by Server"
+      direction: outbound
+    - component: "RuckR.Server WebRootPath"
+      relationship_to_domain: "Empty — no _framework directory. UseBlazorFrameworkFiles depends on this."
+      direction: inbound
+  external:
+    - name: "Microsoft.AspNetCore.Components.WebAssembly.Server 10.0.7"
+      purpose_for_domain: "Provides UseBlazorFrameworkFiles() — must have WebRootPath configured correctly to work"
+    - name: "Microsoft.NET.Sdk.BlazorWebAssembly"
+      purpose_for_domain: "Generates _framework files in Client build output"
+domain_security_considerations:
+  sensitive_areas: []
+  authentication_patterns_in_domain: "N/A"
+  authorization_patterns_in_domain: "N/A"
+  data_validation_in_domain: "N/A"
+testing_patterns:
+  framework: "CustomWebApplicationFactory"
+  coverage_areas: ["_framework file serving", "WebRootPath configuration"]
+  test_organization: "CustomWebApplicationFactory.cs:77 sets WebRootPath explicitly — proven working pattern"
+  mock_patterns: ["Explicit WebRootPath pointing to Client build output"]
+open_questions:
+  - question: "Why doesn't UseWebAssemblyDebugging() configure WebRootPath or add a file provider for UseBlazorFrameworkFiles?"
+    context: "UseWebAssemblyDebugging() is called at line 65 in dev mode. In .NET 8, this would configure the static file options to include the Client's output. In .NET 10, this may not work with the new static web assets system."
+    type: research
+    affects: ["Program.cs:65", "Middleware pipeline"]
+  - question: "Should UseBlazorFrameworkFiles() be called AFTER UseRouting() like MapStaticAssets?"
+    context: "Currently MapStaticAssets is before UseRouting (line 77→79). UseBlazorFrameworkFiles is also before UseRouting (line 76). MS docs for Blazor WASM show UseBlazorFrameworkFiles before UseRouting. But maybe the order needs adjustment for .NET 10."
+    type: research
+    affects: ["Program.cs:76-79"]
+  - question: "Is there a .NET 10 MSBuild property to make the Client's build output _framework directory discoverable by MapStaticAssets?"
+    context: "The DiscoveryPatterns only scan source wwwroot. There might be a property like <StaticWebAssetDiscoveryPatterns> or <BlazorWebAssemblyStaticWebAssets> to include build output."
+    type: research
+    affects: ["RuckR.Server.csproj", "Build system"]
+gaps:
+  - area: "WebRootPath not configured in Program.cs"
+    description: "The Server's Program.cs never sets WebRootPath. It defaults to the Server project's wwwroot/ directory which does not exist and has no _framework files. The test fixture demonstrates the fix: set WebRootPath to the Client's build output directory. This is the single most impactful gap."
+    impact: decision_blocker
+    affects: ["Program.cs", "_framework file serving", "UseBlazorFrameworkFiles effectiveness"]
+  - area: "_framework not in MapStaticAssets endpoint routes"
+    description: "MapStaticAssets() has zero _framework routes in its endpoint table. This means even if UseBlazorFrameworkFiles passes through, MapStaticAssets will 404. The fundamental issue is that the static web assets build system (DiscoveryPatterns) only discovers Client source wwwroot files, not build output _framework files. This may be a .NET 10 regression or a Hosted WASM model limitation."
+    impact: decision_blocker
+    affects: ["Program.cs:77", "staticwebassets.build.json", "MapStaticAssets routing"]
+  - area: "MapFallbackToFile serves index.html for _framework 404s"
+    description: "When both UseBlazorFrameworkFiles and MapStaticAssets fail to serve _framework/*.wasm, the request falls through to MapFallbackToFile('index.html') which returns HTML. The Blazor runtime interprets HTML as WASM binary, producing confusing errors. This is a secondary effect — fixing the primary gap (WebRootPath) will eliminate the fallback issue."
+    impact: research_blocker
+    affects: ["Program.cs:96", "Error diagnostics quality"]

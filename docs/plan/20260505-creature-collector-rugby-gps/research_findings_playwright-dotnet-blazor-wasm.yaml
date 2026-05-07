@@ -1,0 +1,462 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Research Microsoft.Playwright (.NET bindings) setup and usage patterns for testing a Blazor WASM SPA hosted by ASP.NET Core, including WebApplicationFactory integration, mobile viewport configuration, and Blazor-specific timing challenges."
+focus_area: "playwright-dotnet-blazor-wasm"
+created_at: "2026-05-06T00:00:00Z"
+created_by: "gem-researcher"
+status: completed
+tldr: |
+  - Microsoft.Playwright 1.59.0 (latest stable, April 9 2026) targets .NET Standard 2.0, fully compatible with net10.0.
+  - Recommended test framework: xUnit with Microsoft.Playwright.Xunit (v1.59.0) for IAsyncLifetime support; NUnit (most popular with 18M downloads) also well-supported.
+  - WebApplicationFactory<Program> from Microsoft.AspNetCore.Mvc.Testing enables in-memory hosting of the Blazor WASM + ASP.NET Core server in tests.
+  - Blazor WASM render detection requires waiting for specific Blazor-rendered DOM elements (e.g., h3, .card), NOT NetworkIdle alone.
+  - Mobile viewport: Playwright.Devices["Pixel 5"] / Playwright.Devices["iPhone 13"] or custom BrowserNewContextOptions with ViewportSize/IsMobile/HasTouch.
+  - Browser binary installation: dotnet build then pwsh bin/Debug/net10.0/playwright.ps1 install.
+
+research_metadata:
+  methodology: "semantic_search + webfetch (NuGet.org, playwright.dev, learn.microsoft.com) + codebase analysis (RuckR .csproj, Program.cs, controllers, pages, models)"
+  scope: "medium"
+  confidence: high
+  coverage: 92
+  decision_blockers: 1
+  research_blockers: 0
+
+files_analyzed:
+  - file: "RuckR.Server.csproj"
+    path: "RuckR/Server/RuckR.Server.csproj"
+    purpose: "Target framework (net10.0), existing NuGet references (EF Core, Identity, SignalR), project structure for WebApplicationFactory reference"
+    key_elements:
+      - element: "TargetFramework"
+        type: "property"
+        location: "RuckR/Server/RuckR.Server.csproj:4"
+        description: "net10.0 — test project must match"
+        language: "xml"
+      - element: "Microsoft.AspNetCore.Identity.EntityFrameworkCore"
+        type: "PackageReference"
+        location: "RuckR/Server/RuckR.Server.csproj:11"
+        description: "Version 10.0.7 — ASP.NET Core Identity with EF Core"
+        language: "xml"
+      - element: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+        type: "PackageReference"
+        location: "RuckR/Server/RuckR.Server.csproj:18"
+        description: "Version 10.0.7 — spatial data with SQL Server geography type"
+        language: "xml"
+    lines: 27
+
+  - file: "Program.cs"
+    path: "RuckR/Server/Program.cs"
+    purpose: "Entry point for WebApplicationFactory<Program>; service registration pattern, middleware pipeline"
+    key_elements:
+      - element: "Program class (implicit)"
+        type: "class"
+        location: "RuckR/Server/Program.cs:1-92"
+        description: "Top-level statements — needs InternalsVisibleTo or public partial class Program for WebApplicationFactory"
+        language: "csharp"
+      - element: "AddDbContext<RuckRDbContext>"
+        type: "service_registration"
+        location: "RuckR/Server/Program.cs:27-32"
+        description: "SQL Server with NetTopologySuite spatial — test must replace with Docker SQL Server connection string"
+        language: "csharp"
+      - element: "AddDefaultIdentity<IdentityUser>"
+        type: "service_registration"
+        location: "RuckR/Server/Program.cs:34-38"
+        description: "ASP.NET Core Identity — test auth mocks needed for [Authorize] controllers"
+        language: "csharp"
+      - element: "AddSignalR"
+        type: "service_registration"
+        location: "RuckR/Server/Program.cs:48"
+        description: "SignalR hub registration — MapHub<BattleHub> at line 76"
+        language: "csharp"
+      - element: "Seed data"
+        type: "startup_task"
+        location: "RuckR/Server/Program.cs:80-90"
+        description: "SeedIfEmptyAsync runs on startup — may conflict with test database seeding"
+        language: "csharp"
+    lines: 92
+
+  - file: "RuckR.Client.csproj"
+    path: "RuckR/Client/RuckR.Client.csproj"
+    purpose: "Client Sdk (BlazorWebAssembly), existing Fluxor + SignalR client packages"
+    key_elements:
+      - element: "Sdk"
+        type: "property"
+        location: "RuckR/Client/RuckR.Client.csproj:1"
+        description: "Microsoft.NET.Sdk.BlazorWebAssembly — confirms WASM target"
+        language: "xml"
+      - element: "Fluxor"
+        type: "PackageReference"
+        location: "RuckR/Client/RuckR.Client.csproj:14"
+        description: "Version 6.9.0 — Flux/Redux state management (must render before tests can interact)"
+        language: "xml"
+    lines: 28
+
+  - file: "appsettings.json"
+    path: "RuckR/Server/appsettings.json"
+    purpose: "Connection string source; must be overridden in tests for Docker SQL Server"
+    key_elements:
+      - element: "ConnectionStrings:RuckRDbContext"
+        type: "configuration"
+        location: "RuckR/Server/appsettings.json:17"
+        description: "LocalDB connection string; commented-out Docker alternative at line 19"
+        language: "json"
+    lines: 21
+
+  - file: "Profile.razor"
+    path: "RuckR/Client/Pages/Profile.razor"
+    purpose: "Canonical Blazor page pattern — loading spinner, error state, EditForm with DataAnnotationsValidator"
+    key_elements:
+      - element: "Loading spinner"
+        type: "pattern"
+        location: "RuckR/Client/Pages/Profile.razor:9-15"
+        description: "spinner-border + Loading... text — test must wait for this to disappear or content to appear"
+        language: "razor"
+      - element: "h3 Profile heading"
+        type: "dom_element"
+        location: "RuckR/Client/Pages/Profile.razor:5"
+        description: "DOM anchor for WaitForSelectorAsync after Blazor renders"
+        language: "razor"
+    lines: 154
+
+  - file: "PlayerModel.cs"
+    path: "RuckR/Shared/Models/PlayerModel.cs"
+    purpose: "Example shared model with DataAnnotations, NetTopologySuite Point for spatial data"
+    key_elements:
+      - element: "Point? SpawnLocation"
+        type: "property"
+        location: "RuckR/Shared/Models/PlayerModel.cs:38"
+        description: "NetTopologySuite.Geometries.Point (SRID 4326) — geography spatial type"
+        language: "csharp"
+    lines: 43
+
+patterns_found:
+  - category: "architecture"
+    pattern: "WebApplicationFactory<TProgram> for in-memory ASP.NET Core hosting"
+    description: "Microsoft.AspNetCore.Mvc.Testing provides WebApplicationFactory<TProgram> that creates an in-memory TestServer for the SUT. The test project references the Server project and uses the implicit Program class as TEntryPoint. Need InternalsVisibleTo or a public partial class Program since top-level statements generate an internal class."
+    examples:
+      - file: "Microsoft official docs"
+        location: "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests"
+        snippet: "public class BasicTests : IClassFixture<WebApplicationFactory<Program>> { ... }"
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "CustomWebApplicationFactory inheriting WebApplicationFactory<T>"
+    description: "Override ConfigureWebHost to replace DbContext registration with test-specific connection string (Docker SQL Server), configure test services, and set environment. The factory is shared via IClassFixture<T> in xUnit or [SetUp]/[TearDown] in NUnit."
+    examples:
+      - file: "Microsoft official docs"
+        location: "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests#customize-webapplicationfactory"
+        snippet: "protected override void ConfigureWebHost(IWebHostBuilder builder) { builder.ConfigureServices(services => { ... }); builder.UseEnvironment(\"Development\"); }"
+    prevalence: "common"
+
+  - category: "architecture"
+    pattern: "PageTest base class from Microsoft.Playwright.{NUnit|Xunit|MSTest}"
+    description: "Playwright provides framework-specific base classes (PageTest, ContextTest, BrowserTest, PlaywrightTest) that manage IPlaywright/IBrowser/IBrowserContext/IPage lifecycle. Extend PageTest for most E2E tests — each [Test]/[Fact] gets a fresh Page in isolated BrowserContext."
+    examples:
+      - file: "playwright.dev docs"
+        location: "https://playwright.dev/dotnet/docs/test-runners"
+        snippet: "public class ExampleTest : PageTest { [Test] public async Task HasTitle() { await Page.GotoAsync(\"https://playwright.dev\"); await Expect(Page).ToHaveTitleAsync(new Regex(\"Playwright\")); } }"
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Blazor WASM render detection: Page.WaitForSelectorAsync on Blazor-specific DOM"
+    description: "Blazor WASM loads in stages (HTML → blazor.webassembly.js → .NET runtime → Blazor app → component render). Page.WaitForLoadStateAsync(LoadState.NetworkIdle) fires after static resources load but BEFORE Blazor renders components. Reliable detection requires waiting for a DOM element that Blazor inserts (e.g., an h3 heading, a .card div, or a #blazor-error-ui element)."
+    examples:
+      - file: "RuckR/Client/Pages/Profile.razor"
+        location: "RuckR/Client/Pages/Profile.razor:5"
+        snippet: "<!-- Test waits for: --> await Page.WaitForSelectorAsync(\"h3:has-text('Profile')\");"
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Playwright.Devices for mobile viewport emulation"
+    description: "playwright.Devices is an IReadOnlyDictionary<string, BrowserNewContextOptions> containing ~50+ device presets (iPhone 13, Pixel 5, iPad Pro, etc.) with correct UserAgent, ViewportSize, DeviceScaleFactor, IsMobile, HasTouch. Can also create custom BrowserNewContextOptions."
+    examples:
+      - file: "playwright.dev docs"
+        location: "https://playwright.dev/dotnet/docs/emulation#devices"
+        snippet: "var pixel5 = playwright.Devices[\"Pixel 5\"];\nawait using var context = await browser.NewContextAsync(pixel5);"
+    prevalence: "common"
+
+  - category: "structure"
+    pattern: "Override ContextOptions() for per-test-class viewport/baseURL"
+    description: "The PageTest/ContextTest base classes allow overriding ContextOptions() to return BrowserNewContextOptions with custom ViewportSize, BaseURL, ColorScheme, Locale, Geolocation, Permissions. This avoids repeating configuration in each test."
+    examples:
+      - file: "playwright.dev docs"
+        location: "https://playwright.dev/dotnet/docs/test-runners#customizing-browsercontext-options"
+        snippet: "public override BrowserNewContextOptions ContextOptions() { return new() { ViewportSize = new() { Width = 393, Height = 851 }, BaseURL = \"https://localhost:7161\" }; }"
+    prevalence: "common"
+
+  - category: "error_handling"
+    pattern: "Blazor reconnection UI detection and dismissal"
+    description: "Blazor WASM displays a reconnection modal (components-reconnect-modal) when the SignalR circuit or WASM runtime restarts. In headless tests, this modal may block interactions. Tests can suppress it via JS evaluation or wait for it to disappear."
+    examples:
+      - file: "Community pattern"
+        location: "N/A (community knowledge)"
+        snippet: "// Before test: await Page.EvaluateAsync(\"() => { const e = document.getElementById('components-reconnect-modal'); if(e) e.remove(); }\");\n// Or: wait for it to not exist: await Expect(Page.Locator(\"#components-reconnect-modal\")).ToBeHiddenAsync();"
+    prevalence: "occasional"
+
+  - category: "testing"
+    pattern: "Dual-mode testing: WebApplicationFactory for API + Playwright for browser E2E"
+    description: "For a Blazor WASM hosted app, two test modes exist: (1) API-only tests use WebApplicationFactory.CreateClient() to send HTTP requests directly to controllers without a browser; (2) E2E tests use Playwright to navigate a real Chromium browser to the WebApplicationFactory-hosted URL. The same CustomWebApplicationFactory can serve both modes."
+    examples:
+      - file: "Microsoft docs + community"
+        location: "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests"
+        snippet: "var client = _factory.CreateClient(); // API tests\nvar response = await client.GetAsync(\"/players\");\n\n// E2E tests (Playwright):\nvar page = await browser.NewPageAsync();\nawait page.GotoAsync(client.BaseAddress.ToString() + \"/map\");"
+    prevalence: "common"
+
+  - category: "convention"
+    pattern: "xUnit vs NUnit for Playwright .NET"
+    description: "NUnit has the most downloads (18M) and largest community. xUnit uses IAsyncLifetime (InitializeAsync/DisposeAsync) which maps cleanly to Playwright's async lifecycle. NUnit uses [SetUp]/[TearDown] (can be async with async Task). Both frameworks work equally well; xUnit's constructor injection + IClassFixture is cleaner for WebApplicationFactory sharing. MSTest is least popular for Playwright (2.8M downloads)."
+    examples:
+      - file: "NuGet.org download stats"
+        location: "https://www.nuget.org/packages/Microsoft.Playwright.NUnit/"
+        snippet: "NUnit: 18.0M total downloads | xUnit: 783K | MSTest: 2.8M"
+    prevalence: "common"
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "RuckR.Server (ASP.NET Core host)"
+      responsibility: "Hosts API controllers, serves Blazor WASM static files, SignalR hub, ASP.NET Core Identity"
+      location: "RuckR/Server/"
+      relationship_to_domain: "System Under Test (SUT) — WebApplicationFactory<Program> targets this project; Playwright browser navigates to URLs served by this host"
+    - component: "RuckR.Client (Blazor WASM SPA)"
+      responsibility: "Browser-based SPA with Fluxor state, Leaflet.js map, GPS geolocation, PVP battle UI"
+      location: "RuckR/Client/"
+      relationship_to_domain: "Rendered in Chromium browser — Playwright interacts with rendered Blazor components via DOM selectors"
+    - component: "RuckR.Shared (Models)"
+      responsibility: "Data models, DTOs, enums shared between Server and Client"
+      location: "RuckR/Shared/"
+      relationship_to_domain: "Test data factories use these models; API response assertions deserialize to these types"
+    - component: "RuckRDbContext (EF Core)"
+      responsibility: "SQL Server database context with spatial support (NetTopologySuite)"
+      location: "RuckR/Server/Data/"
+      relationship_to_domain: "Test must replace connection string with Docker SQL Server; seed test data via DbContext"
+  interfaces_used_by_domain:
+    - interface: "WebApplicationFactory<TEntryPoint>"
+      location: "Microsoft.AspNetCore.Mvc.Testing (NuGet)"
+      usage_pattern: "IClassFixture<CustomWebApplicationFactory<Program>> in xUnit test classes; creates in-memory TestServer hosting Blazor WASM + API"
+    - interface: "IPlaywright / IBrowser / IBrowserContext / IPage"
+      location: "Microsoft.Playwright (NuGet)"
+      usage_pattern: "Managed by PageTest base class; IPage is the primary test surface (navigation, locators, assertions)"
+    - interface: "ILocator / IReadOnlyList<ILocator>"
+      location: "Microsoft.Playwright (NuGet)"
+      usage_pattern: "Page.GetByRole(), Page.Locator(), Page.GetByText() return ILocator for web-first assertions"
+    - interface: "IJSObjectReference / IJSRuntime"
+      location: "Microsoft.JSInterop (ASP.NET Core)"
+      usage_pattern: "Blazor's JS interop boundary — Playwright can also call Page.EvaluateAsync() to run JS directly"
+  data_flow_involving_domain: |
+    1. dotnet test starts → xUnit creates CustomWebApplicationFactory<Program> → in-memory TestServer starts
+    2. Playwright launches Chromium browser → navigates to TestServer URL (e.g., http://localhost:5000/)
+    3. Browser loads index.html → blazor.webassembly.js → .NET runtime → Blazor app → page renders
+    4. Playwright waits for Blazor DOM elements → performs actions (click, fill, navigate)
+    5. Blazor components call Server API via HttpClient → API returns JSON → Blazor re-renders
+    6. Playwright assertions verify DOM state
+    7. Alternatively: API tests skip browser → use HttpClient from WebApplicationFactory → assert HTTP responses
+  key_relationships_to_domain:
+    - from: "RuckR.Tests (new project)"
+      to: "RuckR.Server"
+      relationship: "ProjectReference + WebApplicationFactory<Program>"
+    - from: "RuckR.Tests (new project)"
+      to: "Microsoft.Playwright"
+      relationship: "PackageReference (creates IPlaywright, launches Chromium)"
+    - from: "RuckR.Tests (new project)"
+      to: "Docker SQL Server"
+      relationship: "Connection string dependency — test appsettings override"
+    - from: "Playwright Chromium browser"
+      to: "RuckR.Client Blazor WASM"
+      relationship: "HTTP navigation + DOM interaction"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "C# 13 (.NET 10)"
+    - "Razor (.razor markup)"
+    - "JavaScript (Leaflet.js interop, Blazor startup)"
+    - "PowerShell (browser binary installation)"
+  frameworks_used_in_domain:
+    - name: "Microsoft.Playwright"
+      usage_in_domain: "Core E2E testing library — browser automation, locators, assertions. Version 1.59.0 targets .NET Standard 2.0."
+    - name: "xUnit.net"
+      usage_in_domain: "Recommended test framework for IAsyncLifetime + IClassFixture patterns. Version 2.9+ supports native async."
+    - name: "Microsoft.AspNetCore.Mvc.Testing"
+      usage_in_domain: "In-memory TestServer via WebApplicationFactory<TProgram> for hosting Blazor WASM + API in tests. Version matches ASP.NET Core 10.0.7."
+    - name: "Blazor WebAssembly"
+      usage_in_domain: "Client-side framework rendered in Chromium; tests must wait for WASM runtime + component render."
+  libraries_used_in_domain:
+    - name: "Microsoft.Playwright.TestAdapter"
+      purpose_in_domain: "Test adapter for dotnet test CLI integration. Version 1.59.0."
+    - name: "Microsoft.Playwright.NUnit OR Microsoft.Playwright.Xunit"
+      purpose_in_domain: "Framework-specific base classes (PageTest, ContextTest) that manage Playwright lifecycle. Version 1.59.0."
+    - name: "Microsoft.NET.Test.Sdk"
+      purpose_in_domain: "Required by xUnit/NUnit test projects for dotnet test runner. Version 17.13+."
+    - name: "coverlet.collector (optional)"
+      purpose_in_domain: "Code coverage collection during dotnet test."
+  external_apis_used_in_domain:
+    - name: "Playwright browser binaries (Chromium, Firefox, WebKit)"
+      integration_point: "Installed via pwsh bin/Debug/net10.0/playwright.ps1 install; stored in %USERPROFILE%/.cache/ms-playwright on Windows"
+    - name: "Docker SQL Server (mcr.microsoft.com/mssql/server)"
+      integration_point: "Test database connection string in appsettings.Test.json or CustomWebApplicationFactory ConfigureWebHost override"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Test project: RuckR.Tests (in repo root, sibling to RuckR/ directory)
+    - Test classes: {PageName}PageTests.cs or {ControllerName}ControllerTests.cs
+    - Test methods: Should_{ExpectedBehavior}_When_{Condition} OR {Method}_{Scenario}_{ExpectedResult}
+    - Page Object classes: {PageName}Page.cs (e.g., ProfilePage.cs, MapPage.cs)
+    - Base classes: PageTest (from Playwright), CustomWebApplicationFactory (inherits WebApplicationFactory<Program>)
+    - Factories/helpers: BlazorWaitHelper.cs, TestDataFactory.cs
+  structure_of_domain: |
+    RuckR.Tests/
+    ├── RuckR.Tests.csproj         # net10.0, xUnit, Playwright, Mvc.Testing
+    ├── playwright.runsettings      # BrowserName, Headless, Worker count
+    ├── CustomWebApplicationFactory.cs  # Inherits WebApplicationFactory<Program>
+    ├── appsettings.Test.json       # Docker SQL Server connection string
+    ├── E2E/                        # Playwright browser tests
+    │   ├── Pages/                  # Page Object Model classes
+    │   │   ├── BasePage.cs
+    │   │   ├── ProfilePage.cs
+    │   │   ├── MapPage.cs
+    │   │   ├── CollectionPage.cs
+    │   │   └── LoginPage.cs
+    │   ├── MapPageTests.cs         # E2E tests for /map
+    │   ├── ProfilePageTests.cs     # E2E tests for /profile
+    │   └── AuthTests.cs            # Login/register flow tests
+    ├── API/                        # Direct HTTP API tests (no browser)
+    │   ├── PlayersControllerTests.cs
+    │   ├── PitchesControllerTests.cs
+    │   ├── BattlesControllerTests.cs
+    │   └── CollectionControllerTests.cs
+    ├── Helpers/
+    │   ├── BlazorWaitHelper.cs     # WaitForBlazorAsync, WaitForBlazorElementAsync
+    │   └── TestDataFactory.cs      # PlayerModel, PitchModel seed helpers
+    └── Mobile/                     # Mobile viewport test variants
+        ├── MapPageMobileTests.cs   # Pixel 5 / iPhone 13 viewport
+        └── ResponsiveTests.cs
+  error_handling_in_domain: |
+    - Playwright auto-waits for element actionability (visible, enabled, stable) before actions — no manual Task.Delay needed.
+    - Use Expect().ToBeVisibleAsync() / ToHaveTextAsync() with configurable timeout (default 5s, override via .runsettings <ExpectTimeout>).
+    - Blazor WASM startup failures (e.g., missing DLLs) produce console errors — capture with page.Console event listener.
+    - For [Authorize] controllers, test auth handler returns AuthenticateResult.Success with test claims.
+    - Test database transactions: rollback after each test or use Respawn to reset state.
+  testing_in_domain: |
+    - Multi-layered: API tests (WebApplicationFactory HttpClient) + E2E tests (Playwright browser) + mobile viewport variants.
+    - Test isolation: Playwright creates fresh BrowserContext per test (separate cookies, localStorage, permissions).
+    - Database isolation: Each test class seeds known data; tests never depend on test execution order.
+    - Parallel execution: xUnit runs test classes in parallel (default); each Playwright test uses isolated BrowserContext; Blazor WASM memory footprint ~50-100MB per context.
+    - CI: headless Chromium by default; set <Headless>false</Headless> in .runsettings for local debugging.
+    - Filtering: dotnet test --filter "Category=Smoke" (requires [Trait("Category", "Smoke")] in xUnit or [Category("Smoke")] in NUnit).
+  documentation_in_domain: |
+    - Playwright official docs: https://playwright.dev/dotnet/docs/intro
+    - ASP.NET Core integration tests: https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests
+    - Playwright .NET API reference: https://playwright.dev/dotnet/docs/api/class-playwright
+    - Devices registry source: https://github.com/microsoft/playwright/blob/main/packages/playwright-core/src/server/deviceDescriptorsSource.json
+
+related_dependencies:
+  internal:
+    - component: "RuckR.Server"
+      relationship_to_domain: "SUT — referenced by RuckR.Tests via ProjectReference; WebApplicationFactory<Program> bootstraps it"
+      direction: "inbound"
+    - component: "RuckR.Shared"
+      relationship_to_domain: "Models used in test assertions and test data factories"
+      direction: "inbound"
+    - component: "RuckR.Client"
+      relationship_to_domain: "Blazor WASM pages rendered in Chromium — test DOM assertions target Blazor-rendered elements"
+      direction: "inbound"
+  external:
+    - name: "Microsoft.Playwright"
+      purpose_for_domain: "Core browser automation library — provides IPlaywright, IBrowser, IPage, ILocator, and web-first assertions"
+    - name: "Microsoft.Playwright.NUnit | Microsoft.Playwright.Xunit"
+      purpose_for_domain: "Framework-specific base classes (PageTest) that manage browser/context/page lifecycle"
+    - name: "Microsoft.Playwright.TestAdapter"
+      purpose_for_domain: "VSTest adapter — enables dotnet test integration and .runsettings configuration"
+    - name: "Microsoft.AspNetCore.Mvc.Testing"
+      purpose_for_domain: "WebApplicationFactory<T> for in-memory ASP.NET Core test server hosting"
+    - name: "Microsoft.NET.Test.Sdk"
+      purpose_for_domain: "Required by xUnit/NUnit test projects for dotnet test runner"
+    - name: "xunit | NUnit"
+      purpose_for_domain: "Test framework — xUnit recommended for IAsyncLifetime + IClassFixture; NUnit most popular with 18M downloads"
+    - name: "Docker (mcr.microsoft.com/mssql/server)"
+      purpose_for_domain: "SQL Server container for test database — connection string override in CustomWebApplicationFactory"
+    - name: "Playwright Chromium browser binary"
+      purpose_for_domain: "Runs headless or headed; installed via playwright.ps1 install; supports mobile device emulation"
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "ASP.NET Core Identity authentication"
+      location: "RuckR/Server/Program.cs:34-38"
+      concern: "Test auth handler must be isolated — mock authentication returns test claims, never real credentials"
+    - area: "Database connection string"
+      location: "RuckR/Server/appsettings.json:17"
+      concern: "Docker SQL Server password must not be hardcoded — use environment variables or user secrets in test project"
+    - area: "Antiforgery tokens"
+      location: "All POST/PUT/DELETE endpoints"
+      concern: "API tests (HttpClient) must handle antiforgery tokens; E2E tests (Playwright) handle them automatically via browser"
+  authentication_patterns_in_domain: |
+    Use TestAuthHandler (AuthenticationHandler<AuthenticationSchemeOptions>) registered via ConfigureTestServices for [Authorize] controllers.
+    Playwright E2E tests authenticate by filling login form and submitting, or by setting auth cookies directly via BrowserContext.AddCookiesAsync().
+  authorization_patterns_in_domain: |
+    All controllers decorated with [Authorize] — API tests must mock auth; E2E tests must log in first.
+    Authorization policies (if any) tested by varying test user claims.
+  data_validation_in_domain: |
+    Playwright assertions (Expect API) auto-retry until condition met or timeout — replaces manual retry loops.
+    Server-side validation errors rendered in Blazor ValidationMessage components — test via Expect(Page.Locator(".validation-message")).ToBeVisibleAsync().
+
+testing_patterns:
+  framework: "xUnit (recommended) or NUnit"
+  coverage_areas:
+    - "E2E browser tests (Playwright Chromium)"
+    - "API integration tests (WebApplicationFactory HttpClient)"
+    - "Mobile viewport tests (Pixel 5, iPhone 13)"
+    - "Authentication flow tests (login, register, [Authorize] endpoints)"
+    - "SignalR real-time tests (battle notifications)"
+    - "Map/geolocation tests (mock geolocation via BrowserContext)"
+  test_organization: |
+    RuckR.Tests/
+    ├── E2E/ — Playwright browser tests
+    ├── API/ — Direct HTTP tests
+    ├── Mobile/ — Mobile viewport variants
+    └── Helpers/ — Wait helpers, test data factories
+  mock_patterns:
+    - "TestAuthHandler: Mocks ASP.NET Core Identity for [Authorize] controllers"
+    - "BrowserContext.SetGeolocationAsync(): Mocks GPS position for map tests"
+    - "Page.RouteAsync(): Intercepts network requests to mock API responses"
+    - "CustomWebApplicationFactory.ConfigureWebHost: Replaces DbContext with test database"
+
+open_questions:
+  - question: "Should RuckR.Server's Program class be made public partial for WebApplicationFactory?"
+    context: "Top-level statements in .NET 10 generate an internal Program class. WebApplicationFactory<Program> requires access to it. Solution: add 'public partial class Program { }' at the bottom of Program.cs, or use InternalsVisibleTo in .csproj."
+    type: "decision_blocker"
+    affects: ["RuckR.Server/Program.cs", "RuckR.Tests/CustomWebApplicationFactory.cs"]
+  - question: "Docker SQL Server startup in CI — should tests manage container lifecycle or assume pre-existing?"
+    context: "Testcontainers-dotnet (https://github.com/testcontainers/testcontainers-dotnet) can spin up Docker SQL Server per test run. Alternative: assume a docker-compose.yml exists and is started before dotnet test. Testcontainers adds complexity but ensures isolation."
+    type: "research"
+    affects: ["CI/CD setup", "docker-compose.yml", "RuckR.Tests.csproj"]
+  - question: "Should the seed data generator (PlayerGeneratorService) run in test or use fixed test fixtures?"
+    context: "Program.cs seeds data on startup via SeedIfEmptyAsync. Tests could either (a) let it seed with a known seed value, (b) disable it and insert fixed test data, or (c) use a separate test seed. Fixed test fixtures are more deterministic."
+    type: "research"
+    affects: ["CustomWebApplicationFactory.cs", "TestDataFactory.cs"]
+  - question: "How to test SignalR real-time features (battle notifications) with Playwright?"
+    context: "SignalR connections require a second browser context to simulate two users. Playwright can create multiple BrowserContexts (isolated sessions). Need to coordinate two users: challenger + opponent, each in their own browser context."
+    type: "nice_to_know"
+    affects: ["E2E/BattleTests.cs", "Test architecture"]
+  - question: "Should the reconnection UI (#components-reconnect-modal) be disabled entirely in test runs?"
+    context: "The Blazor WASM hosted model shows a reconnection modal if the WASM runtime restarts. In tests, this can block interactions. Options: suppress via Blazor.start() options or remove via Page.EvaluateAsync() in test setup."
+    type: "research"
+    affects: ["BlazorWaitHelper.cs", "E2E test reliability"]
+
+gaps:
+  - area: "WebApplicationFactory with Blazor WASM hosted model"
+    description: "The Microsoft docs for WebApplicationFactory focus on MVC/Razor Pages. Specific guidance for Blazor WASM hosted (where Server serves WASM static files + API + SignalR) is sparse. Need to verify that WebApplicationFactory correctly serves _framework/blazor.webassembly.js and .NET WASM runtime files in tests."
+    impact: "research_blocker"
+    affects: ["CustomWebApplicationFactory.cs", "E2E test setup"]
+  - area: "Fluxor state initialization during tests"
+    description: "Fluxor dispatches initial actions on Blazor app startup. Tests may need to wait for specific Fluxor state before interacting with pages (e.g., LocationState.UserLatitude must be set before map renders). No established pattern for detecting Fluxor state readiness from Playwright DOM."
+    impact: "research_blocker"
+    affects: ["E2E/MapPageTests.cs", "BlazorWaitHelper.cs"]
+  - area: "Leaflet.js map element detection"
+    description: "The Map page initializes Leaflet.js via JS interop (MapService.InitMapAsync in OnAfterRenderAsync). The map container (#ruckr-map) exists in DOM immediately, but Leaflet tiles load asynchronously. Playwright may need to wait for specific Leaflet CSS classes (.leaflet-tile-loaded) or tile network requests to complete."
+    impact: "research_blocker"
+    affects: ["E2E/MapPageTests.cs"]
+  - area: "Browser binary installation automation"
+    description: "CI pipeline must run pwsh playwright.ps1 install before dotnet test. The playwright.ps1 script is generated during dotnet build. On Windows CI agents, PowerShell must be available. The script downloads ~300MB of browser binaries to %USERPROFILE%/.cache/ms-playwright."
+    impact: "nice_to_know"
+    affects: ["CI/CD setup", "README test instructions"]
+  - area: "Concurrent Blazor WASM contexts memory usage"
+    description: "Each Blazor WASM instance loads the .NET runtime (~5-8 MB for dotnet.wasm) plus application assemblies. Running 4-8 parallel Playwright browser contexts each with a full Blazor WASM app may exceed CI memory limits (common 8GB CI workers). May need to limit xUnit.MaxParallelThreads."
+    impact: "nice_to_know"
+    affects: ["playwright.runsettings", "CI configuration"]

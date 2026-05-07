@@ -1,0 +1,64 @@
+using Microsoft.Playwright;
+using RuckR.Tests.Fixtures;
+using RuckR.Tests.Pages;
+
+namespace RuckR.Tests.E2E;
+
+public class GpsTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>, IAsyncLifetime
+{
+    private readonly CustomWebApplicationFactory _factory;
+    private readonly PlaywrightFixture _playwright;
+    private IBrowserContext _context = null!;
+    private IPage _page = null!;
+    private string _baseUrl = null!;
+
+    public GpsTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
+    {
+        _factory = factory;
+        _playwright = playwright;
+    }
+
+    public async Task InitializeAsync()
+    {
+        _baseUrl = _factory.GetServerAddress();
+        _context = await _playwright.NewContextAsync(
+            grantGeolocation: true,
+            latitude: 51.5074,
+            longitude: -0.1278);
+        _page = await _context.NewPageAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _page.CloseAsync();
+        await _context.CloseAsync();
+    }
+
+    [Fact]
+    public async Task GpsEnabled_MapCentersOnUserLocation()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+        await mapPage.GoToAsync();
+        await mapPage.WaitForMapLoadedAsync();
+
+        // User marker should be visible (blue pulsing circle)
+        var hasUserMarker = await mapPage.IsUserMarkerVisibleAsync();
+        Assert.True(hasUserMarker, "User location marker should appear when GPS is enabled");
+    }
+
+    [Fact]
+    public async Task GpsDisabled_ShowsEnablePrompt()
+    {
+        // Create context WITHOUT geolocation permission
+        await using var noGpsContext = await _playwright.NewContextAsync(grantGeolocation: false);
+        var noGpsPage = await noGpsContext.NewPageAsync();
+
+        var mapPage = new MapPage(noGpsPage, _baseUrl);
+        await mapPage.GoToAsync();
+        await mapPage.WaitForMapLoadedAsync();
+
+        // The "Enable GPS" banner should be visible when geolocation is denied
+        var hasGpsBanner = await mapPage.IsGpsDisabledBannerVisibleAsync();
+        Assert.True(hasGpsBanner, "GPS disabled banner should appear when geolocation is denied");
+    }
+}

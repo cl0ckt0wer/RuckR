@@ -1,0 +1,576 @@
+plan_id: "20260506-otel-logging"
+objective: >
+  Add OpenTelemetry distributed tracing, metrics, and structured logging to the RuckR
+  server, configure WASM client-side ILogger with browser console output, inject
+  ILogger<T> into all 5 client services plus CookieAuthenticationStateProvider, and
+  build a telemetry bridge so client-side logs flow to the server. This transforms
+  RuckR from zero observability to full end-to-end traceability.
+created_at: "2026-05-06T14:00:00Z"
+created_by: gem-planner
+status: pending
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 3
+  total_dependencies: 4
+  risk_score: low
+tldr: >
+  3 waves, 8 tasks. Server OTEL (NuGet + Program.cs + HTTP logging) → Client WASM
+  logging (browser console + ILogger DI into 5 services) → Telemetry bridge (server
+  endpoint + client custom ILoggerProvider). Server uses OTLP exporter (primary) with
+  Console exporter for dev. Client sends batched logs to server via POST /api/telemetry.
+  Fixes silent exception swallowing in CookieAuthenticationStateProvider.
+
+open_questions:
+  - question: "Should the OTLP exporter be required at startup, or should the app start gracefully when no collector is available?"
+    context: "OTLP gRPC default endpoint is http://localhost:4317. In development without a collector running, the exporter may fail to connect."
+    type: decision_blocker
+    affects: [T2]
+  - question: "What should the telemetry bridge batch interval and buffer size be to avoid memory pressure in WASM?"
+    context: "WASM runs in a constrained browser tab. Unbounded log buffering risks memory pressure."
+    type: decision_blocker
+    affects: [T8]
+
+gaps:
+  - description: "No environment variable or configuration pattern defined for the OTEL collector endpoint"
+    refinement_requests:
+      - query: "Should OTEL_EXPORTER_OTLP_ENDPOINT be the sole configuration mechanism, or should appsettings.json also support it?"
+        source_hint: "Standard OTEL SDK behavior reads OTEL_EXPORTER_OTLP_ENDPOINT env var; appsettings fallback adds convenience for local dev"
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: "OTEL NuGet package version incompatible with net10.0, causing build failure"
+      likelihood: medium
+      impact: medium
+      mitigation: "Install packages one at a time, verify dotnet build after each; pin to latest stable versions compatible with net10.0; if a package doesn't support net10.0, fall back to the previous stable release"
+    - scenario: "OTLP exporter blocks app startup when collector endpoint is unreachable"
+      likelihood: medium
+      impact: medium
+      mitigation: "Configure OTLP exporter with batch processor (default) which retries in background; app startup should not be blocked; if exporter connection failure crashes startup, wrap in try/catch with fallback to console-only"
+    - scenario: "HttpLogging middleware doubles every log entry because OTEL AspNetCore instrumentation also captures requests"
+      likelihood: low
+      impact: low
+      mitigation: "HttpLogging and OTEL instrumentation serve different purposes — HttpLogging captures raw HTTP details (headers, body size), OTEL captures spans with tags. Configure HttpLoggingFields to exclude verbose fields; verify no duplicate span creation"
+    - scenario: "WASM telemetry bridge ILoggerProvider causes infinite loop (logs its own POST failures → triggers more logging → more POST failures)"
+      likelihood: medium
+      impact: high
+      mitigation: "Use a dedicated named HttpClient with custom message handler; add a sentinel flag per-batch to prevent re-entrant logging; skip sending logs if previous batch failed within cooldown period; use a separate non-bridged ILogger for the bridge's own diagnostics"
+    - scenario: "Browser console logging floods the browser with verbose output, degrading WASM performance"
+      likelihood: low
+      impact: low
+      mitigation: "Set minimum log level to Information (not Debug) in production; use LogLevel configuration from appsettings; filter out SignalR ping/pong noise by category"
+
+  assumptions:
+    - "OTEL NuGet packages (1.x line) are compatible with net10.0 target framework"
+    - "OTLP collector endpoint default (http://localhost:4317) is acceptable for local dev"
+    - "Blazor WASM WebAssemblyHostBuilder.CreateDefault already includes Microsoft.Extensions.Logging with browser console provider"
+    - "No third-party log aggregation service (Elastic, Datadog, etc.) required for MVP — OTLP to local collector is sufficient"
+    - "Telemetry bridge is fire-and-forget POST with loss tolerance (acceptable for client logs in MVP)"
+    - "WASM client and server share the same origin, so no CORS configuration needed for /api/telemetry"
+
+implementation_specification:
+  code_structure: >
+    RuckR.Server/
+      Program.cs                        — OTEL configuration + HttpLogging middleware
+      RuckR.Server.csproj               — 7 new OTEL NuGet packages
+      Controllers/TelemetryController.cs — POST /api/telemetry endpoint
+    RuckR.Client/
+      Program.cs                        — WASM ILogger configuration + telemetry bridge registration
+      Services/
+        ApiClientService.cs             — Add ILogger<ApiClientService>
+        GeolocationService.cs           — Add ILogger<GeolocationService>
+        MapService.cs                   — Add ILogger<MapService>
+        SignalRClientService.cs         — Add ILogger<SignalRClientService>
+        CookieAuthenticationStateProvider.cs — Add ILogger<CookieAuthenticationStateProvider>
+        TelemetryLogProvider.cs         — Custom ILoggerProvider + ILogger for WASM→server bridge
+
+  affected_areas:
+    - "RuckR/Server/Program.cs — Add OTEL configuration block (~60 lines) + HttpLogging middleware"
+    - "RuckR/Server/RuckR.Server.csproj — Add 7 OTEL PackageReference elements"
+    - "RuckR/Client/Program.cs — Add logging configuration + telemetry bridge registration"
+    - "RuckR/Client/Services/ApiClientService.cs — Add ILogger DI + log calls"
+    - "RuckR/Client/Services/GeolocationService.cs — Add ILogger DI + log calls"
+    - "RuckR/Client/Services/MapService.cs — Add ILogger DI + log calls"
+    - "RuckR/Client/Services/SignalRClientService.cs — Add ILogger DI + log calls"
+    - "RuckR/Client/Services/CookieAuthenticationStateProvider.cs — Add ILogger DI + log auth failures"
+
+  component_details:
+    - component: OpenTelemetry Tracing Pipeline
+      responsibility: "Distributed tracing for HTTP requests, EF Core queries, and HttpClient calls"
+      interfaces: [AspNetCoreInstrumentation, HttpClientInstrumentation, EntityFrameworkCoreInstrumentation]
+      dependencies:
+        - component: "OTLP Exporter"
+          relationship: "exports span data to collector"
+        - component: "Console Exporter (dev only)"
+          relationship: "outputs spans to stdout for local debugging"
+      integration_points: ["ASP.NET Core request pipeline", "EF Core DbContext", "IHttpClientFactory/HttpClient"]
+
+    - component: OpenTelemetry Metrics Pipeline
+      responsibility: "Runtime metrics (GC, thread pool) + ASP.NET Core request metrics"
+      interfaces: [AspNetCoreInstrumentation, HttpClientInstrumentation, RuntimeInstrumentation]
+      dependencies:
+        - component: "OTLP Exporter"
+          relationship: "exports metric data to collector"
+      integration_points: ["ASP.NET Core request pipeline", "HttpClient", "CLR runtime"]
+
+    - component: OpenTelemetry Logging Pipeline
+      responsibility: "Structured log export with trace correlation (TraceId/SpanId)"
+      interfaces: [IncludeScopes option, OTLP log exporter, Console log exporter]
+      dependencies:
+        - component: "Microsoft.Extensions.Logging.ILogger<T>"
+          relationship: "intercepts all ILogger calls and enriches with trace context"
+      integration_points: ["All ILogger<T> consumers across server"]
+
+    - component: Telemetry Bridge (Server)
+      responsibility: "Receive batched client-side log entries via POST /api/telemetry"
+      interfaces: ["POST /api/telemetry — accepts JSON array of log entries"]
+      dependencies:
+        - component: "ILogger<TelemetryController>"
+          relationship: "re-logs each client entry through server logging pipeline"
+      integration_points: ["Server OTEL logging pipeline"]
+
+    - component: Telemetry Bridge (Client)
+      responsibility: "Custom ILoggerProvider that batches log entries and POSTs to server"
+      interfaces: ["ILoggerProvider, ILogger — registered in WASM DI"]
+      dependencies:
+        - component: "HttpClient"
+          relationship: "POSTs batched logs to /api/telemetry"
+        - component: "Microsoft.Extensions.Logging"
+          relationship: "implements ILoggerProvider/ILogger for WASM logging pipeline"
+      integration_points: ["Blazor WASM DI container", "Server /api/telemetry"]
+
+contracts:
+  - from_task: T1
+    to_task: T2
+    interface: "7 OTEL NuGet packages installed and resolvable"
+    format: "PackageReference elements in RuckR.Server.csproj; packages download and compile cleanly"
+
+  - from_task: T7
+    to_task: T8
+    interface: "POST /api/telemetry endpoint accepting JSON array of LogEntry objects"
+    format: "ASP.NET Core controller endpoint; request body: [{timestamp, level, category, message, exception?}]; response: 202 Accepted"
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Server OTEL Foundation
+  # ========================================================================
+  - id: T1
+    title: "Add OpenTelemetry NuGet packages to Server project"
+    description: >
+      Add 7 OpenTelemetry NuGet packages to `RuckR/Server/RuckR.Server.csproj`:
+      OpenTelemetry.Extensions.Hosting, OpenTelemetry.Instrumentation.AspNetCore,
+      OpenTelemetry.Instrumentation.Http, OpenTelemetry.Exporter.OpenTelemetryProtocol,
+      OpenTelemetry.Exporter.Console, OpenTelemetry.Instrumentation.EntityFrameworkCore,
+      and OpenTelemetry.Instrumentation.Runtime. Install latest stable versions
+      compatible with net10.0. Add packages one at a time and verify build after each.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Server/RuckR.Server.csproj
+        description: "Target project file — add 7 PackageReference elements under existing <ItemGroup>"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 14
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, OpenTelemetry 1.x]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Server.csproj succeeds"
+      - "dotnet list package --project RuckR/Server shows all 7 new OTEL packages"
+      - "All 7 packages at latest stable versions (1.x line)"
+    acceptance_criteria:
+      - "OpenTelemetry.Extensions.Hosting added (latest stable)"
+      - "OpenTelemetry.Instrumentation.AspNetCore added (latest stable)"
+      - "OpenTelemetry.Instrumentation.Http added (latest stable)"
+      - "OpenTelemetry.Exporter.OpenTelemetryProtocol added (latest stable)"
+      - "OpenTelemetry.Exporter.Console added (latest stable)"
+      - "OpenTelemetry.Instrumentation.EntityFrameworkCore added (latest stable)"
+      - "OpenTelemetry.Instrumentation.Runtime added (latest stable)"
+      - "All packages resolve without version conflicts at net10.0"
+    failure_modes:
+      - scenario: "Package version incompatible with net10.0 TFM (e.g., requires net9.0 only)"
+        likelihood: medium
+        impact: medium
+        mitigation: "Fall back one minor version; test dotnet build; document pinned version"
+
+  - id: T2
+    title: "Configure OpenTelemetry in Server Program.cs"
+    description: >
+      Configure the full OTEL pipeline in `RuckR/Server/Program.cs`. Register
+      `builder.Services.AddOpenTelemetry()` with:
+      (1) Resource: `ConfigureResource(r => r.AddService("RuckR"))`.
+      (2) Tracing: AddAspNetCoreInstrumentation (filter /_framework and /Identity paths to
+      reduce noise), AddHttpClientInstrumentation, AddEntityFrameworkCoreInstrumentation.
+      (3) Metrics: AddAspNetCoreInstrumentation, AddHttpClientInstrumentation,
+      AddRuntimeInstrumentation.
+      (4) Logging: IncludeScopes=true.
+      Exporters: AddOtlpExporter() for all three signals (reads OTEL_EXPORTER_OTLP_ENDPOINT
+      env var, defaults to http://localhost:4317). Conditionally add Console exporter for
+      tracing, metrics, and logging in Development environment only.
+      Add required `using` directives at top of file. Ensure existing logging (ILogger<Program>
+      seed-data warning at line 118-119) continues to work and gains trace correlation.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Add OTEL configuration block (~60 lines) after existing service registrations and before middleware pipeline"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 65
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, OpenTelemetry 1.x, ASP.NET Core 10]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Server.csproj succeeds"
+      - "App starts without errors (dotnet run)"
+      - "Console exporter outputs trace/metric/log data to stdout in Development mode"
+      - "ILogger<Program> seed warning appears with TraceId and SpanId in console output"
+    acceptance_criteria:
+      - "builder.Services.AddOpenTelemetry() registered"
+      - "Resource configured with service name 'RuckR'"
+      - "Tracing: AddAspNetCoreInstrumentation with filter excluding /_framework and /Identity paths"
+      - "Tracing: AddHttpClientInstrumentation with RecordException=true"
+      - "Tracing: AddEntityFrameworkCoreInstrumentation for RuckRDbContext"
+      - "Metrics: AddAspNetCoreInstrumentation + AddHttpClientInstrumentation + AddRuntimeInstrumentation"
+      - "Logging: .WithLogging(logging => logging.IncludeScopes = true)"
+      - "AddOtlpExporter() configured for tracing, metrics, and logging signals"
+      - "AddConsoleExporter() configured for tracing, metrics, and logging signals only in Development environment"
+      - "OTLP endpoint defaults to http://localhost:4317 via OTEL_EXPORTER_OTLP_ENDPOINT env var"
+    failure_modes:
+      - scenario: "OTLP exporter connection failure at startup blocks application"
+        likelihood: low
+        impact: high
+        mitigation: "Use BatchExportProcessor (default) which retries in background; if exporter blocks startup, configure OtlpExporterOptions with explicit timeout; document that apps start without collector running"
+
+  - id: T3
+    title: "Add HTTP request logging middleware to Server pipeline"
+    description: >
+      Add `app.UseHttpLogging()` middleware to the server pipeline in
+      `RuckR/Server/Program.cs`. Place it after `app.UseHttpsRedirection()` and before
+      `app.UseBlazorFrameworkFiles()`. Configure `builder.Services.AddHttpLogging()` with
+      options limiting logged fields to RequestPath, RequestMethod, ResponseStatusCode, and
+      Duration — avoid logging full headers/body to prevent sensitive data exposure and
+      console noise. This provides structured per-request logging independent of OTEL spans.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Add builder.Services.AddHttpLogging() (line ~20) and app.UseHttpLogging() (line ~85, after UseHttpsRedirection)"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 12
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, ASP.NET Core HttpLogging middleware]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build succeeds"
+      - "App starts and serves requests"
+      - "Each HTTP request produces a structured log entry with method, path, status, duration"
+      - "No request headers or bodies appear in log output"
+    acceptance_criteria:
+      - "builder.Services.AddHttpLogging() configured with HttpLoggingFields.RequestPath | RequestMethod | ResponseStatusCode | Duration"
+      - "app.UseHttpLogging() placed after app.UseHttpsRedirection() and before app.UseBlazorFrameworkFiles()"
+      - "Request path, method, status code, and duration logged for every HTTP request"
+      - "No sensitive data (headers, cookies, body) logged"
+    failure_modes:
+      - scenario: "HttpLogging middleware causes double-logging with OTEL AspNetCore instrumentation"
+        likelihood: low
+        impact: low
+        mitigation: "HttpLogging produces ILogger log entries; OTEL produces spans. They're distinct signals — verify no duplicate HttpRequest span creation by checking trace output; if duplication occurs, configure HttpLogging to use a separate log category filter"
+
+  # ========================================================================
+  # WAVE 2: Client WASM Logging
+  # ========================================================================
+  - id: T4
+    title: "Configure WASM ILogger with browser console provider"
+    description: >
+      Configure Blazor WASM logging in `RuckR/Client/Program.cs`. The
+      `WebAssemblyHostBuilder.CreateDefault` already registers console logging — add
+      `builder.Logging.SetMinimumLevel(LogLevel.Information)` and configure
+      `Microsoft.AspNetCore.SignalR.Client` category to Warning to suppress SignalR
+      ping/pong noise. Also set `Microsoft.AspNetCore.Components` to Warning to suppress
+      render-cycle verbosity. Ensure log levels can be overridden via environment or
+      query string (Blazor WASM standard). No new NuGet packages required — all logging
+      infrastructure is built into the WASM shared framework.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Add builder.Logging configuration after line 9 (WebAssemblyHostBuilder.CreateDefault)"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 10
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, Blazor WASM, Microsoft.Extensions.Logging]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "App runs in browser; browser console shows log entries"
+      - "SignalR ping/pong messages NOT visible in browser console"
+      - "Log level can be changed via browser dev tools URL parameter"
+    acceptance_criteria:
+      - "builder.Logging.SetMinimumLevel(LogLevel.Information) added"
+      - "builder.Logging.AddFilter('Microsoft.AspNetCore.SignalR.Client', LogLevel.Warning)"
+      - "builder.Logging.AddFilter('Microsoft.AspNetCore.Components', LogLevel.Warning)"
+      - "Browser console displays ILogger output with category, level, and message"
+    failure_modes:
+      - scenario: "Browser console provider not available in WASM (requires Microsoft.AspNetCore.Components.WebAssembly)"
+        likelihood: low
+        impact: medium
+        mitigation: "The Microsoft.AspNetCore.Components.WebAssembly package is already referenced (version 10.0.7) and includes the browser console provider; verify after adding"
+
+  - id: T5
+    title: "Add ILogger<T> to ApiClientService with request/response logging"
+    description: >
+      Inject `ILogger<ApiClientService>` into `RuckR/Client/Services/ApiClientService.cs`
+      via constructor DI (following the existing `ILogger<T>` DI convention from server-side).
+      Add structured logging: LogInformation for each API call (endpoint, query params),
+      LogWarning for non-success responses (status code, body preview), LogError for
+      exceptions (HttpRequestException, TaskCanceledException, JsonException). Log elapsed
+      time for each call using Stopwatch. Replace bare `EnsureSuccessStatusCode()` calls
+      with logged error handling where appropriate. The logger field should be private
+      readonly `_logger` (matching existing convention).
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/Services/ApiClientService.cs
+        description: "Add ILogger<ApiClientService> DI + log calls in all 13 public methods"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, Blazor WASM, ILogger<T>, HttpClient]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "API calls appear in browser console: 'GET /players' with duration"
+      - "Failed API calls (404, 429, 500) produce LogWarning in console"
+      - "Network errors (HttpRequestException) produce LogError with exception details"
+    acceptance_criteria:
+      - "ILogger<ApiClientService> injected via constructor as private readonly _logger"
+      - "All 13 public API methods include LogInformation at start (method, endpoint, params)"
+      - "Non-success status codes (not 2xx) logged with LogWarning including status code"
+      - "Exceptions (HttpRequestException, TaskCanceledException, JsonException) logged with LogError"
+      - "Elapsed time logged for each API call (LogInformation with {ElapsedMs})"
+      - "EnsureSuccessStatusCode() calls replaced with if (!response.IsSuccessStatusCode) pattern for better logging"
+    failure_modes:
+      - scenario: "Adding ILogger to constructor breaks existing DI registration in Client/Program.cs"
+        likelihood: low
+        impact: medium
+        mitigation: "ApiClientService is registered as AddScoped<ApiClientService>() — ILogger<T> is automatically resolved by DI; no Program.cs changes needed beyond what's already there; verify by launching app and confirming API calls still work"
+
+  - id: T6
+    title: "Add ILogger<T> to GeolocationService, MapService, SignalRClientService, and CookieAuthenticationStateProvider"
+    description: >
+      Inject `ILogger<T>` into all 4 remaining client services via constructor DI
+      (private readonly _logger field pattern). Specific logging requirements per service:
+      (1) **GeolocationService**: LogInformation on GPS position obtained (lat, lng, accuracy),
+      LogWarning on getCurrentPosition JSException (geolocation denied/unavailable),
+      LogError on watchPosition failures. Removes silent exception swallowing
+      (currently `catch (JSException) { return null; }` → add LogWarning before return).
+      (2) **MapService**: LogInformation on map init/teardown, LogError on JS interop
+      failures (leaflet-map.module.js load errors, marker add failures).
+      (3) **SignalRClientService**: LogInformation on connection state changes
+      (Connected, Reconnecting, Disconnected), LogWarning on reconnect attempts and
+      rejection failures, LogError on HubConnection exceptions. Removes silent catch
+      in reconnect handler. (4) **CookieAuthenticationStateProvider**: LogWarning when
+      auth check fails silently (server unreachable or UserInfo endpoint returns error).
+      Currently catch block swallows exception completely — add LogWarning before setting
+      anonymous principal. All log messages should include contextual data (userId,
+      connection state, GPS accuracy) where available.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/Services/GeolocationService.cs
+        description: "Add ILogger<GeolocationService> DI; log GPS success/errors at lines 30-47, 60-80"
+      - path: RuckR/Client/Services/MapService.cs
+        description: "Add ILogger<MapService> DI; log map init/dispose at lines 22-28, 85-96"
+      - path: RuckR/Client/Services/SignalRClientService.cs
+        description: "Add ILogger<SignalRClientService> DI; log connection events and reconnect errors"
+      - path: RuckR/Client/Services/CookieAuthenticationStateProvider.cs
+        description: "Add ILogger<CookieAuthenticationStateProvider> DI; log auth failure at line 39-43"
+    estimated_effort: medium
+    estimated_files: 4
+    estimated_lines: 120
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, Blazor WASM, ILogger<T>, SignalR Client, JSInterop]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "GPS position updates appear in browser console"
+      - "SignalR connection/disconnection events appear in browser console"
+      - "Auth check failure produces LogWarning in browser console (not silent)"
+      - "Map initialization failures produce LogError in browser console"
+    acceptance_criteria:
+      - "GeolocationService: ILogger<GeolocationService> injected; LogInformation on GPS success; LogWarning on JSException/permission denied; catch block at line 44-47 logs warning before returning null"
+      - "MapService: ILogger<MapService> injected; LogInformation on InitMapAsync/DisposeAsync; LogError on JS interop failures"
+      - "SignalRClientService: ILogger<SignalRClientService> injected; LogInformation on Connected/Disconnected; LogWarning on Reconnecting; LogError on hub invocation failures; empty reconnect catch adds LogWarning"
+      - "CookieAuthenticationStateProvider: ILogger<CookieAuthenticationStateProvider> injected; LogWarning in catch block (line 39-43) with exception details before setting anonymous principal"
+      - "All log messages follow structured logging pattern: use named placeholders ({Placeholder}) not string interpolation"
+      - "No existing behavior changed — only logging added to existing code paths"
+    failure_modes:
+      - scenario: "Adding ILogger to GeolocationService constructor breaks IGeolocationService DI resolution"
+        likelihood: low
+        impact: medium
+        mitigation: "ILogger<T> is automatically resolved by DI when the concrete type is registered; GeolocationService is registered as AddScoped<IGeolocationService, GeolocationService>() — DI resolves ILogger<GeolocationService> automatically; verify with dotnet build and runtime test"
+      - scenario: "Logging in SignalRClientService reconnect loop causes 1000+ log entries per second during reconnection storms"
+        likelihood: medium
+        impact: low
+        mitigation: "Log reconnect attempts with Debounce/rate-limit via a simple last-logged timestamp check; skip logging if same reconnect attempt was logged within last 2 seconds"
+
+  # ========================================================================
+  # WAVE 3: Telemetry Bridge
+  # ========================================================================
+  - id: T7
+    title: "Create server telemetry endpoint (POST /api/telemetry)"
+    description: >
+      Create `RuckR/Server/Controllers/TelemetryController.cs` — an `[ApiController]` with
+      `[Route("api/[controller]")]` that accepts batched client-side log entries. The
+      endpoint is `POST /api/telemetry` and accepts a JSON array of log entry objects:
+      `[{timestamp, level, category, message, exception?, scopes?}]`. Each entry is re-logged
+      through the server's `ILogger<TelemetryController>` pipeline (which flows into OTEL).
+      Validate payload: reject with 400 if array is empty, max batch size is 200 entries
+      (return 413 Payload Too Large if exceeded). No authentication required for MVP
+      (same-origin WASM client). Use `System.Text.Json` for deserialization. Follow
+      existing controller pattern (block-scoped namespace, constructor DI for ILogger).
+      Rate limit to 10 batches per minute per IP to prevent abuse. Return 202 Accepted
+      on success (processing is async, not confirmed).
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T2]
+    context_files:
+      - path: RuckR/Server/Controllers/ProfileController.cs
+        description: "Canonical controller pattern — block-scoped namespace, ILogger DI, [ApiController]"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 70
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, ASP.NET Core, System.Text.Json, ILogger<T>]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "POST /api/telemetry with valid JSON array returns 202 Accepted"
+      - "Empty array returns 400 Bad Request"
+      - "Array > 200 entries returns 413 Payload Too Large"
+      - "Log entries appear in server console output with client category prefix"
+      - "dotnet build succeeds"
+    acceptance_criteria:
+      - "TelemetryController with [ApiController, Route(\"api/[controller]\")] block-scoped namespace"
+      - "POST /api/telemetry accepts JSON array of LogEntry objects"
+      - "LogEntry model: Timestamp (DateTime), Level (string), Category (string), Message (string), Exception (string?), Scopes (Dictionary<string, string>?)"
+      - "Each entry re-logged via _logger.Log(level, '[WASM] {Category}: {Message}')"
+      - "Payload validation: empty array → 400, >200 entries → 413"
+      - "Rate limiting: max 10 batches per minute per IP (ConcurrentDictionary-based token bucket)"
+      - "Returns 202 Accepted (not 200 OK — processing is async)"
+      - "No [Authorize] attribute — open endpoint for MVP"
+    failure_modes:
+      - scenario: "Malformed JSON payload causes 500 Internal Server Error instead of 400 Bad Request"
+        likelihood: medium
+        impact: low
+        mitigation: "Use try/catch around JsonSerializer.Deserialize; return 400 with descriptive error message on JsonException; never expose stack traces in response"
+
+  - id: T8
+    title: "Create WASM telemetry ILoggerProvider to POST logs to server"
+    description: >
+      Create a custom `ILoggerProvider` and `ILogger` implementation in
+      `RuckR/Client/Services/TelemetryLogProvider.cs` that batches log entries and POSTs
+      them to the server's `/api/telemetry` endpoint. Design:
+      (1) `TelemetryLogProvider` implements `ILoggerProvider`; creates `TelemetryLogger`
+      instances per category. (2) `TelemetryLogger` implements `ILogger`; enqueues log
+      entries into a bounded `Channel<LogEntry>` (max 500 entries; above that, drop oldest).
+      (3) A background loop (fire-and-forget Task) reads from the channel, batches up to
+      50 entries, and POSTs to `/api/telemetry` every 5 seconds or when batch is full.
+      (4) Uses an injected `HttpClient` (dedicated, not the ApiClientService one to avoid
+      re-entrant logging loops). (5) Bridge's own errors are logged via a separate
+      non-bridged `ILogger<TelemetryLogProvider>` (injected from DI, writes only to
+      browser console — NOT back into the bridge to prevent infinite loops).
+      Register in `Client/Program.cs` via `builder.Logging.AddProvider(new TelemetryLogProvider(...))`
+      AFTER the console provider so logs go to both console and server.
+    wave: 3
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T6, T7]
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Register TelemetryLogProvider in builder.Logging"
+      - path: RuckR/Client/Services/ApiClientService.cs
+        description: "Pattern reference for HttpClient usage"
+    estimated_effort: large
+    estimated_files: 2
+    estimated_lines: 150
+    focus_area: logging-otel-state
+    tech_stack: [.NET 10, Blazor WASM, ILoggerProvider, System.Threading.Channels, HttpClient]
+    test_coverage: null
+    research_sources:
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Client-side log entries appear in server console output (via /api/telemetry)"
+      - "Bridge failures (server unreachable) do NOT cause client crash or infinite loops"
+      - "Browser console still receives log output (dual output: console + telemetry)"
+    acceptance_criteria:
+      - "TelemetryLogProvider class implements ILoggerProvider; CreateLogger returns TelemetryLogger"
+      - "TelemetryLogger class implements ILogger; Log method enqueues to bounded Channel<LogEntry> (max 500)"
+      - "Background processing loop reads Channel, batches up to 50 entries, POSTs to /api/telemetry"
+      - "Batch POST interval: 5 seconds or when batch reaches 50 entries (whichever first)"
+      - "Uses dedicated HttpClient (not shared with ApiClientService) to avoid re-entrant logging"
+      - "Bridge own errors logged to ILogger<TelemetryLogProvider> via browser console only (NOT re-enqueued)"
+      - "Server unreachable: log warning to browser console, skip batch, retry on next interval"
+      - "Registered in Client/Program.cs: builder.Logging.AddProvider(new TelemetryLogProvider(httpClient))"
+      - "Log entries include Timestamp, Level, Category, Message, Exception (if any)"
+      - "Channel bounded to 500 entries; drops oldest when full to prevent memory pressure"
+    failure_modes:
+      - scenario: "Telemetry bridge enters infinite loop: POST failure → logs error → error gets enqueued → causes another POST → fails again → ..."
+        likelihood: high
+        impact: high
+        mitigation: "TelemetryLogger must NOT enqueue its own log entries. Use a sentinel/flag: the bridge's ILogger<TelemetryLogProvider> writes ONLY to browser console (bypasses ILoggerProvider chain). Alternatively, filter out the TelemetryLogProvider category name in TelemetryLogger.IsEnabled()"
+      - scenario: "Unbounded Channel memory leak in long-running WASM session"
+        likelihood: medium
+        impact: medium
+        mitigation: "Channel bounded to 500 entries max; when full, drop oldest entries (ChannelOptions.FullMode = BoundedChannelFullMode.DropOldest); log dropped-entry count to browser console periodically"
+      - scenario: "Fire-and-forget background Task not tied to Blazor component lifecycle, leaks on navigation"
+        likelihood: medium
+        impact: low
+        mitigation: "Implement IAsyncDisposable on TelemetryLogProvider; cancel background loop via CancellationTokenSource; register DisposeAsync with Blazor's dispose pattern if hosted in a component context; for singleton lifetime, disposal occurs on app shutdown"

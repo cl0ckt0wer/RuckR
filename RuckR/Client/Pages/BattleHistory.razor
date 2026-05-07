@@ -54,7 +54,7 @@
 }
 
 @* --- BATTLE HISTORY LIST --- *@
-<div class="list-group list-group-flush">
+<div class="list-group list-group-flush" data-testid="history-list">
     @foreach (var battle in _battles)
     {
         var isExpanded = _expandedId == battle.Id;

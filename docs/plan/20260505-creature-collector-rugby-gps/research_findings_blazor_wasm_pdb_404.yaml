@@ -1,0 +1,292 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Diagnose root cause of Blazor WASM PDB 404 error in browser console"
+focus_area: "blazor_wasm_pdb_404"
+created_at: "2026-05-06"
+created_by: "RESEARCHER"
+status: completed
+tldr: |
+  - Root cause: Conflicting static file middleware — `UseBlazorFrameworkFiles()` (line 76) is overridden by `MapStaticAssets()` (line 77) in `Program.cs`. .NET 10 docs state `MapStaticAssets()` replaces `UseBlazorFrameworkFiles()`; when both are called, the second overrides the first. `MapStaticAssets()` uses a build-time asset manifest and does not serve PDB files from `_framework`, causing 404s.
+  - Secondary: `UseWebAssemblyDebugging()` triggers Mono runtime to aggressively download all PDBs at startup (Development mode).
+  - Secondary: `index.html` uses legacy non-fingerprinted `blazor.webassembly.js` script tag; service worker registered unconditionally.
+  - Fix: Remove `app.UseBlazorFrameworkFiles()` line (redundant/conflicting), OR replace `app.MapStaticAssets()` with `app.UseStaticFiles()` for the classic Hosted WASM pipeline. Also consider adding `<WasmDebugLevel>0</WasmDebugLevel>` to suppress PDB downloads.
+  - Tech stack: .NET 10, Blazor WASM Hosted, ASP.NET Core Identity, SignalR, Fluxor, EF Core + SQL Server
+  - Critical files: `RuckR/Server/Program.cs:76-77`, `RuckR/Client/RuckR.Client.csproj`, `RuckR/Client/wwwroot/index.html:33,35`
+research_metadata:
+  methodology: "semantic_search + grep_search + file_read + official docs (Microsoft Learn .NET 10 Blazor static files)"
+  scope: "medium"
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+files_analyzed:
+  - file: RuckR.Server.csproj
+    path: RuckR/Server/RuckR.Server.csproj
+    purpose: Server project configuration; hosts WASM + API + Identity
+    key_elements:
+      - element: ProjectReference to RuckR.Client.csproj
+        type: reference
+        location: RuckR/Server/RuckR.Server.csproj:22
+        description: Server references Client project, enabling it to serve WASM assets during build
+        language: xml
+      - element: PackageReference Microsoft.AspNetCore.Components.WebAssembly.Server
+        type: package
+        location: RuckR/Server/RuckR.Server.csproj:10
+        description: Provides UseWebAssemblyDebugging() and Blazor framework file serving middleware
+        language: xml
+    lines: 30
+  - file: RuckR.Client.csproj
+    path: RuckR/Client/RuckR.Client.csproj
+    purpose: Blazor WASM client project configuration
+    key_elements:
+      - element: Microsoft.NET.Sdk.BlazorWebAssembly SDK
+        type: sdk
+        location: RuckR/Client/RuckR.Client.csproj:1
+        description: Blazor WebAssembly SDK; controls build output, PDB generation, framework asset bundling
+        language: xml
+      - element: ServiceWorkerAssetsManifest property
+        type: property
+        location: RuckR/Client/RuckR.Client.csproj:7
+        description: Generates service-worker-assets.js manifest for PWA offline caching
+        language: xml
+      - element: ServiceWorker items (dev + published)
+        type: item
+        location: RuckR/Client/RuckR.Client.csproj:25
+        description: Registers service-worker.js (dev) and service-worker.published.js (production)
+        language: xml
+    lines: 28
+  - file: Program.cs (Server)
+    path: RuckR/Server/Program.cs
+    purpose: ASP.NET Core request pipeline configuration
+    key_elements:
+      - element: app.UseWebAssemblyDebugging()
+        type: middleware
+        location: RuckR/Server/Program.cs:65
+        description: Enables Blazor WASM debugging proxy; triggers Mono runtime to download PDB files
+        language: csharp
+      - element: app.UseBlazorFrameworkFiles()
+        type: middleware
+        location: RuckR/Server/Program.cs:76
+        description: Serves _framework static files (DLLs, PDBs, WASM) from Client build output
+        language: csharp
+      - element: app.MapStaticAssets()
+        type: endpoint
+        location: RuckR/Server/Program.cs:77
+        description: .NET 9+ optimized static asset delivery; DOCS STATE THIS REPLACES UseBlazorFrameworkFiles()
+        language: csharp
+    lines: 113
+  - file: Program.cs (Client)
+    path: RuckR/Client/Program.cs
+    purpose: Blazor WASM client startup
+    key_elements:
+      - element: WebAssemblyHostBuilder.CreateDefault(args)
+        type: method
+        location: RuckR/Client/Program.cs:9
+        description: Standard Blazor WASM host builder; no PDB/MSBuild-related configuration
+        language: csharp
+    lines: 25
+  - file: service-worker.js
+    path: RuckR/Client/wwwroot/service-worker.js
+    purpose: Development service worker (no-op passthrough)
+    key_elements:
+      - element: fetch event listener (no-op)
+        type: event
+        location: RuckR/Client/wwwroot/service-worker.js:4
+        description: Empty fetch handler; all requests pass through to network in dev mode
+        language: javascript
+    lines: 4
+  - file: service-worker.published.js
+    path: RuckR/Client/wwwroot/service-worker.published.js
+    purpose: Production service worker (offline caching)
+    key_elements:
+      - element: offlineAssetsInclude regex
+        type: array
+        location: RuckR/Client/wwwroot/service-worker.published.js:11
+        description: Caches .pdb files for offline use; /\.pdb$/ is included in the cache list
+        language: javascript
+      - element: cacheNamePrefix
+        type: variable
+        location: RuckR/Client/wwwroot/service-worker.published.js:9
+        description: Offline cache name with version; stale cache can serve old asset references
+        language: javascript
+    lines: 48
+  - file: index.html
+    path: RuckR/Client/wwwroot/index.html
+    purpose: Blazor WASM entry page
+    key_elements:
+      - element: blazor.webassembly.js script tag
+        type: script
+        location: RuckR/Client/wwwroot/index.html:33
+        description: Loads Blazor WASM runtime; uses OLD non-fingerprinted format (no '#[.{fingerprint}]')
+        language: html
+      - element: service worker registration
+        type: script
+        location: RuckR/Client/wwwroot/index.html:35
+        description: "Registers service-worker.js unconditionally with updateViaCache: none"
+        language: html
+    lines: 38
+  - file: launchSettings.json
+    path: RuckR/Server/Properties/launchSettings.json
+    purpose: Development launch profiles
+    key_elements:
+      - element: ASPNETCORE_ENVIRONMENT=Development
+        type: envvar
+        location: RuckR/Server/Properties/launchSettings.json:18,28,36
+        description: All profiles set to Development; triggers UseWebAssemblyDebugging() and PDB download
+        language: json
+    lines: 40
+patterns_found:
+  - category: architecture
+    pattern: "Hosted Blazor WASM (legacy pattern on .NET 10)"
+    description: |
+      The project uses the older "Hosted Blazor WebAssembly" template pattern (Server project hosts
+      Client WASM assets) but targets net10.0. The Microsoft documentation for .NET 9+ recommends
+      migrating to the "Blazor Web App" model, though the hosted pattern is still supported.
+      The middleware pipeline shows a mix of old and new patterns.
+    examples:
+      - file: RuckR/Server/Program.cs
+        location: "76-77"
+        snippet: |
+          app.UseBlazorFrameworkFiles();  // OLD pattern
+          app.MapStaticAssets();          // NEW pattern (replaces UseBlazorFrameworkFiles)
+    prevalence: common
+  - category: structure
+    pattern: "Conflicting static-file middleware (UseBlazorFrameworkFiles + MapStaticAssets)"
+    description: |
+      .NET 10 Microsoft Learn docs explicitly state: "Map Static Assets also replaces calling
+      UseBlazorFrameworkFiles in apps that serve Blazor WebAssembly framework files."
+      When both are called, MapStaticAssets() (which uses build-time asset fingerprinting)
+      overrides the _framework path mapping set up by UseBlazorFrameworkFiles(). PDB files
+      are not fingerprinted as static assets, so MapStaticAssets() returns 404 for them.
+    examples:
+      - file: RuckR/Server/Program.cs
+        location: "76-77"
+        snippet: |
+          app.UseBlazorFrameworkFiles();
+          app.MapStaticAssets();
+    prevalence: rare
+  - category: error_handling
+    pattern: "Mono WASM PDB download at startup when UseWebAssemblyDebugging() is active"
+    description: |
+      When UseWebAssemblyDebugging() is enabled (Development mode), the Mono WASM runtime
+      in the browser tries to download .pdb files for every DLL in blazor.boot.json.
+      If the PDB isn't served by the static file middleware, a 404 error is logged.
+      This is a known behavior pattern in Blazor WASM across .NET 6-10.
+    examples:
+      - file: (browser console)
+        location: "runtime"
+        snippet: |
+          Error in mono_download_assets: Error: download 'https://localhost:7161/_framework/RuckR.Client.tj0vat3k5u.pdb' for RuckR.Client.tj0vat3k5u.pdb failed 404
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: Static file middleware pipeline
+      responsibility: Serves WASM framework files (_framework/*) and app static assets to the browser
+      location: RuckR/Server/Program.cs:74-77
+      relationship_to_domain: Directly responsible for the 404 — conflicting middleware prevents PDB delivery
+    - component: Blazor WASM debugging proxy
+      responsibility: Enables IDE/browser debugging of WASM .NET code; triggers PDB downloads
+      location: RuckR/Server/Program.cs:65 (UseWebAssemblyDebugging)
+      relationship_to_domain: Activates the PDB download behavior that triggers the 404 error
+    - component: Service worker (PWA)
+      responsibility: Offline caching of app assets including PDBs; registered in index.html
+      location: RuckR/Client/wwwroot/service-worker.js, service-worker.published.js
+      relationship_to_domain: Published version caches PDBs; stale cache could compound the issue
+  interfaces_used_by_domain:
+    - interface: IApplicationBuilder.UseWebAssemblyDebugging()
+      location: RuckR/Server/Program.cs:65
+      usage_pattern: Called in Development environment only; enables WASM debug proxy
+    - interface: IApplicationBuilder.UseBlazorFrameworkFiles()
+      location: RuckR/Server/Program.cs:76
+      usage_pattern: Maps _framework path to Client build output; REDUNDANT when MapStaticAssets() follows
+    - interface: IEndpointRouteBuilder.MapStaticAssets()
+      location: RuckR/Server/Program.cs:77
+      usage_pattern: .NET 9+ optimized static asset delivery; replaces UseBlazorFrameworkFiles per docs
+  data_flow_involving_domain: |
+    Browser requests _framework/blazor.boot.json → static file middleware serves it →
+    Mono runtime parses assembly list → for each DLL, Mono requests matching .pdb →
+    middleware checks asset manifest → PDB not in MapStaticAssets manifest → 404 returned
+  key_relationships_to_domain:
+    - from: MapStaticAssets() endpoint
+      to: _framework/* files
+      relationship: serves (but only assets tracked in build-time manifest)
+    - from: UseBlazorFrameworkFiles() middleware
+      to: _framework/* files
+      relationship: serves (maps to Client build output, but overridden by MapStaticAssets)
+    - from: UseWebAssemblyDebugging() middleware
+      to: Mono WASM runtime
+      relationship: enables (tells runtime to download PDBs for debugging)
+related_technology_stack:
+  languages_used_in_domain: [C#, JavaScript, HTML, XML (MSBuild)]
+  frameworks_used_in_domain:
+    - name: ASP.NET Core 10.0
+      usage_in_domain: Server hosting, middleware pipeline, static file serving
+    - name: Blazor WebAssembly (Microsoft.NET.Sdk.BlazorWebAssembly)
+      usage_in_domain: Client-side .NET runtime in browser
+    - name: Microsoft.AspNetCore.Components.WebAssembly.Server
+      usage_in_domain: Provides UseWebAssemblyDebugging() and UseBlazorFrameworkFiles() APIs
+  libraries_used_in_domain:
+    - name: Microsoft.AspNetCore.Components.WebAssembly.DevServer
+      purpose_in_domain: Dev-time debugging proxy; PrivateAssets=all (not shipped to production)
+    - name: Leaflet.js 1.9.4
+      purpose_in_domain: Map rendering (loaded via CDN in index.html)
+  external_apis_used_in_domain:
+    - name: unpkg.com CDN
+      integration_point: RuckR/Client/wwwroot/index.html:16,34 (Leaflet CSS + JS)
+related_conventions:
+  naming_patterns_in_domain: "Block-scoped namespaces in server code; file-scoped not used"
+  structure_of_domain: "Legacy Hosted Blazor WASM structure (Server + Client + Shared) upgraded to .NET 10"
+  error_handling_in_domain: "404 errors logged as browser console warnings; no server-side error handling for missing static files"
+  testing_in_domain: "No test projects exist"
+  documentation_in_domain: "AGENTS.md documents architecture; PRD.yaml documents game feature scope"
+related_dependencies:
+  internal:
+    - component: RuckR.Client project
+      relationship_to_domain: Produces WASM + _framework assets served by Server
+      direction: outbound (Server depends on Client build output)
+    - component: RuckR.Shared project
+      relationship_to_domain: Shared models/types; no direct role in PDB serving
+      direction: outbound
+  external:
+    - name: Microsoft.NET.Sdk.BlazorWebAssembly
+      purpose_for_domain: Controls WASM build output including PDB generation, content hashing, blazor.boot.json generation
+    - name: Mono WASM Runtime (dotnet.js)
+      purpose_for_domain: Browser-side .NET runtime that downloads and executes WASM assemblies; requests PDBs for debugging
+domain_security_considerations:
+  sensitive_areas:
+    - area: PDB files served over HTTP
+      location: _framework/*.pdb
+      concern: PDBs contain source paths and debug information; should not be served in production
+  authentication_patterns_in_domain: ASP.NET Core Identity with cookie auth; no effect on static file serving
+  authorization_patterns_in_domain: Authorization middleware present but does not protect _framework paths
+  data_validation_in_domain: "N/A for static file serving"
+testing_patterns:
+  framework: "None (no test projects)"
+  coverage_areas: []
+  test_organization: "N/A"
+  mock_patterns: []
+open_questions:
+  - question: "Does MapStaticAssets() actually override UseBlazorFrameworkFiles() at runtime, or is it an additive/fallback behavior?"
+    context: "The docs say MapStaticAssets 'replaces' UseBlazorFrameworkFiles, but the exact runtime behavior (override vs. fallback vs. additive) when both are called is not fully documented."
+    type: research
+    affects: [RuckR/Server/Program.cs:76-77]
+  - question: "Are PDB files actually present in the _framework directory after a Debug build?"
+    context: "No build output exists in the repository. The actual presence of PDBs needs to be verified after a clean Debug build to confirm whether this is a middleware issue or a build-output issue."
+    type: decision_blocker
+    affects: [RuckR/Client/RuckR.Client.csproj, RuckR/Server/Program.cs]
+  - question: "Is the index.html script tag format (non-fingerprinted) contributing to asset resolution failures?"
+    context: "The blazor.webassembly.js script reference lacks the '#[.{fingerprint}]' marker expected in .NET 10. This may cause the runtime to load but not properly initialize the asset pipeline."
+    type: research
+    affects: [RuckR/Client/wwwroot/index.html:33]
+gaps:
+  - area: Build output verification
+    description: "No build output exists in the repository (bin/, obj/, or _framework directories are empty/absent). The actual contents of the _framework directory after a build must be verified to confirm PDB presence/absence."
+    impact: decision_blocker
+    affects: [RuckR/Client/RuckR.Client.csproj]
+  - area: index.html modernization
+    description: "The index.html uses pre-.NET 9 patterns (non-fingerprinted blazor.webassembly.js, direct CSS link hrefs instead of @Assets[...]). These legacy patterns may interact poorly with MapStaticAssets()."
+    impact: research_blocker
+    affects: [RuckR/Client/wwwroot/index.html]
+  - area: MSBuild PDB control properties
+    description: "No WasmDebugLevel, EmccFlags, or other PDB-controlling MSBuild properties are set in the Client.csproj. The default .NET 10 behavior for PDB inclusion/exclusion in Debug builds should be documented."
+    impact: nice_to_know
+    affects: [RuckR/Client/RuckR.Client.csproj]

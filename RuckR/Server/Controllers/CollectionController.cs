@@ -48,7 +48,16 @@ namespace RuckR.Server.Controllers
             var collections = await _db.Collections
                 .Where(c => c.UserId == userId)
                 .Include(c => c.Player)
+                .AsNoTracking()
                 .ToListAsync();
+
+            // Strip SpawnLocation from Player to prevent JSON serialization
+            // errors with NetTopologySuite Point NaN Z/M coordinate values.
+            foreach (var c in collections)
+            {
+                if (c.Player != null)
+                    c.Player.SpawnLocation = null;
+            }
 
             return Ok(collections);
         }
@@ -119,6 +128,10 @@ namespace RuckR.Server.Controllers
             {
                 return Conflict("Player already collected.");
             }
+
+            // Detach navigation property to prevent JSON serialization errors
+            // (Player.SpawnLocation Point may contain NaN Z/M values).
+            collection.Player = null;
 
             return CreatedAtAction(nameof(GetCollections), new { id = collection.Id }, collection);
         }

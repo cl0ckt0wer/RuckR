@@ -56,13 +56,13 @@
 <ul class="nav nav-tabs mb-4">
     <li class="nav-item">
         <a class="nav-link @(_activeTab == "new" ? "active" : "")" href="#"
-           @onclick='() => SwitchTab("new")' @onclick:preventDefault>
+           @onclick='() => SwitchTab("new")' @onclick:preventDefault data-testid="challenge-tab">
             🆕 New Challenge
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link @(_activeTab == "active" ? "active" : "")" href="#"
-           @onclick='() => SwitchTab("active")' @onclick:preventDefault>
+           @onclick='() => SwitchTab("active")' @onclick:preventDefault data-testid="active-tab">
             ⚡ Active Challenges
             @{
                 var totalActive = _incomingChallenges.Count + _outgoingChallenges.Count;
@@ -113,7 +113,7 @@
                     <div class="mb-3">
                         <label class="form-label">Opponent Username</label>
                         <input type="text" class="form-control" @bind="_opponentUsername"
-                               placeholder="Enter opponent&apos;s username" />
+                               placeholder="Enter opponent&apos;s username" data-testid="opponent-input" />
                     </div>
                     <div class="mb-3">
                         <small class="text-muted">
@@ -126,7 +126,8 @@
                     }
                     <button class="btn btn-primary w-100"
                             @onclick="SendChallengeAsync"
-                            disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)">
+                            disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)"
+                            data-testid="send-challenge-btn">
                         @if (_isSubmitting)
                         {
                             <span class="spinner-border spinner-border-sm me-2" role="status"></span>

@@ -1,0 +1,7 @@
+{
+  "devDependencies": {
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.59.1",
+    "pngjs": "^7.0.0"
+  }
+}

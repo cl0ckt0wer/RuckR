@@ -1,6 +1,7 @@
 using Fluxor;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Logging;
 using RuckR.Client.Store.BattleFeature;
 using RuckR.Client.Store.GameFeature;
 using RuckR.Shared.Models;
@@ -12,6 +13,7 @@ namespace RuckR.Client.Services
         private HubConnection? _hubConnection;
         private readonly IDispatcher _dispatcher;
         private readonly NavigationManager _navigation;
+        private readonly ILogger<SignalRClientService> _logger;
         private readonly HashSet<int> _activeBattleGroups = new();
 
         public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
@@ -23,10 +25,11 @@ namespace RuckR.Client.Services
         public event Action<PitchModel>? PitchDiscovered;
         public event Action<List<NearbyPlayerDto>>? NearbyPlayersUpdated;
 
-        public SignalRClientService(IDispatcher dispatcher, NavigationManager navigation)
+        public SignalRClientService(IDispatcher dispatcher, NavigationManager navigation, ILogger<SignalRClientService> logger)
         {
             _dispatcher = dispatcher;
             _navigation = navigation;
+            _logger = logger;
         }
 
         public async Task StartAsync()
@@ -53,6 +56,7 @@ namespace RuckR.Client.Services
 
             await _hubConnection.StartAsync();
 
+            _logger.LogInformation("SignalR connection established");
             _dispatcher.Dispatch(new SetConnectionStateAction(true, null));
             ConnectionStateChanged?.Invoke(true, null);
         }
@@ -145,6 +149,7 @@ namespace RuckR.Client.Services
 
         private Task HandleReconnecting(Exception? ex)
         {
+            _logger.LogWarning(ex, "SignalR reconnecting");
             _dispatcher.Dispatch(new SetConnectionStateAction(false, "Reconnecting..."));
             ConnectionStateChanged?.Invoke(false, "Reconnecting...");
             return Task.CompletedTask;
@@ -152,6 +157,7 @@ namespace RuckR.Client.Services
 
         private async Task HandleReconnected(string? connectionId)
         {
+            _logger.LogInformation("SignalR reconnected ({ConnectionId})", connectionId);
             _dispatcher.Dispatch(new SetConnectionStateAction(true, null));
             ConnectionStateChanged?.Invoke(true, null);
 
@@ -171,6 +177,7 @@ namespace RuckR.Client.Services
 
         private Task HandleClosed(Exception? ex)
         {
+            _logger.LogWarning(ex, "SignalR connection closed");
             _dispatcher.Dispatch(new SetConnectionStateAction(false, "Connection lost"));
             ConnectionStateChanged?.Invoke(false, "Connection lost");
             return Task.CompletedTask;

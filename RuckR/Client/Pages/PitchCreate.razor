@@ -31,13 +31,13 @@
             <div class="mb-3">
                 <label for="name" class="form-label">Pitch Name</label>
                 <InputText id="name" @bind-Value="formModel.Name" class="form-control"
-                           placeholder="e.g., Twickenham Training Ground" />
+                           placeholder="e.g., Twickenham Training Ground" data-testid="pitch-name" />
                 <ValidationMessage For="() => formModel.Name" />
             </div>
 
             <div class="mb-3">
                 <label for="type" class="form-label">Pitch Type</label>
-                <InputSelect id="type" @bind-Value="formModel.Type" class="form-select">
+                <InputSelect id="type" @bind-Value="formModel.Type" class="form-select" data-testid="pitch-type">
                     <option value="Standard">Standard</option>
                     <option value="Training">Training</option>
                     <option value="Stadium">Stadium</option>
@@ -76,7 +76,7 @@
             </div>
 
             <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary" disabled="@isSubmitting">
+                <button type="submit" class="btn btn-primary" disabled="@isSubmitting" data-testid="pitch-submit">
                     @if (isSubmitting)
                     {
                         <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>

@@ -1,0 +1,2124 @@
+plan_id: "20260506-playwright-test-suite"
+objective: >
+  Create a comprehensive Playwright test suite for the RuckR rugby GPS game using
+  .NET Microsoft.Playwright NuGet bindings, xUnit, and WebApplicationFactory.
+  Covers E2E browser tests, direct API tests, GPS geolocation mocking, multi-user
+  SignalR PVP flow verification, and mobile viewport testing. Database isolation
+  via Docker SQL Server (Testcontainers.MsSql). All tests run locally — no CI/CD.
+created_at: "2026-05-06T12:00:00Z"
+created_by: gem-planner
+status: pending
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 7
+  total_dependencies: 59
+  risk_score: medium
+tldr: >
+  6 waves, 32 tasks. Test Infrastructure (project, fixtures, helpers) → Page Objects
+  + Auth → E2E Smoke → GPS + Multi-User PVP → API tests → Polish (data-testid, mobile,
+  docs). Microsoft.Playwright 1.59.0 with xUnit + IClassFixture. Testcontainers.MsSql
+  for Docker SQL Server lifecycle. WebApplicationFactory<Program> for in-process test
+  server. GPS mocked via AddInitScriptAsync() override of navigator.geolocation.
+  Multi-user PVP via two BrowserContext instances with independent auth cookies.
+
+open_questions:
+  - question: "Does WebApplicationFactory<Program> correctly serve Blazor WASM static _framework assets from the Client project's published output?"
+    context: "TestServer by default serves wwwroot from the Server project. Blazor WASM assets live in Client's output directory. May need custom StaticFileProvider or dotnet publish step before tests."
+    type: decision_blocker
+    affects: [T1-04, T3-01, T3-02, T3-03, T3-04, T3-05, T4-01, T4-02, T4-03, T4-04]
+
+  - question: "Can Playwright's AddInitScriptAsync override navigator.geolocation.watchPosition BEFORE Blazor's dynamic import() of geolocation.module.js?"
+    context: "AddInitScript runs after document creation but before scripts. Blazor modules are loaded via dynamic import() from C# code. Timing must be safe — verified via empirical test in T4-01."
+    type: decision_blocker
+    affects: [T4-01, T4-02, T4-03]
+
+gaps:
+  - description: "No data-testid attributes exist on any Blazor components — locator strategy must rely on semantic selectors initially"
+    refinement_requests:
+      - query: "Which DOM elements on each page are most stable for semantic locators (GetByRole, GetByText, GetByLabelText)?"
+        source_hint: "research_findings_test-architecture.yaml documents key DOM elements per page"
+
+  - description: "Fluxor state initialization timing is unpredictable — tests need a reliable signal that Blazor + Fluxor store is ready before interacting"
+    refinement_requests:
+      - query: "Is there a consistent DOM element that appears after Fluxor initializes all state slices?"
+        source_hint: "App.razor StoreInitializer component; ConnectionStatus appears after SignalR connects"
+
+  - description: "SignalR WebSocket frame-level testing in Playwright has no high-level .NET helper — parsing frames requires custom implementation"
+    refinement_requests:
+      - query: "Should BattleHub API tests use a second .NET SignalR client in the test project rather than WebSocket frame interception?"
+        source_hint: "research_findings_testing_patterns.yaml open_question about SignalR testing approach"
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "Testcontainers.MsSql fails to start Docker container because Docker Desktop is not running or not installed on developer machine"
+      likelihood: medium
+      impact: high
+      mitigation: "DatabaseFixture detects Docker availability at test startup and skips with clear message if unavailable. Alternative connection string for LocalDB provided in appsettings.Test.json as fallback. Document Docker Desktop requirement in TESTING.md."
+
+    - scenario: "Playwright browser binaries not installed — dotnet test fails with 'Playwright executable not found'"
+      likelihood: high
+      impact: high
+      mitigation: "Add build target to RuckR.Tests.csproj that runs playwright.ps1 install after build. Document the one-time setup command in TESTING.md. PlaywrightFixture validates browser availability on first use and throws descriptive error."
+
+    - scenario: "WebApplicationFactory fails to serve Blazor WASM _framework assets on first test run (asset paths not resolved)"
+      likelihood: medium
+      impact: critical
+      mitigation: "CustomWebApplicationFactory overrides WebHost to set WebRootPath to Client's published output. Pre-build step: dotnet publish RuckR.Client before dotnet test. Fallback pattern documented; if unsolvable, switch to standalone Kestrel server started via Process."
+
+    - scenario: "GPS AddInitScript override conflicts with Blazor's JS interop — watchPosition override either doesn't fire or fires before DotNetObjectReference is created"
+      likelihood: medium
+      impact: high
+      mitigation: "Queue-based GPS script: override caches positions, starts emitting only after a 'startGps' signal from Blazor (detected via polling for a DOM marker set by GeolocationService). Fallback: use Playwright's Context.SetGeolocationAsync() for single-position tests only."
+
+    - scenario: "Multi-user PVP test (T4-04) fails intermittently due to SignalR message delivery timing — assertion fires before opponent's toast notification renders"
+      likelihood: medium
+      impact: medium
+      mitigation: "Use LocatorAssertions with 30s timeout. Assert on DOM text presence rather than WebSocket frames. Add WaitForSelectorAsync on the NotificationToast .toast element. Retry assertion with Playwright's auto-retry built into Expect API."
+
+    - scenario: "Rate limit state (ConcurrentDictionary) persists across test runs in shared WebApplicationFactory, causing 429 errors in subsequent test classes"
+      likelihood: medium
+      impact: medium
+      mitigation: "Add a test-only reset endpoint (or DI-managed rate limiter service with ResetForTest() method). Alternative: create new WebApplicationFactory per test class (isolated rate limit state). Document in TESTING.md limit on parallel execution."
+
+    - scenario: "Blazor WASM cold-start delay (>5 seconds for .NET runtime download + JIT) causes Playwright navigation timeouts"
+      likelihood: high
+      impact: medium
+      mitigation: "Increase Page.SetDefaultNavigationTimeout to 30 seconds. Reuse BrowserContext across tests within a class (Context is isolated, stays warm). Warm up Blazor WASM in IClassFixture setup by navigating to a light page first."
+
+  assumptions:
+    - "Docker Desktop (or Docker Engine) is installed and running on the developer machine"
+    - "Playwright Chromium browser has been installed via pwsh bin/Debug/net10.0/playwright.ps1 install chromium"
+    - "SQL Server LocalDB is available as fallback if Docker is unavailable (included with Visual Studio)"
+    - "dotnet publish RuckR.Client produces static _framework assets testable via WebApplicationFactory"
+    - "ASP.NET Core Identity cookie auth flows to playright browser context automatically (same-origin)"
+    - "The existing seed data (500 players around London at 51.5074, -0.1278) provides sufficient test data coverage"
+    - "No external network dependencies beyond localhost — OpenStreetMap tile CDN may be unreachable in sandboxed CI"
+    - "Single test worker (no xUnit parallelization) to avoid Blazor WASM memory contention and rate-limit state conflicts"
+
+implementation_specification:
+  code_structure: >
+    RuckR.Tests/
+      RuckR.Tests.csproj          — net10.0, xUnit, Playwright, Testcontainers, Mvc.Testing
+      CustomWebApplicationFactory.cs  — Inherits WebApplicationFactory<Program>, overrides DB to Testcontainers
+      appsettings.Test.json       — Docker SQL Server connection string, test seed settings
+      Fixtures/
+        DatabaseFixture.cs        — Testcontainers.MsSql lifecycle (IAsyncLifetime)
+        PlaywrightFixture.cs      — Browser launch, context management, device presets
+      Helpers/
+        BlazorWaitHelper.cs       — WaitForBlazorAsync, WaitForPageFullyLoadedAsync
+        TestAuthHelper.cs         — Cookie auth helpers (login, extract cookie)
+        TestDataFactory.cs        — Test PlayerModel/PitchModel/UserModel builders
+      PageObjects/
+        BasePage.cs               — Abstract base with IPage, navigation, shared helpers
+        LoginPage.cs              — /Identity/Account/Login Razor page
+        RegisterPage.cs           — /Identity/Account/Register Razor page
+        NavMenu.cs                — Shared nav component
+        MapPage.cs                — /map (Leaflet, GPS, onboarding, pitch overlay)
+        CatalogPage.cs            — /catalog (filters, player cards, collected badges)
+        CollectionPage.cs         — /collection (grid, favorite toggle, empty state)
+        PlayerGridPage.cs         — /players/nearby (radius, fuzzy distance, challenge)
+        BattlePage.cs             — /battle (tabs, challenge form, accept modal, result)
+        BattleHistoryPage.cs      — /battles/history (timeline, result badges)
+        PitchCreatePage.cs        — /pitches/create (EditForm, GPS auto-fill, rate limit)
+        NotificationToast.cs      — Toast notification shared component
+        ConnectionStatus.cs       — SignalR connection indicator shared component
+      E2E/
+        AuthE2ETests.cs           — Register → Login → See username → Logout
+        MapPageE2ETests.cs        — Load map → tiles → pitch markers → onboarding dismiss
+        CatalogPageE2ETests.cs    — Navigate → filter by position → filter by rarity
+        CollectionPageE2ETests.cs — Authenticated → empty state → CTA to map
+        NavMenuE2ETests.cs        — Navigate all 7 links → verify correct pages
+        GpsMockE2ETests.cs        — Grant permission → set coords → verify map centers
+        PitchCreateE2ETests.cs    — Login → fill form → submit → success
+        PlayerGridE2ETests.cs     — GPS mock → fetch nearby → verify grid with distances
+        MultiUserPvpE2ETests.cs   — User A challenge → User B notification → accept → result
+        MobileViewportTests.cs    — Pixel 5 + iPhone 12 for map and grid pages
+      API/
+        PlayersControllerApiTests.cs    — GET /players, /players/nearby spatial query
+        PitchesControllerApiTests.cs    — POST create, rate limit 429, duplicate 409
+        CollectionControllerApiTests.cs — POST capture, GPS validation, duplicate 409
+        BattlesControllerApiTests.cs    — Challenge, accept, decline, lazy-expiry, concurrency
+
+  affected_areas:
+    - "RuckR/Server/Program.cs — Add 'public partial class Program { }' for WebApplicationFactory"
+    - "RuckR.sln — Add new RuckR.Tests project reference"
+    - "RuckR/Client/Pages/*.razor — May add data-testid attributes (Wave 6, non-breaking)"
+    - "RuckR/Server/Services/* — May expose test-only reset methods for rate limit state"
+    - "appsettings.Test.json — New file with Docker SQL Server connection string"
+    - "docs/TESTING.md — New documentation file"
+
+  component_details:
+    - component: RuckR.Tests project
+      responsibility: "Houses all Playwright E2E, API, and mobile test classes. References RuckR.Server (for WebApplicationFactory), RuckR.Shared (for models/DTOs), and test NuGet packages."
+      interfaces: [ProjectReference to RuckR.Server, ProjectReference to RuckR.Shared]
+      dependencies:
+        - component: Microsoft.Playwright
+          relationship: "NuGet package — browser automation"
+        - component: Microsoft.Playwright.Xunit
+          relationship: "NuGet package — xUnit base classes (PageTest)"
+        - component: Testcontainers.MsSql
+          relationship: "NuGet package — Docker SQL Server container lifecycle"
+        - component: Microsoft.AspNetCore.Mvc.Testing
+          relationship: "NuGet package — WebApplicationFactory in-process test server"
+      integration_points: ["dotnet test", "playwright.ps1 install"]
+
+    - component: CustomWebApplicationFactory
+      responsibility: "Creates in-memory TestServer hosting the full ASP.NET Core + Blazor WASM app with test database configuration overrides."
+      interfaces: ["WebApplicationFactory<Program>", "CreateClient() for API tests", "Services.GetRequiredService<T>() for DbContext access"]
+      dependencies:
+        - component: DatabaseFixture
+          relationship: "Receives Docker SQL Server connection string"
+        - component: Server Program.cs
+          relationship: "Requires 'public partial class Program { }' for visibility"
+      integration_points: ["TestServer pipeline", "EF Core DbContext substitution", "Authentication handler override"]
+
+    - component: DatabaseFixture
+      responsibility: "Manages Docker SQL Server container lifecycle via Testcontainers.MsSql. Creates test database, applies EF Core migrations, seeds minimal test data. Implements IAsyncLifetime — starts container in InitializeAsync, stops in DisposeAsync."
+      interfaces: ["ConnectionString property", "IAsyncLifetime"]
+      dependencies:
+        - component: Testcontainers.MsSql
+          relationship: "Pulls mcr.microsoft.com/mssql/server:2022-latest image"
+        - component: RuckRDbContext
+          relationship: "Applies migrations via DatabaseFacade.MigrateAsync()"
+      integration_points: ["Docker daemon", "SQL Server port mapping (auto-assigned)"]
+
+    - component: PlaywrightFixture
+      responsibility: "Launches Playwright Chromium browser once per test run (IClassFixture). Provides factory methods for creating isolated BrowserContext with GPS permissions, auth cookies, and mobile viewport presets. Exposes preset device configs (Pixel 5, iPhone 12)."
+      interfaces: ["IPlaywright playwright", "NewContextAsync(BrowserNewContextOptions)", "NewAuthenticatedContext(TestUser)", "Pixel5Options", "IPhone12Options"]
+      dependencies:
+        - component: Microsoft.Playwright
+          relationship: "Playwright.CreateAsync() → IPlaywright → IBrowser"
+      integration_points: ["Chromium browser binary (installed via playwright.ps1)"]
+
+    - component: BasePage
+      responsibility: "Abstract base class for all Page Objects. Holds IPage reference, exposes WaitForBlazorAsync (waits for a known DOM element signaling Blazor rendered), NavigateToAsync, and shared assertion helpers (HasLoadingSpinnerAsync, WaitForSuccessMessageAsync, WaitForErrorMessageAsync)."
+      interfaces: ["IPage Page", "Task WaitForBlazorAsync()", "Task NavigateToAsync(string relativeUrl)"]
+      dependencies: []
+      integration_points: ["All Page Object classes inherit from BasePage"]
+
+contracts:
+  - from_task: T1-03
+    to_task: T1-04
+    interface: "public partial class Program { } in RuckR/Server/Program.cs"
+    format: "C# partial class declaration at end of Program.cs (after top-level statements)"
+
+  - from_task: T1-04
+    to_task: T1-05
+    interface: "CustomWebApplicationFactory.Services.GetRequiredService<RuckRDbContext>() for migration application"
+    format: "EF Core DbContext accessible via factory.Services.CreateScope()"
+
+  - from_task: T1-04
+    to_task: T5-01
+    interface: "HttpClient CreateClient() for API tests"
+    format: "HttpClient with BaseAddress pointing to in-memory TestServer"
+
+  - from_task: T1-05
+    to_task: T1-04
+    interface: "DatabaseFixture.ConnectionString — Docker SQL Server connection string"
+    format: "string: Server=localhost,{port};Database=RuckR_Test_{guid};User Id=sa;Password={pw};TrustServerCertificate=True"
+
+  - from_task: T1-06
+    to_task: T2-01
+    interface: "PlaywrightFixture — provides IBrowser, device presets, context factory methods"
+    format: "C# class with methods: CreateUnauthenticatedContextAsync(), CreateAuthenticatedContextAsync(TestUser), CreateMobileContextAsync(device)"
+
+  - from_task: T1-07
+    to_task: T2-01
+    interface: "BasePage abstract class with WaitForBlazorAsync()"
+    format: "C# abstract class: BasePage(IPage page) with virtual NavigateToAsync, WaitForBlazorAsync"
+
+  - from_task: T2-01
+    to_task: T3-01
+    interface: "LoginPage and RegisterPage POMs with LoginAsync(username, password), RegisterAsync(username, password)"
+    format: "C# classes inheriting BasePage; methods return Task and set auth state"
+
+  - from_task: T2-03
+    to_task: T3-02
+    interface: "MapPage POM with WaitForMapLoadedAsync(), DismissOnboardingAsync(), GetPitchMarkerCountAsync()"
+    format: "C# class inheriting BasePage; methods use Playwright locators on Leaflet DOM elements"
+
+  - from_task: T2-04
+    to_task: T3-03
+    interface: "CatalogPage POM with FilterByPositionAsync(), FilterByRarityAsync(), GetDisplayedPlayerCountAsync()"
+    format: "C# class inheriting BasePage; methods interact with <select> and verify card grid"
+
+  - from_task: T2-05
+    to_task: T3-04
+    interface: "CollectionPage POM with IsEmptyStateVisibleAsync(), GetEmptyStateCtaLinkAsync()"
+    format: "C# class inheriting BasePage"
+
+  - from_task: T2-06
+    to_task: T4-03
+    interface: "PlayerGridPage POM with SelectRadiusAsync(), GetDisplayedPlayerCountAsync(), GetFirstChallengeButtonAsync()"
+    format: "C# class inheriting BasePage"
+
+  - from_task: T2-07
+    to_task: T4-04
+    interface: "BattlePage POM with OpenNewChallengeTabAsync(), SelectPlayerAsync(), EnterOpponentAsync(), SubmitChallengeAsync(), AcceptChallengeAsync()"
+    format: "C# class inheriting BasePage"
+
+  - from_task: T2-08
+    to_task: T4-02
+    interface: "PitchCreatePage POM with FillNameAsync(), SelectTypeAsync(), SubmitAsync(), GetSuccessMessageAsync()"
+    format: "C# class inheriting BasePage"
+
+  - from_task: T2-09
+    to_task: T4-04
+    interface: "NotificationToast POM with WaitForChallengeToastAsync(), ClickAcceptAsync(), WaitForResultToastAsync()"
+    format: "C# class inheriting BasePage"
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Test Infrastructure (Foundation — no page deps)
+  # ========================================================================
+  - id: T1-01
+    title: "Create RuckR.Tests project and add to solution"
+    description: >
+      Create a new xUnit test project at repo root (sibling to RuckR/ directory) targeting
+      net10.0. Add the project to RuckR.sln via dotnet sln add. Configure project references
+      to RuckR.Server (needed for WebApplicationFactory<Program>) and RuckR.Shared (needed
+      for model/DTO assertions). Create initial directory structure: Fixtures/, Helpers/,
+      PageObjects/, E2E/, API/. Add xunit.runner.json with parallelization disabled and
+      default timeouts. Add Usings.cs with global usings for Xunit, Playwright, FluentAssertions.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR.sln
+        description: "Solution file — add new project via dotnet sln add"
+      - path: RuckR/Server/RuckR.Server.csproj
+        description: "Target framework and reference pattern"
+    estimated_effort: medium
+    estimated_files: 3
+    estimated_lines: 60
+    focus_area: null
+    tech_stack: [.NET 10, xUnit, Microsoft.NET.Test.Sdk]
+    verification:
+      - "dotnet build RuckR.Tests.csproj succeeds"
+      - "dotnet sln list shows RuckR.Tests in solution"
+      - "Project references resolve: using RuckR.Server and using RuckR.Shared compile"
+      - "Directory structure created: Fixtures/, Helpers/, PageObjects/, E2E/, API/"
+    acceptance_criteria:
+      - "RuckR.Tests.csproj targets net10.0"
+      - "Project referenced by RuckR.sln"
+      - "ProjectReference to RuckR.Server.csproj and RuckR.Shared.csproj"
+      - "Microsoft.NET.Test.Sdk 17.13+ added"
+      - "xunit 2.9+ added"
+      - "xunit.runner.json: parallelizeTestCollections=false, maxParallelThreads=1, defaultTimeout=30000"
+      - "xunit.runner.visualstudio added (PrivateAssets=all)"
+      - "Initial directory scaffolding: Fixtures/, Helpers/, PageObjects/, E2E/, API/"
+      - "dotnet test (no tests yet) succeeds"
+
+  - id: T1-02
+    title: "Add Playwright, Testcontainers, and FluentAssertions NuGet packages"
+    description: >
+      Add Microsoft.Playwright 1.59.0, Microsoft.Playwright.Xunit 1.59.0,
+      Microsoft.Playwright.TestAdapter 1.59.0, Microsoft.AspNetCore.Mvc.Testing 10.0.7,
+      Testcontainers.MsSql 4.11.0, and FluentAssertions 7.x to RuckR.Tests.csproj.
+      Add a post-build target in .csproj that runs playwright.ps1 install chromium
+      (conditional on $env:CI not set — skipped in CI for now since local-only).
+      Verify all packages resolve and dotnet build succeeds.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-01]
+    context_files:
+      - path: RuckR/Server/RuckR.Server.csproj
+        description: "ASP.NET Core Identity + EF Core package versions for version alignment"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 30
+    focus_area: null
+    tech_stack: [.NET 10, Microsoft.Playwright 1.59.0, Testcontainers.MsSql 4.11.0, FluentAssertions 7.x]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+      - research_findings_testing_patterns.yaml
+    verification:
+      - "dotnet build RuckR.Tests.csproj succeeds"
+      - "using Microsoft.Playwright compiles"
+      - "using Microsoft.Playwright.Xunit compiles"
+      - "using Testcontainers.MsSql compiles"
+      - "using Microsoft.AspNetCore.Mvc.Testing compiles"
+      - "using FluentAssertions compiles"
+    acceptance_criteria:
+      - "Microsoft.Playwright 1.59.0 added"
+      - "Microsoft.Playwright.Xunit 1.59.0 added"
+      - "Microsoft.Playwright.TestAdapter 1.59.0 added"
+      - "Microsoft.AspNetCore.Mvc.Testing 10.0.7 added"
+      - "Testcontainers.MsSql 4.11.0 added"
+      - "FluentAssertions >= 7.0 added"
+      - "Post-build target in .csproj: Exec Command='pwsh -c \"& bin/Debug/net10.0/playwright.ps1 install chromium\"'"
+      - "Post-build target conditional: Condition=\"'$(CI)' == ''\" (skip in CI)"
+
+  - id: T1-03
+    title: "Add public partial class Program for WebApplicationFactory visibility"
+    description: >
+      RuckR/Server/Program.cs currently uses top-level statements, which generate an
+      internal Program class — invisible to WebApplicationFactory<Program> in the test
+      project. Add `public partial class Program { }` at the bottom of Program.cs
+      (after the top-level statements) to make the implicit Program class public.
+      This is the standard ASP.NET Core integration testing pattern and is non-breaking
+      for the application. Verify dotnet build RuckR.Server and RuckR.Tests both succeed.
+      The test project's WebApplicationFactory<Program> must resolve.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-01]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Add public partial class Program { } at end of file"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 2
+    focus_area: null
+    tech_stack: [.NET 10, C# top-level statements]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+    verification:
+      - "dotnet build RuckR.Server.csproj succeeds"
+      - "WebApplicationFactory<Program> compiles in test project"
+      - "Program class is accessible from test assembly"
+    acceptance_criteria:
+      - "public partial class Program { } added at bottom of RuckR/Server/Program.cs"
+      - "dotnet build RuckR.Server and RuckR.Tests both succeed"
+      - "No application behavior change — app.StartAsync() works normally"
+    failure_modes:
+      - scenario: "Dual 'Program' class conflict — top-level + explicit class both emit Program type"
+        likelihood: low
+        impact: medium
+        mitigation: "Top-level statements with 'partial class Program' is a well-documented .NET 6+ pattern. Verify with dotnet build. If conflict, use InternalsVisibleTo in .csproj instead."
+
+  - id: T1-04
+    title: "Create CustomWebApplicationFactory with Testcontainers DB override"
+    description: >
+      Create CustomWebApplicationFactory.cs inheriting WebApplicationFactory<Program>.
+      Override ConfigureWebHost to:
+      (1) Set environment to "Testing".
+      (2) Remove existing RuckRDbContext registration.
+      (3) Add RuckRDbContext using DatabaseFixture.ConnectionString
+      (4) Set WebRootPath to the Client project's published wwwroot directory
+          (resolved relative to solution root: RuckR/Client/bin/{config}/net10.0/wwwroot)
+          OR use a custom CompositeFileProvider that also serves the Client assets.
+      (5) Configure test auth by adding TestAuthHandler for [Authorize] bypass.
+      (6) Suppress seed data (SeedIfEmptyAsync) since tests use controlled fixtures.
+      (7) Override the ILocationTracker registration with a test-injectable variant
+          for server-side GPS validation in capture tests.
+      Also expose a helper method: CreateAuthenticatedClient(username) that returns
+      HttpClient with pre-set auth cookies for API tests.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-03, T1-05]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Service registrations to override for test configuration"
+      - path: RuckR/Server/appsettings.json
+        description: "Connection string placeholder to replace"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 150
+    focus_area: null
+    tech_stack: [ASP.NET Core 10, Microsoft.AspNetCore.Mvc.Testing, EF Core]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+      - research_findings_test-architecture.yaml
+    verification:
+      - "CustomWebApplicationFactory compiles and creates test server"
+      - "factory.CreateClient().GetAsync('/') returns 200 or redirect (Blazor WASM served)"
+      - "Test auth handler allows accessing [Authorize] endpoints without real login"
+      - "Database context uses the Docker SQL Server connection string"
+      - "Seed data does NOT run on startup in test environment"
+    acceptance_criteria:
+      - "Inherits WebApplicationFactory<Program>"
+      - "ConfigureWebHost: set UseEnvironment('Testing')"
+      - "ConfigureWebHost: replace RuckRDbContext registration with Docker SQL Server connection"
+      - "ConfigureWebHost: test auth handler registered (TestAuthHandler : AuthenticationHandler<...>)"
+      - "ConfigureWebHost: seed service disabled (remove SeedService registration)"
+      - "ConfigureWebHost: LocationTracker replaced with TestLocationTracker (injectable GPS positions)"
+      - "WebRootPath configured to serve Blazor WASM _framework assets"
+      - "CreateAuthenticatedClient(string username) method returns HttpClient with test auth cookie"
+      - "Expose Services property for DbContext access in API test classes"
+    failure_modes:
+      - scenario: "Blazor WASM _framework assets not found — static files 404"
+        likelihood: high
+        impact: critical
+        mitigation: "Set WebRootPath to Client publish output. If Client not published yet, add dotnet publish RuckR.Client step before tests. Document in TESTING.md setup."
+
+  - id: T1-05
+    title: "Create DatabaseFixture with Testcontainers MsSql lifecycle"
+    description: >
+      Create Fixtures/DatabaseFixture.cs implementing IAsyncLifetime (shared across
+      test collection via [CollectionDefinition]). In InitializeAsync:
+      (1) Check if Docker is available (try docker info). If not, skip with message
+          suggesting LocalDB fallback.
+      (2) Create MsSqlBuilder with image "mcr.microsoft.com/mssql/server:2022-latest",
+          password from environment or generated, port auto-assigned.
+      (3) Build container, wait for health check (SQL Server ready).
+      (4) Create test database (RuckR_Test_{guid suffix}) via master connection.
+      (5) Apply EF Core migrations (dbContext.Database.MigrateAsync()).
+      (6) Seed minimal test data: 2 test users (challenger, opponent), 3 test players,
+          2 test pitches at known GPS coordinates, 2 collection records.
+      In DisposeAsync: drop database and dispose container.
+      Expose ConnectionString and Container instance.
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-01, T1-02]
+    context_files:
+      - path: RuckR/Server/Data/RuckRDbContext.cs
+        description: "DbContext to migrate and seed"
+      - path: RuckR/Shared/Models/PlayerModel.cs
+        description: "Model for test data seeding"
+      - path: RuckR/Shared/Models/PitchModel.cs
+        description: "Model for spatial test data"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: null
+    tech_stack: [Testcontainers.MsSql 4.11.0, Docker, EF Core, SQL Server 2022]
+    research_sources:
+      - research_findings_testing_patterns.yaml
+    verification:
+      - "Docker SQL Server container starts and is healthy"
+      - "Test database created with all EF Core tables"
+      - "Seed data inserted: 2 users, 3 players, 2 pitches, 2 collections"
+      - "Container stops and is removed on DisposeAsync"
+    acceptance_criteria:
+      - "Implements IAsyncLifetime for xUnit collection fixture"
+      - "MsSqlBuilder with password 'TestPassword123!' and auto-published port"
+      - "Container health check: wait for SQL Server to accept connections (retry up to 60s)"
+      - "Test database name: RuckR_Test_{Guid.NewGuid():N} (unique per test run)"
+      - "EF Core migrations applied via serviceProvider.GetRequiredService<RuckRDbContext>()"
+      - "Seed users: 'testchallenger' / 'TestPass123!' and 'testopponent' / 'TestPass123!'"
+      - "Seed players: 3 PlayerModel records with known stats and SpawnLocation at known coords"
+      - "Seed pitches: 2 PitchModel records at fixed GPS coordinates (within 500m of each other)"
+      - "Seed collections: 1 player captured by challenger at pitch 1"
+      - "DisposeAsync: DROP DATABASE, then container.StopAsync() + DisposeAsync()"
+      - "Docker availability check: if not available, throw SkipException with clear message"
+    failure_modes:
+      - scenario: "Docker not running — Testcontainers.MsSql throws DockerNotRunningException"
+        likelihood: medium
+        impact: high
+        mitigation: "Catch DockerNotRunningException in InitializeAsync, log clear message: 'Docker is required for database tests. Start Docker Desktop and retry.' Skip test collection gracefully."
+
+  - id: T1-06
+    title: "Create PlaywrightFixture — browser lifecycle and device presets"
+    description: >
+      Create Fixtures/PlaywrightFixture.cs implementing IAsyncLifetime as a shared
+      fixture. In InitializeAsync:
+      (1) Create IPlaywright instance via Playwright.CreateAsync().
+      (2) Launch Chromium browser (headless by default, headed if PLAYWRIGHT_HEADED=1 env var set).
+      (3) Expose factory methods:
+          - CreateContextAsync() — new BrowserContext with default settings.
+          - CreateAuthenticatedContextAsync(username, password) — context with auth cookies
+            pre-set by navigating to login, performing login flow, capturing cookies.
+          - CreateMobileContextAsync(deviceName) — context with Playwright.Devices[deviceName]
+            presets (supports "Pixel 5" and "iPhone 12").
+          - CreateGpsContextAsync(lat, lng) — context with geolocation permission granted
+            and InitScript for GPS override.
+      Expose device presets as static properties: Pixel5Options, IPhone12Options.
+      In DisposeAsync: dispose IPlaywright (closes browser).
+      This fixture is shared across all E2E test classes (collection fixture).
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-01, T1-02]
+    context_files:
+      - path: RuckR/Client/wwwroot/js/geolocation.module.js
+        description: "Target of GPS mock — navigator.geolocation.watchPosition override"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 140
+    focus_area: null
+    tech_stack: [Microsoft.Playwright 1.59.0, Chromium, xUnit IAsyncLifetime]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+      - research_findings_testing_patterns.yaml
+    verification:
+      - "Playwright launches Chromium browser"
+      - "New BrowserContext creates isolated session (separate cookies)"
+      - "Authenticated context has valid auth cookies after login flow"
+      - "Mobile context has correct viewport and touch settings"
+      - "GPS context has geolocation permission granted"
+    acceptance_criteria:
+      - "Implements IAsyncLifetime (shared via [CollectionDefinition])"
+      - "Chromium launched: BrowserTypeLaunchOptions { Headless = true, Args = ['--no-sandbox'] }"
+      - "PLAYWRIGHT_HEADED=1 env var switches to headed mode for debugging"
+      - "CreateContextAsync(): returns new BrowserContext with base URL from CustomWebApplicationFactory"
+      - "CreateAuthenticatedContextAsync(username, password): performs full login flow → extracts cookie → returns context with cookie pre-set"
+      - "CreateMobileContextAsync('Pixel 5'): uses Playwright.Devices['Pixel 5'] presets (393×851, deviceScaleFactor=2.75, isMobile=true, hasTouch=true)"
+      - "CreateMobileContextAsync('iPhone 12'): uses Playwright.Devices['iPhone 12'] presets (390×844, deviceScaleFactor=3, isMobile=true, hasTouch=true)"
+      - "CreateGpsContextAsync(lat, lng): calls Context.GrantPermissionsAsync(['geolocation']), then Context.SetGeolocationAsync(lat, lng)"
+      - "Pixel5Options and IPhone12Options static properties for reuse"
+      - "DisposeAsync: browser.CloseAsync(), playwright.Dispose()"
+    failure_modes:
+      - scenario: "Chromium browser binary not installed — Playwright.CreateAsync() throws"
+        likelihood: high
+        impact: high
+        mitigation: "Catch PlaywrightException, check for 'playwright.ps1 install' message in error, re-throw with clear remediation: 'Run: pwsh bin/Debug/net10.0/playwright.ps1 install chromium'"
+
+  - id: T1-07
+    title: "Create BasePage class and BlazorWaitHelper"
+    description: >
+      Create PageObjects/BasePage.cs — abstract base class for all Page Objects.
+      Constructor takes IPage reference. Exposes:
+      - NavigateToAsync(string relativeUrl): navigates to URL, waits for Blazor render.
+      - WaitForBlazorAsync(): waits for a known Blazor-rendered DOM element (ConnectionStatus
+        div or first h1/h3 element) to signal Blazor + Fluxor initialization complete.
+        Uses WaitForSelectorAsync with 30s timeout.
+      - WaitForLoadingSpinnerToDisappearAsync(): waits for .spinner-border to be hidden.
+      - DismissReconnectionModalAsync(): evaluates JS to remove #components-reconnect-modal
+        if present (prevents blocking headless tests).
+      - TakeScreenshotOnFailureAsync(): called in test teardown to capture debug screenshot.
+      Create Helpers/BlazorWaitHelper.cs — static utility with:
+      - WaitForPageFullyLoadedAsync(IPage): waits for NetworkIdle + Blazor element + no spinner.
+      - WaitForFluxorReadyAsync(IPage): waits for ConnectionStatus dot to appear (indicates
+        SignalR connected, which implies Fluxor + store initialized).
+    wave: 1
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-01, T1-02]
+    context_files:
+      - path: RuckR/Client/Shared/ConnectionStatus.razor
+        description: "Target DOM element for Fluxor readiness detection"
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Blazor render anchor: #ruckr-map div"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 110
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, C#, xUnit]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+      - research_findings_test-architecture.yaml
+    verification:
+      - "WaitForBlazorAsync() reliably detects Blazor rendered state"
+      - "WaitForLoadingSpinnerToDisappearAsync() waits for spinner to be hidden"
+      - "DismissReconnectionModalAsync() removes reconnect modal in test"
+      - "BlazorWaitHelper methods work with both authenticated and unauthenticated pages"
+    acceptance_criteria:
+      - "BasePage(IPage page) constructor with protected Page property"
+      - "NavigateToAsync(string relativeUrl): Page.GotoAsync(baseUrl + relativeUrl) then WaitForBlazorAsync()"
+      - "WaitForBlazorAsync(): Page.WaitForSelectorAsync('h1, h3, #ruckr-map, .page', new() { Timeout = 30000 })"
+      - "WaitForBlazorAsync() fallback: if no h1/h3 found, wait for #app to have non-empty inner HTML"
+      - "WaitForLoadingSpinnerToDisappearAsync(): waits for .spinner-border to be Hidden or Detached (10s timeout)"
+      - "DismissReconnectionModalAsync(): Page.EvaluateAsync('() => document.getElementById(\"components-reconnect-modal\")?.remove()')"
+      - "BlazorWaitHelper.WaitForPageFullyLoadedAsync(): NetworkIdle + WaitForSelectorAsync('h1, h3, .alert, .card') + .spinner-border Hidden"
+      - "BlazorWaitHelper.WaitForFluxorReadyAsync(): waits for SignalR connection status dot (.connection-dot) to appear (implies store initialized)"
+    failure_modes:
+      - scenario: "WaitForBlazorAsync times out on cold start — Blazor WASM takes >30s on slow machines"
+        likelihood: medium
+        impact: medium
+        mitigation: "Increase timeout to 60s. Add retry logic: if first WaitForSelectorAsync fails, navigate to a lighter page (/catalog) to warm up, then retry target page."
+
+  # ========================================================================
+  # WAVE 2: Page Objects + Auth (depends on Wave 1 infrastructure)
+  # ========================================================================
+  - id: T2-01
+    title: "Create LoginPage and RegisterPage Page Objects"
+    description: >
+      Create PageObjects/LoginPage.cs and PageObjects/RegisterPage.cs inheriting BasePage.
+      LoginPage provides:
+      - NavigateToAsync(): navigates to /Identity/Account/Login (forceLoad:true for server redirect).
+      - LoginAsync(username, password): fills username input, password input, clicks Login button.
+        Submits form directly via Page.GetByRole(AriaRole.Button, "Log in").ClickAsync().
+        Waits for post-login redirect back to Blazor app (URL changes from /Identity/ to /map or /).
+        Extracts anti-CSRF token from __RequestVerificationToken hidden field before submit.
+      - IsLoginErrorVisibleAsync(): checks for validation summary error.
+      RegisterPage provides:
+      - NavigateToAsync(): navigates to /Identity/Account/Register.
+      - RegisterAsync(username, password, confirmPassword): fills form fields, submits.
+        Waits for redirect back to Blazor app (success) or stays on page (validation error).
+      - IsRegistrationErrorVisibleAsync(): checks for duplicate username or validation errors.
+      Locators: Use GetByLabel (Bootstrap labels match input ids) and GetByRole for buttons.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07, T1-06]
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Identity Razor pages at /Identity/Account/Login and /Register"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 130
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, ASP.NET Core Identity Razor Pages]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "LoginPage.LoginAsync with valid credentials redirects to app"
+      - "LoginPage.LoginAsync with invalid credentials shows error"
+      - "RegisterPage.RegisterAsync creates new user and redirects"
+      - "Anti-CSRF token extracted and submitted correctly"
+    acceptance_criteria:
+      - "LoginPage inherits BasePage(IPage page)"
+      - "LoginPage.NavigateToAsync(): Page.GotoAsync with forceLoad:true (server redirect needed for Identity)"
+      - "LoginPage.LoginAsync(username, password): fills InputUsername, InputPassword, submits"
+      - "Anti-CSRF: reads document.querySelector('input[name=__RequestVerificationToken]').value, includes in form submission"
+      - "LoginPage.WaitForPostLoginRedirectAsync(): waits for URL to not contain '/Identity/' (Blazor app loaded)"
+      - "LoginPage.IsLoginErrorVisibleAsync(): checks for .text-danger or .validation-summary-errors"
+      - "RegisterPage.NavigateToAsync(): /Identity/Account/Register"
+      - "RegisterPage.RegisterAsync(username, password, confirmPassword): fills Input.Username, Input.Password, Input.ConfirmPassword, submits"
+      - "RegisterPage.IsRegistrationErrorVisibleAsync(): checks for error messages (duplicate user, password mismatch)"
+      - "Both pages use GetByRole(AriaRole.Button) for submit buttons"
+      - "Both pages use Page.GetByLabel() or Page.Locator('input[id$=Input_Username]') for inputs"
+    failure_modes:
+      - scenario: "Anti-CSRF token not found on login page — form submission rejected with 400"
+        likelihood: medium
+        impact: high
+        mitigation: "ID pattern for Identity inputs varies by framework version. Inspect rendered HTML in debug trace. Use generic selector: 'input[name=__RequestVerificationToken]'. If still unfound, use Page.RouteAsync to intercept and add token."
+
+  - id: T2-02
+    title: "Create NavMenu Page Object"
+    description: >
+      Create PageObjects/NavMenu.cs inheriting BasePage. This page object operates
+      on the persistent NavMenu component present on every page (MainLayout).
+      Provides:
+      - IsVisibleAsync(): checks if nav menu is expanded (not collapsed).
+      - NavigateToAsync(linkText): clicks NavLink with matching text (Map, Catalog, Collection, etc.).
+      - IsAuthenticatedAsync(): checks if AuthorizeView shows 'Hello, {username}' or Logout link.
+      - IsNotAuthenticatedAsync(): checks if Login link is visible.
+      - GetUsernameDisplayAsync(): returns text of authenticated username span.
+      - ClickLogoutAsync(): clicks Logout link.
+      - ClickLoginAsync(): clicks Login link.
+      Locators: Page.GetByRole(AriaRole.Link, new() { Name = linkText }).
+      Since Bootstrap collapses nav on mobile, ensure nav is expanded before clicking
+      by checking for .navbar-toggler and clicking if present.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "NavLink DOM structure and auth-aware sections"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "NavigateToAsync('Map') navigates to /map"
+      - "NavigateToAsync('Catalog') navigates to /catalog"
+      - "IsAuthenticatedAsync() returns true after login"
+      - "GetUsernameDisplayAsync() returns correct username text"
+    acceptance_criteria:
+      - "NavMenu inherits BasePage(IPage page)"
+      - "NavigateToAsync(linkText): ensures nav expanded (click .navbar-toggler if nav hidden), then clicks NavLink by accessible name"
+      - "Links supported: Map, Catalog, Collection, Nearby Players, Battles, History, Create Pitch"
+      - "IsAuthenticatedAsync(): checks for NavLink 'Logout' or span containing 'Hello,'"
+      - "IsNotAuthenticatedAsync(): checks for NavLink 'Login'"
+      - "GetUsernameDisplayAsync(): returns span.nav-link-text text (authenticated username display)"
+      - "ClickLogoutAsync(): clicks NavLink 'Logout'"
+      - "ClickLoginAsync(): clicks NavLink 'Login'"
+      - "All locators use GetByRole(AriaRole.Link, new() { Name = 'Map' }) pattern"
+    failure_modes:
+      - scenario: "Nav is collapsed on mobile viewport — NavLink not clickable"
+        likelihood: medium
+        impact: low
+        mitigation: "Before clicking, check Page.Locator('.navbar-toggler').IsVisibleAsync(); if true, click to expand nav first. Add EnsureNavExpandedAsync() helper."
+
+  - id: T2-03
+    title: "Create MapPage Page Object"
+    description: >
+      Create PageObjects/MapPage.cs inheriting BasePage. The most complex Page Object
+      due to Leaflet.js map rendering and multiple UI states.
+      Provides:
+      - NavigateToAsync(): navigates to /map, waits for #ruckr-map div and Leaflet tiles.
+      - WaitForMapLoadedAsync(): waits for .leaflet-tile-loaded CSS class (indicates tiles rendered).
+      - IsLoadingSpinnerVisibleAsync(): checks for .spinner-border presence during init.
+      - IsErrorStateVisibleAsync(): checks for .alert-danger with retry button.
+      - IsGpsDisabledBannerVisibleAsync(): checks for 'Enable GPS' alert.
+      - IsOnboardingBannerVisibleAsync(): checks for 'Welcome to RuckR!' alert.
+      - DismissOnboardingAsync(): clicks the close button on onboarding banner.
+      - GetPitchMarkerCountAsync(): counts .leaflet-marker-icon or .pitch-marker elements.
+      - ClickFirstPitchMarkerAsync(): clicks the first visible pitch marker, waits for overlay.
+      - IsPitchOverlayVisibleAsync(): checks for map-overlay div with pitch name.
+      - GetPitchOverlayNameAsync(): returns the h5 text in pitch overlay.
+      - IsUserMarkerVisibleAsync(): checks for .user-location-pulse element.
+      - ClickRetryAsync(): clicks retry button in error state.
+      - ClickEnableGpsAsync(): clicks Enable GPS button in disabled banner.
+      NavigateToAsync must handle the loading→map or error states gracefully.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Full DOM structure, all visual states, Leaflet integration"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Leaflet.js]
+    research_sources:
+      - research_findings_test-architecture.yaml
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+    verification:
+      - "WaitForMapLoadedAsync() waits for Leaflet tiles loaded"
+      - "GetPitchMarkerCountAsync() returns correct count after GPS position set"
+      - "ClickFirstPitchMarkerAsync() opens pitch overlay with name"
+      - "DismissOnboardingAsync() hides onboarding banner"
+    acceptance_criteria:
+      - "MapPage inherits BasePage(IPage page)"
+      - "NavigateToAsync(): /map, then waits for #ruckr-map:visible"
+      - "WaitForMapLoadedAsync(): Page.WaitForSelectorAsync('.leaflet-tile-loaded', 15s timeout)"
+      - "IsLoadingSpinnerVisibleAsync(): Page.Locator('.spinner-border').IsVisibleAsync()"
+      - "IsErrorStateVisibleAsync(): Page.Locator('.alert-danger').IsVisibleAsync()"
+      - "IsGpsDisabledBannerVisibleAsync(): Page.GetByText('Enable GPS').IsVisibleAsync()"
+      - "IsOnboardingBannerVisibleAsync(): Page.GetByText('Welcome to RuckR!').IsVisibleAsync()"
+      - "DismissOnboardingAsync(): Page.Locator('.btn-close').ClickAsync() then wait for banner hidden"
+      - "GetPitchMarkerCountAsync(): Page.Locator('.leaflet-marker-icon').CountAsync()"
+      - "ClickFirstPitchMarkerAsync(): Page.Locator('.leaflet-marker-icon').First.ClickAsync() then wait for .map-overlay:visible"
+      - "IsPitchOverlayVisibleAsync(): Page.Locator('.map-overlay').IsVisibleAsync()"
+      - "GetPitchOverlayNameAsync(): Page.Locator('.map-overlay h5').TextContentAsync()"
+      - "IsUserMarkerVisibleAsync(): Page.Locator('.user-location-pulse').IsVisibleAsync()"
+      - "ClickRetryAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Retry' }).ClickAsync()"
+      - "ClickEnableGpsAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Enable' }).ClickAsync()"
+    failure_modes:
+      - scenario: "OpenStreetMap tiles fail to load (no network or blocked) — .leaflet-tile-loaded never appears"
+        likelihood: medium
+        impact: medium
+        mitigation: "Reduce timeout to 10s and treat tile failure as non-fatal (map container still renders, markers still appear). Fallback: wait for #ruckr-map with non-zero height instead."
+
+  - id: T2-04
+    title: "Create CatalogPage Page Object"
+    description: >
+      Create PageObjects/CatalogPage.cs inheriting BasePage for the /catalog page.
+      Provides:
+      - NavigateToAsync(): /catalog, waits for page heading and cards.
+      - IsLoadedAsync(): checks for h3 'Player Catalog' heading.
+      - FilterByPositionAsync(position): selects value from position dropdown.
+      - FilterByRarityAsync(rarity): selects value from rarity dropdown.
+      - SearchByNameAsync(name): types in name search input.
+      - GetDisplayedPlayerCountAsync(): counts rendered .card elements.
+      - GetFirstPlayerNameAsync(): returns text of first player card header.
+      - IsCollectedBadgeVisibleAsync(): checks for collected badge (✅) on any card.
+      - ClearFiltersAsync(): clicks clear filters button (if visible).
+      - IsEmptyStateVisibleAsync(): checks for 'No players found' message.
+      Locators: Position/Rarity selects by label; name input by placeholder or label.
+      Cards are identified by .card CSS class with child .card-header for player name.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/Catalog.razor
+        description: "Filter controls, player card DOM, collected badge logic"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 110
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Bootstrap 5]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "FilterByPositionAsync('Prop') updates displayed cards"
+      - "GetDisplayedPlayerCountAsync() returns expected count after filter"
+      - "SearchByNameAsync('Ruck') filters results"
+    acceptance_criteria:
+      - "CatalogPage inherits BasePage(IPage page)"
+      - "NavigateToAsync(): /catalog, waits for h3 has-text 'Player Catalog'"
+      - "IsLoadedAsync(): Page.GetByRole(AriaRole.Heading, new() { Name = 'Player Catalog' }).IsVisibleAsync()"
+      - "FilterByPositionAsync(string position): Page.GetByLabel('Position').SelectOptionAsync(position)"
+      - "FilterByRarityAsync(string rarity): Page.GetByLabel('Rarity').SelectOptionAsync(rarity)"
+      - "SearchByNameAsync(string name): Page.GetByPlaceholder('Search by name...').FillAsync(name)"
+      - "GetDisplayedPlayerCountAsync(): Page.Locator('.card').CountAsync()"
+      - "GetFirstPlayerNameAsync(): Page.Locator('.card-header').First.TextContentAsync()"
+      - "IsCollectedBadgeVisibleAsync(): Page.GetByText('✅').IsVisibleAsync()"
+      - "HasClearFiltersButtonAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Clear Filters' }).IsVisibleAsync()"
+      - "IsEmptyStateVisibleAsync(): Page.GetByText('No players found').IsVisibleAsync()"
+    failure_modes:
+      - scenario: "SelectOptionAsync fails because Blazor @bind renders <select> differently than native"
+        likelihood: low
+        impact: medium
+        mitigation: "Use Page.Locator('select').First.SelectOptionAsync(new[] { 'value' }) if GetByLabel fails. Fallback: click the <select>, then click the <option> by text."
+
+  - id: T2-05
+    title: "Create CollectionPage Page Object"
+    description: >
+      Create PageObjects/CollectionPage.cs inheriting BasePage for the /collection page.
+      Provides:
+      - NavigateToAsync(): /collection, waits for heading or empty state.
+      - IsAuthenticatedCheckVisibleAsync(): checks for 'Checking authentication...' message.
+      - IsLoadingVisibleAsync(): checks for .spinner-border.
+      - IsErrorVisibleAsync(): checks for .alert-danger.
+      - IsEmptyStateVisibleAsync(): checks for 'You haven't discovered any players yet!' and Explore Map button.
+      - ClickExploreMapAsync(): clicks the Explore Map CTA button in empty state.
+      - GetCollectedPlayerCountAsync(): counts .card elements in collection grid.
+      - ToggleFavoriteAsync(cardIndex): clicks the star button on a specific card.
+      - ExpandPlayerDetailAsync(cardIndex): clicks card to expand detail view.
+      - IsPlayerDetailExpandedAsync(): checks for expanded stats panel.
+      - ClickRetryAsync(): clicks retry on error state.
+      Must handle auth redirect gracefully — if page redirects to /Identity/Account/Login,
+      detect this and return IsRedirectedToLogin = true.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/Collection.razor
+        description: "Auth check, loading/error/empty states, card grid, favorite toggle"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 130
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Bootstrap 5]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "IsEmptyStateVisibleAsync() returns true for new/unauthenticated user"
+      - "ClickExploreMapAsync() navigates to /map"
+      - "ToggleFavoriteAsync() toggles star icon"
+    acceptance_criteria:
+      - "CollectionPage inherits BasePage(IPage page)"
+      - "NavigateToAsync(): /collection, waits for h3 'My Collection' or redirect detection"
+      - "IsRedirectedToLoginAsync(): checks if URL contains '/Identity/Account/Login'"
+      - "IsAuthenticatedCheckVisibleAsync(): Page.GetByText('Checking authentication').IsVisibleAsync()"
+      - "IsLoadingVisibleAsync(): Page.Locator('.spinner-border').IsVisibleAsync()"
+      - "IsErrorVisibleAsync(): Page.Locator('.alert-danger').IsVisibleAsync()"
+      - "IsEmptyStateVisibleAsync(): Page.GetByText('Explore Map').IsVisibleAsync()"
+      - "ClickExploreMapAsync(): Page.GetByRole(AriaRole.Link, new() { Name = 'Explore Map' }).ClickAsync()"
+      - "GetCollectedPlayerCountAsync(): Page.Locator('.card').CountAsync()"
+      - "ToggleFavoriteAsync(int cardIndex): Page.Locator('.card .btn').Nth(cardIndex).ClickAsync()"
+      - "ExpandPlayerDetailAsync(int cardIndex): Page.Locator('.card').Nth(cardIndex).ClickAsync(), wait for expanded content"
+      - "IsPlayerDetailExpandedAsync(): checks for expanded detail view (stats, bio visible)"
+      - "ClickRetryAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Retry' }).ClickAsync()"
+    failure_modes:
+      - scenario: "Collection page redirects to login faster than Playwright can detect — navigation timeout"
+        likelihood: low
+        impact: low
+        mitigation: "Catch navigation in IsRedirectedToLoginAsync by checking Page.Url after GotoAsync. Use shorter navigation timeout (15s) for protected pages."
+
+  - id: T2-06
+    title: "Create PlayerGridPage Page Object"
+    description: >
+      Create PageObjects/PlayerGridPage.cs inheriting BasePage for /players/nearby page.
+      Provides:
+      - NavigateToAsync(): /players/nearby, waits for heading or GPS disabled state.
+      - IsGpsDisabledStateVisibleAsync(): checks for GPS disabled message with Enable button.
+      - SelectRadiusAsync(km): selects radius value from dropdown (1, 5, 10, 25, 50).
+      - GetDisplayedPlayerCountAsync(): returns count of player cards in grid.
+      - GetFirstPlayerDistanceAsync(): returns fuzzy distance text of first card.
+      - GetFirstChallengeButtonAsync(): returns locator for first card's Challenge button.
+      - ClickChallengeButtonAsync(cardIndex): clicks Challenge button on specific card.
+      - IsWildBadgeVisibleAsync(): checks if first card shows 'Wild' badge.
+      - IsEmptyStateVisibleAsync(): checks for 'No players nearby' message.
+      - ClickRetryAsync(): clicks retry on error state.
+      Must handle auth redirect similarly to CollectionPage.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/PlayerGrid.razor
+        description: "Radius selector, GPS disabled state, player cards, fuzzy distance, challenge button"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Bootstrap 5]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "SelectRadiusAsync(10) reloads player list with new radius"
+      - "GetFirstPlayerDistanceAsync() returns fuzzy distance text"
+      - "ClickChallengeButtonAsync(0) navigates to /battle"
+    acceptance_criteria:
+      - "PlayerGridPage inherits BasePage(IPage page)"
+      - "NavigateToAsync(): /players/nearby, waits for h3 'Nearby Players' or auth redirect"
+      - "IsGpsDisabledStateVisibleAsync(): Page.GetByText('Enable GPS').IsVisibleAsync()"
+      - "SelectRadiusAsync(int km): Page.GetByLabel('Search Radius').SelectOptionAsync(km.ToString())"
+      - "GetDisplayedPlayerCountAsync(): Page.Locator('.card').CountAsync()"
+      - "GetFirstPlayerDistanceAsync(): Page.Locator('.card .distance').First.TextContentAsync()"
+      - "GetFirstChallengeButtonAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Challenge' }).First"
+      - "ClickChallengeButtonAsync(int index): specific Challenge button ClickAsync(), waits for /battle redirect"
+      - "IsWildBadgeVisibleAsync(): Page.GetByText('Wild').First.IsVisibleAsync()"
+      - "IsEmptyStateVisibleAsync(): Page.GetByText('No players nearby').IsVisibleAsync()"
+      - "ClickRetryAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Retry' }).ClickAsync()"
+
+  - id: T2-07
+    title: "Create BattlePage Page Object"
+    description: >
+      Create PageObjects/BattlePage.cs inheriting BasePage for the /battle page.
+      The most complex game page — two tabs, challenge form, accept modal, result modal.
+      Provides:
+      - NavigateToAsync(): /battle, waits for 'Battle Arena' heading.
+      - SwitchToNewChallengeTabAsync(): clicks New Challenge tab.
+      - SwitchToActiveChallengesTabAsync(): clicks Active Challenges tab.
+      - SelectChallengePlayerAsync(playerName): selects from player dropdown.
+      - EnterOpponentUsernameAsync(username): fills opponent input.
+      - SubmitChallengeAsync(): clicks Challenge button, waits for success toast.
+      - GetPendingChallengeCountAsync(): returns count from badge.
+      - GetIncomingChallengeCountAsync(): returns count of incoming challenges.
+      - AcceptChallengeAsync(playerName): in accept modal, selects player, clicks Fight!.
+      - DeclineChallengeAsync(): clicks Decline button on incoming challenge.
+      - IsResultModalVisibleAsync(): checks for battle result modal.
+      - GetResultWinnerAsync(): returns winner username from result modal.
+      - GetResultMethodAsync(): returns victory method text.
+      - CloseResultModalAsync(): clicks close/dismiss on result modal.
+      - IsRateLimitWarningVisibleAsync(): checks for rate limit message.
+      - GetSuccessMessageAsync(): returns success toast text.
+      - IsValidationErrorVisibleAsync(): checks for form validation messages.
+      Locators: Tabs by role=tab; form elements by label; modals by .modal class.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/Battle.razor
+        description: "Two-tab layout, challenge form, accept modal, result modal, all states"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Bootstrap 5 Modals]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "SwitchToNewChallengeTabAsync() shows challenge form"
+      - "SubmitChallengeAsync() shows success toast"
+      - "AcceptChallengeAsync() opens player select modal"
+      - "IsResultModalVisibleAsync() returns true after battle resolved"
+    acceptance_criteria:
+      - "BattlePage inherits BasePage(IPage page)"
+      - "NavigateToAsync(): /battle, waits for h1 'Battle Arena'"
+      - "SwitchToNewChallengeTabAsync(): Page.GetByRole(AriaRole.Tab, new() { Name = 'New Challenge' }).ClickAsync()"
+      - "SwitchToActiveChallengesTabAsync(): Page.GetByRole(AriaRole.Tab, new() { Name = 'Active Challenges' }).ClickAsync()"
+      - "SelectChallengePlayerAsync(string playerName): Page.GetByLabel('Select Player').SelectOptionAsync(playerName)"
+      - "EnterOpponentUsernameAsync(string username): Page.GetByLabel('Opponent Username').FillAsync(username)"
+      - "SubmitChallengeAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Challenge!' }).ClickAsync(), wait for success toast"
+      - "GetPendingChallengeCountAsync(): int from badge span in Active Challenges tab header"
+      - "AcceptChallengeAsync(string playerName): in modal, select player, click 'Fight!' button"
+      - "DeclineChallengeAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Decline' }).First.ClickAsync()"
+      - "IsResultModalVisibleAsync(): Page.Locator('.modal').Filter(new() { HasText = 'Battle Result' }).IsVisibleAsync()"
+      - "GetResultWinnerAsync(): Page.Locator('.modal .text-success').TextContentAsync()"
+      - "CloseResultModalAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Close' }).ClickAsync()"
+      - "IsRateLimitWarningVisibleAsync(): Page.GetByText('challenges remaining').IsVisibleAsync()"
+      - "GetSuccessMessageAsync(): Page.Locator('.alert-success').TextContentAsync()"
+    failure_modes:
+      - scenario: "Accept modal does not appear because challenge was auto-expired (24h threshold reached in slow CI)"
+        likelihood: low
+        impact: medium
+        mitigation: "Use freshly created challenges within same test. Set system clock if needed. Add explicit wait for modal: WaitForSelectorAsync('.modal.show')."
+
+  - id: T2-08
+    title: "Create BattleHistoryPage and PitchCreatePage Page Objects"
+    description: >
+      Create PageObjects/BattleHistoryPage.cs and PageObjects/PitchCreatePage.cs.
+      BattleHistoryPage (/battles/history):
+      - NavigateToAsync(): /battles/history, waits for heading.
+      - IsEmptyStateVisibleAsync(): checks for 'No battles yet!' / link to /players/nearby.
+      - GetBattleEntryCountAsync(): counts entries in battle history list.
+      - GetFirstBattleResultAsync(): returns result badge text (Victory/Loss).
+      PitchCreatePage (/pitches/create):
+      - NavigateToAsync(): /pitches/create, waits for form heading.
+      - IsFormVisibleAsync(): checks for EditForm with name input.
+      - FillPitchNameAsync(name): fills name input.
+      - SelectPitchTypeAsync(type): selects from type dropdown.
+      - FillLatitudeAsync(lat): fills latitude number input.
+      - FillLongitudeAsync(lng): fills longitude number input.
+      - SubmitAsync(): clicks Create Pitch button, waits for redirect or error.
+      - IsSuccessRedirectAsync(): checks if navigated to /map.
+      - IsErrorMessageVisibleAsync(): checks for error alert.
+      - IsGpsAutoFillTriggeredAsync(): checks if lat/lng pre-filled from GPS.
+      - IsRateLimitInfoVisibleAsync(): checks for '5 pitches per day' info.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Pages/BattleHistory.razor
+        description: "Battle history list, result badges, empty state"
+      - path: RuckR/Client/Pages/PitchCreate.razor
+        description: "EditForm, DataAnnotationsValidator, GPS auto-fill"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 140
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, EditForm]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "BattleHistoryPage.IsEmptyStateVisibleAsync() for new user"
+      - "PitchCreatePage.SubmitAsync() with valid data redirects to /map"
+      - "PitchCreatePage.IsGpsAutoFillTriggeredAsync() detects GPS coordinates in fields"
+    acceptance_criteria:
+      - "BattleHistoryPage: NavigateToAsync('/battles/history'), waits for h3 'Battle History'"
+      - "BattleHistoryPage.IsEmptyStateVisibleAsync(): Page.GetByText('No battles yet').IsVisibleAsync()"
+      - "BattleHistoryPage.GetBattleEntryCountAsync(): Page.Locator('.list-group-item').CountAsync()"
+      - "BattleHistoryPage.GetFirstBattleResultAsync(): Page.Locator('.list-group-item .badge').First.TextContentAsync()"
+      - "PitchCreatePage: NavigateToAsync('/pitches/create'), waits for h3 'Create Pitch'"
+      - "PitchCreatePage.FillPitchNameAsync(): Page.GetByLabel('Pitch Name').FillAsync(name)"
+      - "PitchCreatePage.SelectPitchTypeAsync(): Page.GetByLabel('Pitch Type').SelectOptionAsync(type)"
+      - "PitchCreatePage.FillLatitudeAsync(): Page.GetByLabel('Latitude').FillAsync(lat.ToString())"
+      - "PitchCreatePage.FillLongitudeAsync(): Page.GetByLabel('Longitude').FillAsync(lng.ToString())"
+      - "PitchCreatePage.SubmitAsync(): Page.GetByRole(AriaRole.Button, new() { Name = 'Create Pitch' }).ClickAsync()"
+      - "PitchCreatePage.IsSuccessRedirectAsync(): Page.Url contains '/map'"
+      - "PitchCreatePage.IsErrorMessageVisibleAsync(): Page.Locator('.alert-danger').IsVisibleAsync()"
+
+  - id: T2-09
+    title: "Create NotificationToast and ConnectionStatus Page Objects"
+    description: >
+      Create PageObjects/NotificationToast.cs and PageObjects/ConnectionStatus.cs.
+      NotificationToast (/ shared component, always present in MainLayout):
+      - WaitForChallengeToastAsync(): waits for toast with challenge message text.
+      - GetChallengeToastTextAsync(): returns toast message text.
+      - ClickAcceptOnToastAsync(): clicks Accept button within challenge toast.
+      - ClickDeclineOnToastAsync(): clicks Decline button within challenge toast.
+      - WaitForResultToastAsync(): waits for battle result toast.
+      - GetResultToastTextAsync(): returns result toast text.
+      - IsToastContainerVisibleAsync(): checks if toast container is visible.
+      ConnectionStatus (shared component, in MainLayout):
+      - IsConnectedAsync(): checks for green dot (connected state).
+      - IsReconnectingAsync(): checks for yellow pulsing dot.
+      - IsDisconnectedAsync(): checks for red dot.
+      - ClickReconnectAsync(): clicks reconnect button (visible when disconnected).
+      These Page Objects operate on shared UI elements, not full pages —
+      they take IPage in constructor like others but have no NavigateToAsync.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T1-07]
+    context_files:
+      - path: RuckR/Client/Shared/NotificationToast.razor
+        description: "Toast container, challenge toasts, result toasts"
+      - path: RuckR/Client/Shared/ConnectionStatus.razor
+        description: "Connection dot, reconnect button"
+    estimated_effort: small
+    estimated_files: 2
+    estimated_lines: 90
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Bootstrap 5 Toast]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "WaitForChallengeToastAsync() detects incoming challenge toast"
+      - "ClickAcceptOnToastAsync() triggers accept flow"
+      - "IsConnectedAsync() returns true when SignalR connected"
+    acceptance_criteria:
+      - "NotificationToast(IPage page): no NavigateToAsync (always present)"
+      - "WaitForChallengeToastAsync(): Page.WaitForSelectorAsync('.toast', 30s timeout)"
+      - "GetChallengeToastTextAsync(): Page.Locator('.toast-body').TextContentAsync()"
+      - "ClickAcceptOnToastAsync(): Page.Locator('.toast').Filter(new() { HasText = 'Accept' }).GetByRole(AriaRole.Button, new() { Name = 'Accept' }).ClickAsync()"
+      - "ClickDeclineOnToastAsync(): Page.Locator('.toast').Filter(new() { HasText = 'Decline' }).GetByRole(AriaRole.Button, new() { Name = 'Decline' }).ClickAsync()"
+      - "WaitForResultToastAsync(): Page.WaitForSelectorAsync('.toast:has-text(\"Battle complete\")', 30s timeout)"
+      - "GetResultToastTextAsync(): same pattern, returns result text"
+      - "ConnectionStatus(IPage page): no NavigateToAsync"
+      - "IsConnectedAsync(): Page.Locator('.connection-dot.bg-success').IsVisibleAsync()"
+      - "IsReconnectingAsync(): Page.Locator('.connection-dot.bg-warning').IsVisibleAsync()"
+      - "IsDisconnectedAsync(): Page.Locator('.connection-dot.bg-danger').IsVisibleAsync()"
+
+  # ========================================================================
+  # WAVE 3: E2E Smoke Tests (depends on Wave 2 Page Objects)
+  # ========================================================================
+  - id: T3-01
+    title: "Auth flow E2E test — register, login, see username, logout"
+    description: >
+      Create E2E/AuthE2ETests.cs with a full authentication flow test using
+      Playwright. Test flow:
+      (1) Navigate to Register page, register a new unique test user (username with
+          Guid suffix to avoid collisions).
+      (2) Verify redirect to Blazor app after registration.
+      (3) Navigate to Login page, log in with the same credentials.
+      (4) Verify NavMenu shows 'Hello, {username}' (authenticated state).
+      (5) Click Logout, verify redirect to login or unauthenticated nav state.
+      (6) Negative test: attempt login with wrong password, verify error message.
+      Uses IClassFixture<PlaywrightFixture> + IClassFixture<CustomWebApplicationFactory>.
+      Each test gets a fresh BrowserContext (test isolation).
+      Test class: xUnit collection with DatabaseFixture for user data cleanup.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-01, T2-02]
+    context_files:
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "Auth-aware nav state — 'Hello, {username}' indicator"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 100
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, xUnit, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_test-architecture.yaml
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+    verification:
+      - "Register + login + verify username + logout flow passes"
+      - "Wrong password shows error message"
+      - "Test user data cleaned up (unique per test run)"
+    acceptance_criteria:
+      - "Test class uses IClassFixture<CustomWebApplicationFactory> and IClassFixture<PlaywrightFixture>"
+      - "Test: Should_RegisterAndLogin_And_SeeUsernameInNav() — full flow"
+      - "Step: RegisterPage.RegisterAsync('testuser_{Guid}', 'TestPass123!', 'TestPass123!')"
+      - "After register: assert NavMenu.IsAuthenticatedAsync() or redirect to app"
+      - "Step: LoginPage.LoginAsync('testuser_{Guid}', 'TestPass123!')"
+      - "After login: assert NavMenu.GetUsernameDisplayAsync() contains 'testuser_{Guid}'"
+      - "Step: NavMenu.ClickLogoutAsync()"
+      - "After logout: assert NavMenu.IsNotAuthenticatedAsync()"
+      - "Test: Should_ShowError_On_WrongPassword() — LoginPage.LoginAsync with bad password"
+      - "Assert LoginPage.IsLoginErrorVisibleAsync() returns true"
+      - "InvalidLoginAttempt test error message contains 'Invalid' or 'failed'"
+      - "Uses PlaywrightFixture.CreateContextAsync() for fresh isolated context per test"
+    failure_modes:
+      - scenario: "Username collision — Guid-suffixed username still collides (extremely unlikely)"
+        likelihood: low
+        impact: low
+        mitigation: "Catch registration error, retry with new Guid suffix. Max 3 retries."
+
+  - id: T3-02
+    title: "Map page E2E test — load map, see tiles, see pitch markers, dismiss onboarding"
+    description: >
+      Create E2E/MapPageE2ETests.cs. Test flow:
+      (1) Navigate to /map (unauthenticated — map is public).
+      (2) Verify onboarding banner is visible on first visit.
+      (3) Dismiss onboarding banner.
+      (4) Verify map container (#ruckr-map) is visible.
+      (5) Verify Leaflet tiles have loaded (.leaflet-tile-loaded present).
+      (6) Wait for (optional) GPS disabled banner if no GPS mock.
+      Negative tests:
+      - Verify loading spinner appears during initialization.
+      - Navigate away and back, verify onboarding does NOT reappear (localStorage flag set).
+      Uses isolated context. No auth required for public map page.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-03]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "All map states: loading, onboarding, GPS disabled, error, pitch overlay"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, Leaflet.js]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Onboarding banner visible on first visit"
+      - "DismissOnboardingAsync hides banner"
+      - "Leaflet tiles visible on second visit (no onboarding)"
+      - "Map container present and visible"
+    acceptance_criteria:
+      - "Test: Should_ShowOnboarding_OnFirstVisit_And_DismissIt()"
+      - "MapPage.NavigateToAsync(); assert MapPage.IsOnboardingBannerVisibleAsync()"
+      - "MapPage.DismissOnboardingAsync(); assert MapPage.IsOnboardingBannerVisibleAsync() → false"
+      - "Test: Should_LoadMap_WithTiles_And_ContainerVisible()"
+      - "MapPage.NavigateToAsync() (after dismissing onboarding or on clean context)"
+      - "Assert Page.Locator('#ruckr-map').IsVisibleAsync()"
+      - "MapPage.WaitForMapLoadedAsync() — waits for .leaflet-tile-loaded"
+      - "Test: Should_DisplayGpsDisabledBanner_When_NoGpsPermission()"
+      - "After map load, assert MapPage.IsGpsDisabledBannerVisibleAsync() or IsErrorStateVisibleAsync() — one should be true"
+      - "Test: Should_PersistOnboardingDismissal_In_LocalStorage()"
+      - "After dismiss, reload page; assert MapPage.IsOnboardingBannerVisibleAsync() → false"
+    failure_modes:
+      - scenario: "Map tiles don't load because OpenStreetMap CDN is unreachable in test environment"
+        likelihood: medium
+        impact: low
+        mitigation: "Test for tile-loaded is a nice-to-have. Core assertion: map container visible and Leaflet map instance created (check via Page.EvaluateAsync('!!window.L'))."
+
+  - id: T3-03
+    title: "Catalog page E2E test — navigate, filter by position, filter by rarity"
+    description: >
+      Create E2E/CatalogPageE2ETests.cs. Test flow:
+      (1) Log in (test user) via PlaywrightFixture.CreateAuthenticatedContextAsync().
+      (2) Navigate to /catalog via NavMenu.
+      (3) Verify player cards are displayed (count > 0, seed data has 500 players).
+      (4) Filter by position 'Prop' — verify displayed count decreases.
+      (5) Filter by rarity 'Epic' — verify displayed count further decreases.
+      (6) Search by name — type partial name, verify cards filtered.
+      (7) Clear filters, verify all cards shown (or at least same as initial count).
+      Uses authenticated context to see collected badges.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T2-04, T2-02, T1-06]
+    context_files:
+      - path: RuckR/Client/Pages/Catalog.razor
+        description: "Filter controls, card grid rendering"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 90
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Filter by position reduces displayed player count"
+      - "Filter by rarity further reduces count"
+      - "Search by name returns matching players only"
+      - "Clear filters restores all players"
+    acceptance_criteria:
+      - "Test class uses authenticated context from PlaywrightFixture"
+      - "Test: Should_FilterPlayers_By_Position()"
+      - "CatalogPage.NavigateToAsync(); int initialCount = CatalogPage.GetDisplayedPlayerCountAsync()"
+      - "CatalogPage.FilterByPositionAsync('Prop'); int propCount = GetDisplayedPlayerCountAsync(); assert propCount < initialCount"
+      - "Test: Should_FilterBy_Rarity_After_Position()"
+      - "CatalogPage.FilterByRarityAsync('Epic'); int epicPropCount = GetDisplayedPlayerCountAsync(); assert epicPropCount <= propCount"
+      - "Test: Should_SearchBy_Name()"
+      - "CatalogPage.SearchByNameAsync('Ruck'); assert each visible card name contains 'Ruck'"
+      - "Test: Should_ClearFilters_And_ShowAll()"
+      - "CatalogPage.ClearFiltersAsync(); assert GetDisplayedPlayerCountAsync() == initialCount"
+      - "Test: Should_ShowEmptyState_When_NoMatches()"
+      - "CatalogPage.SearchByNameAsync('ZZZXYZ_NOT_FOUND'); assert CatalogPage.IsEmptyStateVisibleAsync()"
+    failure_modes:
+      - scenario: "500 seed players not yet generated in database — catalog empty, tests fail"
+        likelihood: low
+        impact: high
+        mitigation: "DatabaseFixture seeds the database. Verify in test setup: if player count is 0, skip test with meaningful message (Inconclusive)."
+
+  - id: T3-04
+    title: "Collection page E2E test — authenticated, see empty state, CTA to map"
+    description: >
+      Create E2E/CollectionPageE2ETests.cs. Test flow:
+      (1) Log in as a brand-new test user (no collection).
+      (2) Navigate to /collection via NavMenu.
+      (3) Verify empty state is visible: 'You haven't discovered any players yet!' and
+          'Explore Map' button.
+      (4) Click Explore Map button, verify navigated to /map.
+      Negative test:
+      (1) Navigate to /collection while unauthenticated.
+      (2) Verify redirect to /Identity/Account/Login.
+      Uses PlaywrightFixture for authenticated and unauthenticated contexts.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-05, T2-02, T1-06]
+    context_files:
+      - path: RuckR/Client/Pages/Collection.razor
+        description: "Auth redirect, empty state with CTA"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 60
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "New user sees empty state with Explore Map CTA"
+      - "Explore Map CTA navigates to /map"
+      - "Unauthenticated user redirected to login"
+    acceptance_criteria:
+      - "Test: Should_ShowEmptyState_ForNewUser()"
+      - "Use authenticated context with new user (different from seed data user)"
+      - "CollectionPage.NavigateToAsync(); assert CollectionPage.IsEmptyStateVisibleAsync()"
+      - "assert CollectionPage.IsEmptyStateVisibleAsync() text contains exploration guidance"
+      - "Test: Should_NavigateToMap_On_ClickExploreMap()"
+      - "CollectionPage.ClickExploreMapAsync(); assert Page.Url contains '/map'"
+      - "Test: Should_RedirectToLogin_When_Unauthenticated()"
+      - "Use unauthenticated context from PlaywrightFixture"
+      - "CollectionPage.NavigateToAsync(); assert CollectionPage.IsRedirectedToLoginAsync()"
+    failure_modes:
+      - scenario: "Seed user already has collection items from DatabaseFixture — empty state not shown"
+        likelihood: medium
+        impact: medium
+        mitigation: "Create a separate fresh user for this test (not the seed user). Use RegisterPage to create user in test, or use TestAuthHelper to authenticate as a non-seeded user."
+
+  - id: T3-05
+    title: "NavMenu E2E test — navigate all 7 links, verify correct pages"
+    description: >
+      Create E2E/NavMenuE2ETests.cs. Test flow:
+      (1) Log in as authenticated user.
+      (2) For each NavMenu link (Map, Catalog, Collection, Nearby Players, Battles,
+          History, Create Pitch), click the link and verify:
+          - Page URL matches expected route (e.g., /map, /catalog).
+          - Page heading or key element is visible (page loaded successfully).
+      (3) Verify Login link is NOT visible when authenticated (Logout is visible instead).
+      (4) Logout, verify Login link IS visible.
+      This is a reliable smoke test verifying all routes work + auth-aware nav state.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-02, T3-01]
+    context_files:
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "All 7 NavLink entries + AuthorizeView"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 60
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Each of 7 links navigates to correct page"
+      - "Auth state correctly reflected in nav"
+      - "All pages at least load (heading/container visible)"
+    acceptance_criteria:
+      - "Test: Should_NavigateAll_AuthenticatedLinks()"
+      - "Use authenticated context"
+      - "For each: NavMenu.NavigateToAsync('Map') → assert Page.Url contains '/map'"
+      - "NavMenu.NavigateToAsync('Catalog') → assert Page.Url contains '/catalog'"
+      - "NavMenu.NavigateToAsync('Collection') → assert Page.Url contains '/collection'"
+      - "NavMenu.NavigateToAsync('Nearby Players') → assert Page.Url contains '/players/nearby'"
+      - "NavMenu.NavigateToAsync('Battles') → assert Page.Url contains '/battle'"
+      - "NavMenu.NavigateToAsync('History') → assert Page.Url contains '/battles/history'"
+      - "NavMenu.NavigateToAsync('Create Pitch') → assert Page.Url contains '/pitches/create'"
+      - "Test: Should_ShowLoginLink_When_Unauthenticated()"
+      - "assert NavMenu.IsNotAuthenticatedAsync() → Login link visible"
+      - "Test: Should_ShowLogoutLink_When_Authenticated()"
+      - "assert NavMenu.IsAuthenticatedAsync() → Logout link visible"
+    failure_modes:
+      - scenario: "Some pages require auth check redirect — URL may flash before redirect"
+        likelihood: medium
+        impact: low
+        mitigation: "After clicking, wait for URL to stabilize (WaitForURLAsync with pattern). Accept either the page URL or the login redirect URL as valid outcomes for protected pages."
+
+  # ========================================================================
+  # WAVE 4: GPS + PVP E2E Tests (depends on Wave 2-3)
+  # ========================================================================
+  - id: T4-01
+    title: "GPS geolocation mock test — grant permission, set coordinates, verify map response"
+    description: >
+      Create E2E/GpsMockE2ETests.cs. This is the most technically challenging test
+      due to the JS interop watching approach.
+      Test flow:
+      (1) Create a GPS-enabled BrowserContext via PlaywrightFixture.CreateGpsContextAsync(51.5, -0.1).
+          This grants geolocation permission and injects InitScript that overrides
+          navigator.geolocation.watchPosition to emit the specified coordinates.
+      (2) Navigate to /map.
+      (3) Verify GPS disabled banner is NOT visible (permission granted).
+      (4) Verify user marker appears (.user-location-pulse CSS class).
+      (5) Verify pitch markers load near the mocked GPS position.
+      (6) Verify map is centered near mocked coordinates (check via Page.EvaluateAsync
+          for map.getCenter()).
+
+      The InitScript for GPS mock (injected BEFORE any page JS runs):
+      ```js
+      const fakeCoords = { latitude: 51.5, longitude: -0.1, accuracy: 10 };
+      const origGetCurrentPosition = navigator.geolocation.getCurrentPosition.bind(navigator.geolocation);
+      const origWatchPosition = navigator.geolocation.watchPosition.bind(navigator.geolocation);
+      navigator.geolocation.getCurrentPosition = (success, error) => {
+        success({ coords: fakeCoords, timestamp: Date.now() });
+      };
+      navigator.geolocation.watchPosition = (success, error) => {
+        success({ coords: fakeCoords, timestamp: Date.now() });
+        return 1; // watchId
+      };
+      ```
+      This script MUST run via Page.AddInitScriptAsync() BEFORE Page.GotoAsync().
+      Verify the mock is active by calling Page.EvaluateAsync to check navigator.geolocation
+      overridden status.
+    wave: 4
+    agent: gem-browser-tester
+    prototype: true
+    priority: high
+    status: pending
+    dependencies: [T1-06, T2-03, T3-02]
+    context_files:
+      - path: RuckR/Client/wwwroot/js/geolocation.module.js
+        description: "Target for GPS mock — navigator.geolocation.watchPosition call"
+      - path: RuckR/Client/Pages/Map.razor
+        description: "GPS-dependent behavior: user marker, pitch markers, center map"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, JavaScript, Browser Geolocation API]
+    research_sources:
+      - research_findings_testing_patterns.yaml
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+    verification:
+      - "GPS permission granted without browser prompt"
+      - "User marker appears on map after GPS watch starts"
+      - "Pitch markers near mocked coordinates load"
+      - "Map center approximates mocked coordinates"
+    acceptance_criteria:
+      - "Test: Should_ShowUserMarker_When_GpsPermissionGranted()"
+      - "CreateGpsContextAsync(51.5074, -0.1278) — London center (seed data region)"
+      - "Context has GrantPermissionsAsync(['geolocation']) called before Page.GotoAsync"
+      - "InitScript overrides navigator.geolocation.getCurrentPosition and watchPosition before any page script"
+      - "MapPage.NavigateToAsync(); MapPage.WaitForMapLoadedAsync()"
+      - "assert MapPage.IsGpsDisabledBannerVisibleAsync() → false (GPS available)"
+      - "Wait 5 seconds for GeolocationService.StartWatchAsync to fire and update map"
+      - "assert MapPage.IsUserMarkerVisibleAsync() — .user-location-pulse present"
+      - "Test: Should_LoadPitchMarkers_Near_MockedGpsPosition()"
+      - "MapPage.GetPitchMarkerCountAsync() > 0 (seed pitches near London)"
+      - "Verify map center: Page.EvaluateAsync<double>('window.ruckrMap?.getCenter()?.lat') ≈ 51.5 (±0.1)"
+    failure_modes:
+      - scenario: "InitScript override of navigator.geolocation.watchPosition doesn't work — Blazor's dynamic import() calls the native API before override"
+        likelihood: medium
+        impact: high
+        mitigation: "AddInitScript runs after document creation but before any scripts. Blazor modules are loaded via C# → JS interop dynamic import(), which happens later. If override fails, try: (a) use Page.RouteAsync to intercept geolocation.module.js and replace with mock module, OR (b) add a MutationObserver in InitScript that re-overrides after any script load."
+
+  - id: T4-02
+    title: "Pitch creation E2E test — login, fill form with GPS coords, submit, verify success"
+    description: >
+      Create E2E/PitchCreateE2ETests.cs. Test flow:
+      (1) Authenticate as test user (has creation quota).
+      (2) Navigate to /pitches/create.
+      (3) Verify form is loaded with GPS auto-filled coordinates (if GPS mock active).
+      (4) Fill pitch name with unique value (Guid-suffixed).
+      (5) Select pitch type 'Training'.
+      (6) Verify lat/lng fields pre-populated (from GPS mock or default).
+      (7) Submit form.
+      (8) Verify redirected to /map (success).
+      (9) Verify success message or pitch appears on map.
+      Negative tests:
+      - Submit with empty name → validation error.
+      - Submit with invalid lat/lng → validation error.
+      - Rate limit test (create 6 pitches — 5th succeeds, 6th gets 429).
+      Uses GPS mock context for auto-fill verification.
+    wave: 4
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-08, T4-01]
+    context_files:
+      - path: RuckR/Client/Pages/PitchCreate.razor
+        description: "EditForm, validation, rate limit display"
+      - path: RuckR/Server/Controllers/PitchesController.cs
+        description: "POST /pitches endpoint, rate limiting logic"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 110
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM, ASP.NET Core]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Valid pitch creation redirects to /map"
+      - "Empty name shows validation error"
+      - "Rate limit 429 displayed after 6th creation"
+    acceptance_criteria:
+      - "Test: Should_CreatePitch_And_RedirectToMap()"
+      - "Authenticated context + GPS mock"
+      - "PitchCreatePage.NavigateToAsync(); assert PitchCreatePage.IsFormVisibleAsync()"
+      - "PitchCreatePage.FillPitchNameAsync('Test Pitch {Guid}')"
+      - "PitchCreatePage.SelectPitchTypeAsync('Training')"
+      - "PitchCreatePage.SubmitAsync()"
+      - "assert PitchCreatePage.IsSuccessRedirectAsync() → page at /map"
+      - "Test: Should_ShowValidationError_For_EmptyName()"
+      - "PitchCreatePage.FillPitchNameAsync(''); PitchCreatePage.SubmitAsync()"
+      - "assert PitchCreatePage.IsErrorMessageVisibleAsync()"
+      - "Test: Should_AutoFill_Coordinates_FromGps()"
+      - "With GPS mock at (51.5, -0.1), lat field ≈ 51.5, lng field ≈ -0.1"
+      - "Test: Should_Reject_SixthPitch_WithRateLimit()"
+      - "Create 5 pitches successfully; 6th attempt → assert IsErrorMessageVisibleAsync() or IsRateLimitInfoVisibleAsync()"
+      - "NOTE: Rate limit uses static ConcurrentDictionary — may conflict across tests"
+    failure_modes:
+      - scenario: "Rate limit state from previous test runs causes false 429 — static ConcurrentDictionary not reset"
+        likelihood: medium
+        impact: medium
+        mitigation: "Run rate limit test in isolated test class with its own WebApplicationFactory instance. Or add test-only reset endpoint. If infeasible, skip rate limit E2E test and cover via API test (T5-02) with factory reset."
+
+  - id: T4-03
+    title: "Nearby players grid test — GPS mock, fetch nearby players, verify grid with distances"
+    description: >
+      Create E2E/PlayerGridE2ETests.cs. Test flow:
+      (1) Authenticate with GPS mock near seed data center (51.5074, -0.1278).
+      (2) Navigate to /players/nearby.
+      (3) Verify player cards are displayed (nearby seed players within default radius).
+      (4) Verify fuzzy distance is displayed (text contains 'm' or 'km').
+      (5) Change radius to 50 km via SelectRadiusAsync(50) — verify more/fewer players.
+      (6) Verify Wild badge on seed player cards (not owned by current user).
+      (7) Click Challenge button on a wild player card — verify navigates to /battle
+          with ?opponent= and ?player= query params.
+      Uses GPS mock context.
+    wave: 4
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-06, T4-01]
+    context_files:
+      - path: RuckR/Client/Pages/PlayerGrid.razor
+        description: "Radius selector, fuzzy distance display, owner badges, challenge button"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 90
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Blazor WASM]
+    research_sources:
+      - research_findings_test-architecture.yaml
+      - research_findings_testing_patterns.yaml
+    verification:
+      - "Nearby player cards displayed with distances"
+      - "Radius change updates results"
+      - "Challenge button navigates to /battle"
+    acceptance_criteria:
+      - "Test: Should_DisplayNearbyPlayers_With_FuzzyDistance()"
+      - "Authenticated context with GPS at (51.5074, -0.1278)"
+      - "PlayerGridPage.NavigateToAsync()"
+      - "assert PlayerGridPage.GetDisplayedPlayerCountAsync() > 0"
+      - "string distance = PlayerGridPage.GetFirstPlayerDistanceAsync(); assert distance contains 'm' or 'km'"
+      - "Test: Should_ChangeResults_On_RadiusChange()"
+      - "int count10 = GetDisplayedPlayerCountAsync() at 10km radius"
+      - "PlayerGridPage.SelectRadiusAsync(50); int count50 = GetDisplayedPlayerCountAsync()"
+      - "assert count50 >= count10 (wider radius includes more players)"
+      - "Test: Should_NavigateToBattle_OnClickChallenge()"
+      - "PlayerGridPage.ClickChallengeButtonAsync(0)"
+      - "assert Page.Url contains '/battle'"
+      - "assert Page.Url contains 'opponent=' or 'player=' (query params)"
+    failure_modes:
+      - scenario: "No seed players within default radius — grid shows empty state"
+        likelihood: low
+        impact: medium
+        mitigation: "DatabaseFixture seeds players at known coordinates within range. Also seed a player at exact GPS mock location. If empty, use SelectRadiusAsync(50) to expand range first."
+
+  - id: T4-04
+    title: "Multi-user PVP full flow — challenge, notification, accept, battle resolution, result"
+    description: >
+      Create E2E/MultiUserPvpE2ETests.cs — the crown jewel test.
+      Uses TWO BrowserContext instances (User A = challenger, User B = opponent)
+      within a single test. Each context has independent auth cookies.
+      Test flow:
+      (1) Set up: Ensure 2 test users exist (challenger, opponent). Each has at least
+          1 player in their collection. DatabaseFixture seeds this.
+      (2) Context A: Log in as challenger. Navigate to /players/nearby.
+          Find opponent's player in grid. Click Challenge.
+          Navigate to /battle. Select challenger's player. Submit challenge.
+          Verify success toast appears.
+      (3) Context B: Log in as opponent. Wait for challenge notification toast.
+          Verify toast contains challenger's username and player name.
+          Click Accept on toast → accept modal appears → select opponent's player → Fight!
+      (4) Wait for battle result modal to appear in BOTH contexts.
+      (5) Verify result modal shows winner, loser, method, and player names.
+      (6) Context A: Navigate to /battles/history. Verify battle entry appears.
+      (7) Context B: Navigate to /battles/history. Verify battle entry appears (same battleId).
+
+      Key challenge: coordinating two contexts within a single test method.
+      Use Task.WhenAll for parallel waits. Poll for toast visibility with timeout.
+      Battle resolution must be deterministic — pass seed to BattleResolver or
+      verify both contexts show same outcome.
+    wave: 4
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2-07, T2-09, T1-06, T3-01]
+    context_files:
+      - path: RuckR/Client/Pages/Battle.razor
+        description: "Challenge form, accept modal, result modal"
+      - path: RuckR/Client/Shared/NotificationToast.razor
+        description: "Real-time challenge/result toast rendering"
+      - path: RuckR/Server/Hubs/BattleHub.cs
+        description: "SignalR hub for challenge delivery and battle resolution"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 180
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, SignalR, ASP.NET Core Identity]
+    research_sources:
+      - research_findings_testing_patterns.yaml
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Challenge sent from Context A reaches Context B via SignalR toast"
+      - "Accept in Context B triggers battle resolution"
+      - "Both contexts see battle result"
+      - "Battle appears in history for both users"
+    acceptance_criteria:
+      - "Test: Should_CompleteFullPvpFlow_Challenge_Accept_Result()"
+      - "Setup: 2 authenticated BrowserContexts from PlaywrightFixture for 'testchallenger' and 'testopponent'"
+      - "Context A: BattlePage.NavigateToAsync(); SwitchToNewChallengeTabAsync()"
+      - "Context A: SelectChallengePlayerAsync('Test Player 1'); EnterOpponentUsernameAsync('testopponent'); SubmitChallengeAsync()"
+      - "Context A: assert BattlePage.GetSuccessMessageAsync() contains 'Challenge sent'"
+      - "Context B: NotificationToast.WaitForChallengeToastAsync() — waits up to 30s"
+      - "Context B: assert NotificationToast.GetChallengeToastTextAsync() contains 'testchallenger' and player name"
+      - "Context B: NotificationToast.ClickAcceptOnToastAsync()"
+      - "Context B: BattlePage.AcceptChallengeAsync('Test Player 2') — select player in modal, click Fight!"
+      - "Wait for result in both contexts: Task.WhenAll("
+      - "  ContextA.NotificationToast.WaitForResultToastAsync(),"
+      - "  ContextB.BattlePage.IsResultModalVisibleAsync()"
+      - ")"
+      - "Context A: string winnerA = NotificationToast.GetResultToastTextAsync()"
+      - "Context B: string winnerB = BattlePage.GetResultWinnerAsync()"
+      - "assert winnerA == winnerB (same winner in both contexts)"
+      - "Test: Should_RecordBattle_InHistory_ForBothUsers()"
+      - "Context A: BattleHistoryPage.NavigateToAsync(); assert GetBattleEntryCountAsync() >= 1"
+      - "Context B: BattleHistoryPage.NavigateToAsync(); assert GetBattleEntryCountAsync() >= 1"
+    failure_modes:
+      - scenario: "SignalR notification never arrives — toast not visible within 30s timeout"
+        likelihood: medium
+        impact: high
+        mitigation: "Increase timeout to 60s. Verify SignalR connection is established before challenge (pause after login). Check ConnectionStatus.IsConnectedAsync() in both contexts before starting flow. Add debug screenshot on failure."
+      - scenario: "Battle resolves before opponent accepts due to lazy-expiry — status already Expired"
+        likelihood: low
+        impact: medium
+        mitigation: "Challenges expire after 24h — not relevant for test. But if expiry fires early due to clock skew, set system clock explicitly or verify CreatedAt timestamp."
+
+  # ========================================================================
+  # WAVE 5: API Tests (uses WebApplicationFactory HttpClient, no browser)
+  # ========================================================================
+  - id: T5-01
+    title: "PlayersController API tests — catalog, detail, spatial nearby query"
+    description: >
+      Create API/PlayersControllerApiTests.cs using IClassFixture<CustomWebApplicationFactory>.
+      Tests use factory.CreateClient() (HttpClient) — NO browser. Authorized requests
+      use factory.CreateAuthenticatedClient("testchallenger").
+      Test endpoints:
+      (1) GET /players — returns player list; verify response JSON contains expected model properties.
+      (2) GET /players?position=Prop — verify all returned players have Position = Prop.
+      (3) GET /players?rarity=Epic — verify all returned players have Rarity = Epic.
+      (4) GET /players?name=Ruck — verify results contain matching name.
+      (5) GET /players/{id} — verify single player detail response.
+      (6) GET /players/{id} with nonexistent id — verify 404.
+      (7) GET /players/nearby?lat=51.5074&lng=-0.1278&radius=5000 — spatial query.
+          Verify response contains players within 5km of London center (seed data).
+          Verify Distance property is populated and sorted ascending.
+      (8) GET /players/nearby with invalid lat/lng — verify 400 Bad Request.
+      (9) GET /players/nearby with radius > 50000 — verify capped or rejected.
+      Assertions use FluentAssertions (Should().Be(), Should().Contain(), etc.).
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-04, T1-05]
+    context_files:
+      - path: RuckR/Server/Controllers/PlayersController.cs
+        description: "All endpoints: catalog, detail, nearby spatial"
+      - path: RuckR/Shared/Models/PlayerModel.cs
+        description: "Expected response model shape"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 140
+    focus_area: null
+    tech_stack: [xUnit, HttpClient, System.Text.Json, FluentAssertions]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "GET /players returns 200 with player list"
+      - "Position filter works correctly"
+      - "Spatial query returns sorted results with distance"
+      - "404 for nonexistent player"
+      - "400 for invalid coordinates"
+    acceptance_criteria:
+      - "Test class: IClassFixture<CustomWebApplicationFactory>"
+      - "GET /players returns 200, response body deserialized to List<PlayerModel>"
+      - "Filter test: GET /players?position=Prop → all players have Position = PlayerPosition.Prop"
+      - "Filter test: GET /players?rarity=Epic → all players have Rarity = PlayerRarity.Epic"
+      - "Name search: GET /players?name=Test → results contain 'Test' in Name (case-insensitive)"
+      - "Detail: GET /players/1 returns 200 with player having Id=1"
+      - "Detail 404: GET /players/99999 returns 404"
+      - "Nearby: GET /players/nearby?lat=51.5074&lng=-0.1278&radius=5000 returns 200 with Distance field > 0"
+      - "Nearby results sorted by distance ascending: distances[i] <= distances[i+1]"
+      - "Invalid lat: GET /players/nearby?lat=999&lng=0&radius=1000 returns 400"
+      - "Unauthorized: GET /players without auth cookie returns 401 (if controller has [Authorize])"
+      - "All assertions use FluentAssertions: response.StatusCode.Should().Be(HttpStatusCode.OK)"
+
+  - id: T5-02
+    title: "PitchesController API tests — create, nearby, rate limiting, duplicate detection"
+    description: >
+      Create API/PitchesControllerApiTests.cs. Test endpoints:
+      (1) POST /pitches (authenticated) — create valid pitch, verify 201 Created.
+      (2) POST /pitches with missing name — verify 400 Bad Request.
+      (3) POST /pitches with invalid lat/lng — verify 400.
+      (4) POST /pitches with duplicate name within 100m — verify 409 Conflict.
+      (5) POST /pitches rate limit: create 6 pitches within short time, verify 5th succeeds,
+          6th returns 429 Too Many Requests.
+      (6) GET /pitches/nearby?lat=&lng=&radius= — verify returns pitches sorted by distance.
+      (7) GET /pitches/{id} — verify returns single pitch.
+      (8) GET /pitches (public) — verify paginated list.
+      (9) POST /pitches unauthenticated — verify 401 Unauthorized.
+      NOTE: Rate limit test requires isolated factory or test reset since static
+      ConcurrentDictionary persists. Use a fresh CustomWebApplicationFactory per test class.
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-04, T1-05]
+    context_files:
+      - path: RuckR/Server/Controllers/PitchesController.cs
+        description: "All endpoints with [Authorize] on POST, rate limiting"
+      - path: RuckR/Shared/Models/PitchModel.cs
+        description: "Expected response shape with Location Point"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 150
+    focus_area: null
+    tech_stack: [xUnit, HttpClient, FluentAssertions]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "POST creates pitch with 201"
+      - "Duplicate name within 100m returns 409"
+      - "Rate limit 429 on 6th creation"
+      - "Nearby endpoint returns sorted pitches with distance"
+    acceptance_criteria:
+      - "Test class: IClassFixture<CustomWebApplicationFactory>"
+      - "POST /pitches with valid {name, lat, lng, type}: 201 Created"
+      - "Response Location header contains new pitch URL"
+      - "POST /pitches missing name: 400, error message contains 'Name'"
+      - "POST /pitches lat=999: 400 (out of range)"
+      - "POST /pitches duplicate: create pitch at (51.5, -0.1), then create another with same name within 100m → 409 Conflict"
+      - "Rate limit: for i in 1..5: POST succeeds; 6th POST → 429, Retry-After header present"
+      - "GET /pitches/nearby?lat=51.5&lng=-0.1&radius=5000: 200, sorted by distance, Distance field present"
+      - "GET /pitches/{id}: 200 with correct Name and Location"
+      - "GET /pitches/{nonexistent}: 404"
+      - "GET /pitches: 200, paginated response (if implemented)"
+      - "POST /pitches without auth: 401 Unauthorized"
+    failure_modes:
+      - scenario: "Rate limit test fails because 6th request not rate-limited (limit state not accumulated)"
+        likelihood: medium
+        impact: medium
+        mitigation: "Issue requests sequentially (not parallel). Verify each response before sending next. Use unique pitch names. If limit is per-user per-day, fast-fire within 1 second should work."
+
+  - id: T5-03
+    title: "CollectionController API tests — capture, GPS validation, duplicate prevention"
+    description: >
+      Create API/CollectionControllerApiTests.cs. Test endpoints:
+      (1) GET /collection (authenticated, empty) — verify 200 with empty array.
+      (2) POST /collection/capture (authenticated) — valid capture with GPS position
+          in TestLocationTracker, within 100m of pitch, player at pitch → 201 Created.
+      (3) POST /collection/capture with same playerId → 409 Conflict (unique constraint).
+      (4) POST /collection/capture with stale GPS (>60s) → 400 Bad Request.
+      (5) POST /collection/capture outside 100m proximity → 400 Bad Request.
+      (6) POST /collection/capture unauthenticated → 401.
+      (7) POST /collection/capture with nonexistent playerId → 404.
+      (8) POST /collection/capture rate limit (21st capture in 1 hour → 429).
+      Requires TestLocationTracker to be injected via CustomWebApplicationFactory
+      so the server-side position check passes with known test coordinates.
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-04, T1-05]
+    context_files:
+      - path: RuckR/Server/Controllers/CollectionController.cs
+        description: "Capture endpoint with GPS validation, proximity check, rate limit"
+      - path: RuckR/Server/Services/LocationTracker.cs
+        description: "ILocationTracker — must be test-injectable for GPS validation"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 130
+    focus_area: null
+    tech_stack: [xUnit, HttpClient, FluentAssertions]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "Valid capture returns 201"
+      - "Duplicate capture returns 409"
+      - "Stale GPS returns 400"
+      - "Proximity check rejects distant capture"
+    acceptance_criteria:
+      - "Test class: IClassFixture<CustomWebApplicationFactory>"
+      - "GET /collection (authenticated, new user): 200, [] (empty array)"
+      - "POST /collection/capture {playerId, pitchId}: 201 Created with CollectionModel"
+      - "Response includes Player navigation property (player details)"
+      - "POST /collection/capture same playerId again: 409 Conflict"
+      - "POST /collection/capture with TestLocationTracker position not set: 400, 'GPS position required'"
+      - "POST /collection/capture with TestLocationTracker position >100m from pitch: 400, proximity error"
+      - "POST /collection/capture with nonexistent player: 404"
+      - "POST /collection/capture with nonexistent pitch: 400 (or 404 depending on implementation)"
+      - "POST /collection/capture without auth: 401 Unauthorized"
+      - "Rate limit: capture 21 times → 21st returns 429"
+      - "CustomWebApplicationFactory replaces ILocationTracker with TestLocationTracker that accepts SetPosition(lat, lng, timestamp)"
+    failure_modes:
+      - scenario: "TestLocationTracker injection not working — capture fails with 'GPS position required'"
+        likelihood: medium
+        impact: high
+        mitigation: "Verify ILocationTracker is registered as Singleton. In CustomWebApplicationFactory.ConfigureTestServices, remove existing registration and add TestLocationTracker as Singleton. Confirm with factory.Services.GetRequiredService<ILocationTracker>() is TestLocationTracker."
+
+  - id: T5-04
+    title: "BattlesController API tests — challenge, accept, decline, lazy-expiry, concurrency"
+    description: >
+      Create API/BattlesControllerApiTests.cs. Test endpoints:
+      (1) POST /battles/challenge (authenticated) — valid challenge → 201 with battleId.
+      (2) POST /battles/challenge to self → 400 Bad Request.
+      (3) POST /battles/challenge with player not in collection → 400.
+      (4) POST /battles/challenge exceeding 3 pending → 400.
+      (5) POST /battles/challenge rate limit (11th in 1 hour → 429).
+      (6) GET /battles/pending (authenticated) — returns pending challenge.
+      (7) POST /battles/{id}/accept (opponent auth) — verify 200, status=Accepted.
+      (8) POST /battles/{id}/accept by non-opponent → 403 Forbid.
+      (9) POST /battles/{id}/decline → 200, status=Declined.
+      (10) GET /battles/history — returns completed battles.
+      (11) Lazy expiry: create challenge, wait until CreatedAt > 24h ago (mock via DB update),
+           GET /battles/pending → challenge auto-expired, not in results.
+      (12) Concurrency: two simultaneous accept attempts → second gets 409 Conflict.
+      Uses two authenticated HttpClient instances (challenger + opponent).
+    wave: 5
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1-04, T1-05]
+    context_files:
+      - path: RuckR/Server/Controllers/BattlesController.cs
+        description: "All endpoints, validation chain, lazy-expiry, concurrency handling"
+      - path: RuckR/Shared/Models/DTOs.cs
+        description: "ChallengeRequest, AcceptChallengeRequest DTOs"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 200
+    focus_area: null
+    tech_stack: [xUnit, HttpClient, FluentAssertions, EF Core]
+    research_sources:
+      - research_findings_test-architecture.yaml
+      - research_findings_signalr-pvp-battles.yaml
+    verification:
+      - "Challenge creates pending battle"
+      - "Cannot challenge self"
+      - "Accept transitions to Accepted"
+      - "Lazy expiry works for >24h challenges"
+      - "Concurrency prevents double-accept"
+    acceptance_criteria:
+      - "Test class: IClassFixture<CustomWebApplicationFactory>"
+      - "Uses two authenticated clients: challengerClient and opponentClient"
+      - "POST /battles/challenge with valid request: 201, response body includes battleId"
+      - "POST /battles/challenge with opponentUsername = self: 400, error message 'cannot challenge yourself'"
+      - "POST /battles/challenge with playerId not owned: 400"
+      - "POST /battles/challenge after 3 pending: 400, 'max 3 pending challenges'"
+      - "GET /battles/pending (challenger): returns challenge with Status=Pending"
+      - "GET /battles/pending (opponent): returns same challenge"
+      - "POST /battles/{id}/accept (opponent): 200, Status=Accepted"
+      - "POST /battles/{id}/accept (wrong user): 403 Forbid"
+      - "POST /battles/{id}/decline: 200, Status=Declined"
+      - "GET /battles/history: returns completed/declined battles, newest first"
+      - "Lazy expiry: use factory.Services.GetRequiredService<RuckRDbContext>() to set CreatedAt = UtcNow.AddDays(-2); then GET /battles/pending → challenge not returned (Expired)"
+      - "Concurrency: POST accept twice simultaneously → one 200, one 409 Conflict"
+    failure_modes:
+      - scenario: "Concurrency test flakes — both accepts succeed or both 409 (timing dependent)"
+        likelihood: medium
+        impact: medium
+        mitigation: "Use Task.WhenAll to fire accepts simultaneously. Accept either outcome: one 200 OR both 200 if timing allows double-accept bypass — adjust test expectation based on observed behavior. Document if known race condition exists."
+
+  # ========================================================================
+  # WAVE 6: Polish + Documentation (depends on all prior waves)
+  # ========================================================================
+  - id: T6-01
+    title: "Add data-testid attributes to key Blazor components for reliable locators"
+    description: >
+      Add data-testid attributes to key interactive elements across Blazor pages to
+      improve test locator reliability. This is a non-breaking, purely additive change
+      to production code — attributes are ignored by browsers and only used by tests.
+      Elements to annotate (per page):
+      - Map.razor: #ruckr-map → data-testid="map-container";
+        onboarding dismiss button → data-testid="onboarding-dismiss";
+        pitch overlay → data-testid="pitch-overlay"; capture button → data-testid="capture-players-btn"
+      - Catalog.razor: position select → data-testid="filter-position";
+        rarity select → data-testid="filter-rarity"; name input → data-testid="filter-name";
+        player cards container → data-testid="player-cards-grid"
+      - Collection.razor: favorite buttons → data-testid="favorite-btn-{playerId}";
+        Explore Map CTA → data-testid="explore-map-cta"
+      - PlayerGrid.razor: radius select → data-testid="radius-select";
+        challenge buttons → data-testid="challenge-btn-{playerId}"
+      - Battle.razor: tab buttons → data-testid="tab-new-challenge" / "tab-active-challenges";
+        player select → data-testid="select-challenge-player";
+        opponent input → data-testid="opponent-username";
+        submit button → data-testid="submit-challenge";
+        accept modal → data-testid="accept-modal"
+      - NavMenu.razor: each NavLink → data-testid="nav-{pagename}"
+      - NotificationToast.razor: toast container → data-testid="toast-container"
+      - ConnectionStatus.razor: status dot → data-testid="connection-dot"
+      Then update ALL Page Object classes to use data-testid locators where available
+      (Page.Locator("[data-testid='map-container']")) in addition to semantic locators.
+      Semantic locators remain as fallback. This task updates ~12 files (7 pages + 5 shared components).
+    wave: 6
+    agent: gem-implementer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T2-03, T2-04, T2-05, T2-06, T2-07, T2-08, T2-09]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Add data-testid to map container, overlay, buttons"
+      - path: RuckR/Client/Pages/Catalog.razor
+        description: "Add data-testid to filter controls"
+      - path: RuckR/Client/Pages/Collection.razor
+        description: "Add data-testid to cards, CTA"
+      - path: RuckR/Client/Pages/PlayerGrid.razor
+        description: "Add data-testid to radius, challenge buttons"
+      - path: RuckR/Client/Pages/Battle.razor
+        description: "Add data-testid to tabs, form, modal"
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "Add data-testid to NavLinks"
+      - path: RuckR/Client/Shared/NotificationToast.razor
+        description: "Add data-testid to toast container"
+      - path: RuckR/Client/Shared/ConnectionStatus.razor
+        description: "Add data-testid to connection dot"
+    estimated_effort: medium
+    estimated_files: 8
+    estimated_lines: 120
+    focus_area: null
+    tech_stack: [Blazor WASM, HTML, Microsoft.Playwright]
+    research_sources:
+      - research_findings_test-architecture.yaml
+    verification:
+      - "dotnet build RuckR.Client succeeds (no breaking changes)"
+      - "All pages render correctly with data-testid attributes (inspect browser DOM)"
+      - "Page Objects updated to use data-testid locators"
+      - "Existing E2E tests still pass (or updated to use new locators)"
+    acceptance_criteria:
+      - "Map.razor: 5 data-testid attributes added to key elements"
+      - "Catalog.razor: 4 data-testid attributes added"
+      - "Collection.razor: 2 data-testid attributes added"
+      - "PlayerGrid.razor: 2 data-testid attributes added"
+      - "Battle.razor: 6 data-testid attributes added"
+      - "NavMenu.razor: 7 data-testid attributes added (one per link)"
+      - "NotificationToast.razor: 1 data-testid added"
+      - "ConnectionStatus.razor: 1 data-testid added"
+      - "All Page Object classes updated: add data-testid locator variants"
+      - "Page Object methods prefer data-testid but fall back to semantic if not present"
+      - "dotnet build RuckR.Client and dotnet build RuckR.Tests succeed"
+    failure_modes:
+      - scenario: "data-testid changes cause Blazor render errors (unlikely — purely additive HTML attribute)"
+        likelihood: low
+        impact: low
+        mitigation: "Test on all pages manually before committing. Run existing E2E tests to catch regressions."
+
+  - id: T6-02
+    title: "Mobile viewport tests — Pixel 5 and iPhone 12 for map and grid pages"
+    description: >
+      Create E2E/MobileViewportTests.cs. Tests run the same core smoke test flows
+      but with mobile device viewports via PlaywrightFixture.CreateMobileContextAsync().
+      Test scenarios:
+      (1) Map page on Pixel 5 viewport (393×851):
+          - Navigate, verify map renders within mobile viewport.
+          - Verify onboarding banner fits viewport (no horizontal scroll).
+          - Verify pitch overlay renders as bottom sheet (mobile pattern).
+          - Verify nav menu is collapsed (hamburger), can be toggled.
+      (2) Map page on iPhone 12 viewport (390×844):
+          - Same assertions as Pixel 5.
+      (3) PlayerGrid page on Pixel 5:
+          - Verify cards render in single column (mobile layout).
+          - Verify radius selector is touch-friendly.
+          - Verify Challenge button is tap-target sized (≥ 44×44 CSS px).
+      Not every page needs mobile tests — focus on the two most mobile-critical:
+      Map (GPS-based exploration) and PlayerGrid (nearby player browsing).
+    wave: 6
+    agent: gem-browser-tester
+    prototype: false
+    priority: low
+    status: pending
+    dependencies: [T1-06, T2-03, T2-06]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Mobile critical — map + overlay, responsive nav"
+      - path: RuckR/Client/Pages/PlayerGrid.razor
+        description: "Mobile critical — player cards grid"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 80
+    focus_area: null
+    tech_stack: [Microsoft.Playwright, Mobile Device Emulation]
+    research_sources:
+      - research_findings_playwright-dotnet-blazor-wasm.yaml
+    verification:
+      - "Map page renders correctly on Pixel 5 viewport"
+      - "PlayerGrid cards stack single column on mobile"
+      - "Nav menu hamburger toggle works on mobile"
+    acceptance_criteria:
+      - "Test: Should_RenderMap_On_Pixel5()"
+      - "CreateMobileContextAsync('Pixel 5'); MapPage.NavigateToAsync()"
+      - "assert Page.ViewportSize.Width == 393, Height == 851"
+      - "MapPage.WaitForMapLoadedAsync(); assert #ruckr-map visible"
+      - "assert MapPage.IsOnboardingBannerVisibleAsync(); dismiss it"
+      - "assert NavMenu is collapsed: Page.Locator('.navbar-toggler').IsVisibleAsync()"
+      - "Test: Should_RenderMap_On_IPhone12()"
+      - "Same assertions with iPhone 12 context (390×844)"
+      - "Test: Should_RenderPlayerGrid_On_Pixel5_Mobile()"
+      - "PlayerGridPage.NavigateToAsync() (authenticated + GPS mock)"
+      - "Verify cards render: check card elements exist"
+      - "Verify no horizontal overflow: Page.EvaluateAsync<bool>('document.documentElement.scrollWidth <= window.innerWidth')"
+      - "Verify Challenge button tap target: check computed size >= 44px via EvaluateAsync"
+      - "Test: Should_ToggleNavMenu_On_Mobile()"
+      - "Mobile context, any page; NavMenu collapsed; click .navbar-toggler; NavMenu expands"
+      - "Click again; NavMenu collapses"
+
+  - id: T6-03
+    title: "Create TESTING.md — how to run, dependencies, Docker setup, troubleshooting"
+    description: >
+      Create docs/TESTING.md with comprehensive developer documentation for the test suite.
+      Sections:
+      (1) Prerequisites: Docker Desktop, .NET 10 SDK, Playwright browsers, SQL Server LocalDB (optional fallback).
+      (2) One-time setup: dotnet build → playwright.ps1 install chromium; docker pull mcr.microsoft.com/mssql/server:2022-latest.
+      (3) Running tests: dotnet test (all), dotnet test --filter "Category=Smoke" (smoke only), dotnet test --filter "FullyQualifiedName~E2E" (E2E only).
+      (4) Running specific tests: filter by test class or method name.
+      (5) Debugging: set PLAYWRIGHT_HEADED=1 to see browser; set PLAYWRIGHT_SLOWMO=500 for slow-motion.
+      (6) Test architecture overview: project structure, fixtures (Database, Playwright, WebApplicationFactory), Page Object Model, test categories.
+      (7) Adding new tests: conventions, Page Object first pattern, locator strategy.
+      (8) Troubleshooting: common errors (Docker not running, browser not installed, timeout, rate limit),
+          with solutions for each.
+      (9) Known limitations: no CI/CD, rate limit state not reset between test classes, GPS mock
+          reliability depends on InitScript timing.
+      (10) Test data: seed data structure (users, players, pitches), how to regenerate.
+    wave: 6
+    agent: gem-documentation-writer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T6-01, T3-01, T4-04, T5-01]
+    context_files:
+      - path: AGENTS.md
+        description: "Architecture and conventions to document"
+      - path: RuckR.Tests/Fixtures/
+        description: "Fixture documentation needs"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 250
+    focus_area: null
+    tech_stack: [Markdown]
+    task_type: documentation
+    audience: developers
+    coverage_matrix:
+      - "Prerequisites and setup"
+      - "Running tests (smoke, E2E, API, mobile)"
+      - "Debugging and troubleshooting"
+      - "Test architecture overview"
+      - "Adding new tests guide"
+      - "Known limitations"
+    verification:
+      - "TESTING.md exists at repo root docs/ or docs/plan/{plan_id}/"
+      - "All sections populated with accurate commands and paths"
+      - "Troubleshooting covers top 5 common issues"
+    acceptance_criteria:
+      - "TESTING.md created at docs/plan/20260506-playwright-test-suite/TESTING.md"
+      - "Section 1: Prerequisites — Docker Desktop, .NET 10 SDK, Playwright Chromium"
+      - "Section 2: One-time setup — commands for playwright install, docker pull, dotnet build"
+      - "Section 3: Running tests — dotnet test, filter examples, environment variables"
+      - "Section 4: Debugging — PLAYWRIGHT_HEADED, PLAYWRIGHT_SLOWMO, trace viewer"
+      - "Section 5: Architecture — diagram (text/ASCII) of test layers (Fixtures → Page Objects → Tests)"
+      - "Section 6: Adding tests — conventions, Page Object first, locator strategy, xUnit patterns"
+      - "Section 7: Troubleshooting — Docker not running, browser not installed, SignalR timeout, rate limit, GPS override failure"
+      - "Section 8: Known limitations — no CI/CD, static rate limit state, GPS mock timing, WebApplicationFactory asset serving"
+      - "Section 9: Test data — seed users/players/pitches, coordinates, how to add new test fixtures"
+      - "All commands verified (paths match actual project structure)"

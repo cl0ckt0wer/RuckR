@@ -1,0 +1,308 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Diagnose UI bug where navigation menu items visually overlap the map component"
+focus_area: "nav-menu-map-overlap"
+created_at: "2026-05-06T00:00:00Z"
+created_by: "RESEARCHER"
+status: completed
+tldr: |
+  - PRIMARY BUG: `.sidebar` (250px fixed width, position:sticky) lacks `overflow: hidden`, allowing nav item text (esp. "Hello, {username}!") to overflow visually into the map area on desktop
+  - SECONDARY BUG: The map's `height: calc(100vh - 56px)` on mobile assumes only `main > .top-row` consumes space, but mobile layout stacks sidebar above main; when nav is expanded, map height pushes beyond viewport
+  - TERTIARY: `.sidebar` has `position: sticky` but no `z-index`, creating ambiguous stacking against `main > .top-row` (z-index: 1) and `#ruckr-map` (z-index: 1)
+  - 6 files directly involved; fix requires CSS changes to MainLayout.razor.css (overflow + z-index), NavMenu.razor.css (text overflow), and Map.razor (height calc)
+research_metadata:
+  methodology: "semantic_search + grep_search + read_file — full structural analysis of all .razor, .razor.css, and .css files"
+  scope: "medium — 15 razor/css files analyzed, DOM tree traced through 3 layout layers"
+  confidence: high
+  coverage: 95
+  decision_blockers: 1
+  research_blockers: 0
+files_analyzed:
+  - file: "MainLayout.razor"
+    path: "RuckR/Client/Shared/MainLayout.razor"
+    purpose: "Root layout component — defines flex sidebar + main structure"
+    key_elements:
+      - element: ".page"
+        type: "div"
+        location: "MainLayout.razor:3"
+        description: "Flex container; column on mobile, row on desktop (≥641px)"
+        language: "razor/html"
+      - element: ".sidebar"
+        type: "div"
+        location: "MainLayout.razor:4"
+        description: "Left sidebar containing NavMenu + ConnectionStatus; fixed 250px wide on desktop, natural width on mobile"
+        language: "razor/html"
+      - element: "main"
+        type: "element"
+        location: "MainLayout.razor:9"
+        description: "Main content area (flex:1); contains .top-row (About link) + article.content + @Body"
+        language: "razor/html"
+      - element: "article.content"
+        type: "element"
+        location: "MainLayout.razor:14"
+        description: "Content wrapper with Bootstrap px-4 padding and padding-top: 1.1rem from app.css"
+        language: "razor/html"
+    lines: 20
+  - file: "MainLayout.razor.css"
+    path: "RuckR/Client/Shared/MainLayout.razor.css"
+    purpose: "Scoped CSS for MainLayout — defines sidebar dimensions, sticky positioning, responsive breakpoints"
+    key_elements:
+      - element: ".sidebar"
+        type: "css-rule"
+        location: "MainLayout.razor.css:11"
+        description: "Gradient background only; NO overflow, NO z-index set. Desktop media query adds width:250px, height:100vh, position:sticky"
+        language: "css"
+      - element: "@media (min-width: 641px) .sidebar"
+        type: "css-rule"
+        location: "MainLayout.razor.css:58-63"
+        description: "Desktop: width: 250px; height: 100vh; position: sticky; top: 0 — BUT NO overflow:hidden, NO z-index"
+        language: "css"
+      - element: "@media (min-width: 641px) .top-row"
+        type: "css-rule"
+        location: "MainLayout.razor.css:65-69"
+        description: "Desktop: position: sticky; top: 0; z-index: 1 — creates stacking context above sidebar"
+        language: "css"
+      - element: ".page"
+        type: "css-rule"
+        location: "MainLayout.razor.css:1-5"
+        description: "position: relative; display: flex; flex-direction: column (row on desktop)"
+        language: "css"
+    lines: 81
+  - file: "NavMenu.razor"
+    path: "RuckR/Client/Shared/NavMenu.razor"
+    purpose: "Navigation menu — top bar + scrollable nav items with auth-aware links"
+    key_elements:
+      - element: ".top-row.navbar-dark"
+        type: "div"
+        location: "NavMenu.razor:1"
+        description: "Brand + hamburger toggler; height 3.5rem; dark background"
+        language: "razor/html"
+      - element: ".nav-scrollable"
+        type: "div"
+        location: "NavMenu.razor:10"
+        description: "Container for nav items; gets 'collapse' class toggled; desktop: always visible, height: calc(100vh - 3.5rem), overflow-y: auto"
+        language: "razor/html"
+      - element: "nav.flex-column items"
+        type: "element-list"
+        location: "NavMenu.razor:12-67"
+        description: "7 nav links (Map, Catalog, Collection, Nearby Players, Battles, History, Create Pitch) + auth section (Hello username, Login/Logout)"
+        language: "razor/html"
+      - element: 'Hello, @context.User.Identity?.Name!'
+        type: "dynamic-text"
+        location: "NavMenu.razor:51"
+        description: "Greeting with dynamic username — unbounded text length, no truncation; primary overflow hazard"
+        language: "razor"
+    lines: 79
+  - file: "NavMenu.razor.css"
+    path: "RuckR/Client/Shared/NavMenu.razor.css"
+    purpose: "Scoped CSS for NavMenu — icon sizing, nav item layout, responsive collapse behavior"
+    key_elements:
+      - element: ".nav-scrollable"
+        type: "css-rule"
+        location: "NavMenu.razor.css:63-67"
+        description: "Desktop: height: calc(100vh - 3.5rem); overflow-y: auto — BUT NO overflow-x: hidden"
+        language: "css"
+      - element: ".nav-item ::deep a"
+        type: "css-rule"
+        location: "NavMenu.razor.css:34-41"
+        description: "height: 3rem; display: flex; align-items: center — NO text-overflow, NO overflow:hidden on link text"
+        language: "css"
+      - element: ".nav-item"
+        type: "css-rule"
+        location: "NavMenu.razor.css:21-23"
+        description: "font-size: 0.9rem; padding-bottom: 0.5rem — padding on the item but no overflow guard"
+        language: "css"
+      - element: ".navbar-toggler"
+        type: "css-rule"
+        location: "NavMenu.razor.css:1-3,54-56"
+        description: "Toggler button hidden on desktop (≥641px), visible on mobile"
+        language: "css"
+    lines: 68
+  - file: "Map.razor"
+    path: "RuckR/Client/Pages/Map.razor"
+    purpose: "Map page — Leaflet.js map with GPS, pitch markers, overlays"
+    key_elements:
+      - element: "#ruckr-map"
+        type: "css-rule (inline style)"
+        location: "Map.razor:19"
+        description: "height: calc(100vh - 56px); width: 100%; z-index: 1 — z-index ineffective (div not positioned); 56px accounts only for main > .top-row, NOT sidebar overhead on mobile"
+        language: "css"
+      - element: ".map-overlay"
+        type: "css-rule (inline style)"
+        location: "Map.razor:23"
+        description: "position: fixed; bottom: 0; left: 0; right: 0; z-index: 1000 — pitch selection panel"
+        language: "css"
+      - element: "Onboarding/GPS banners"
+        type: "div"
+        location: "Map.razor:29,63"
+        description: "position-fixed top banners with z-index: 2000 and 1500"
+        language: "razor/html"
+    lines: 358
+  - file: "app.css"
+    path: "RuckR/Client/wwwroot/css/app.css"
+    purpose: "Global application styles"
+    key_elements:
+      - element: ".content"
+        type: "css-rule"
+        location: "app.css:25-27"
+        description: "padding-top: 1.1rem — adds to the effective height of main content area"
+        language: "css"
+      - element: "#blazor-error-ui"
+        type: "css-rule"
+        location: "app.css:41-58"
+        description: "position: fixed; bottom: 0; z-index: 1000; may interact with map overlay at same z-index"
+        language: "css"
+    lines: 101
+patterns_found:
+  - category: "structure"
+    pattern: "Blazor WASM hosted layout: sidebar + main flex container"
+    description: "Standard Blazor WASM template layout — .page flex container with .sidebar (left, sticky) and main (flex:1, right) on desktop. Column on mobile."
+    examples:
+      - file: "MainLayout.razor"
+        location: "3-17"
+        snippet: "<div class=\"page\"><div class=\"sidebar\"><NavMenu />...</div><main>...<article class=\"content px-4\">@Body</article></main></div>"
+    prevalence: common
+  - category: "structure"
+    pattern: "Inline scoped <style> blocks in .razor pages for component-specific CSS"
+    description: "Both Map.razor and ConnectionStatus.razor use inline <style> blocks with scoped CSS for z-indexed overlays and animations."
+    examples:
+      - file: "Map.razor"
+        location: "18-24"
+        snippet: "<style>#ruckr-map { height: calc(100vh - 56px); z-index: 1; } .map-overlay { position: fixed; z-index: 1000; }</style>"
+      - file: "ConnectionStatus.razor"
+        location: "17-48"
+        snippet: "<style>.connection-status { display: flex; ... } .status-dot { ... }</style>"
+    prevalence: occasional
+  - category: "architecture"
+    pattern: "CSS isolation via .razor.css files (MainLayout.razor.css, NavMenu.razor.css)"
+    description: "Scoped CSS files bundled into RuckR.Client.styles.css referenced in index.html. NavMenu.razor.css and MainLayout.razor.css define all critical layout rules."
+    examples:
+      - file: "MainLayout.razor.css"
+        location: "53-81"
+        snippet: "@media (min-width: 641px) { .sidebar { width: 250px; height: 100vh; position: sticky; top: 0; } }"
+      - file: "NavMenu.razor.css"
+        location: "53-68"
+        snippet: "@media (min-width: 641px) { .nav-scrollable { height: calc(100vh - 3.5rem); overflow-y: auto; } }"
+    prevalence: common
+  - category: "error_handling"
+    pattern: "Map.razor uses loading/error/empty state pattern with height: calc(100vh - 56px) on all state containers"
+    description: "Consistent viewport-based height across loading spinner, error alert, and map container. All use identical calc."
+    examples:
+      - file: "Map.razor"
+        location: "19,41,51"
+        snippet: 'height: calc(100vh - 56px)'
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: "MainLayout"
+      responsibility: "Root layout — pages are rendered inside @Body within article.content inside main"
+      location: "RuckR/Client/Shared/MainLayout.razor"
+      relationship_to_domain: "Defines the flex container that positions sidebar (left) and map content area (right). The overlap bug originates here."
+    - component: "NavMenu"
+      responsibility: "Navigation sidebar — brand, nav links, auth-aware greeting/logout"
+      location: "RuckR/Client/Shared/NavMenu.razor"
+      relationship_to_domain: "Rendered inside .sidebar. Its nav items overflow the sidebar in the bug scenario."
+    - component: "Map"
+      responsibility: "Full-viewport Leaflet map with GPS tracking, pitch discovery, and overlays"
+      location: "RuckR/Client/Pages/Map.razor"
+      relationship_to_domain: "The page where nav overflow is most visible (light map background behind dark nav text overflow)"
+    - component: "ConnectionStatus"
+      responsibility: "SignalR connection state indicator inside sidebar"
+      location: "RuckR/Client/Shared/ConnectionStatus.razor"
+      relationship_to_domain: "Also resides in sidebar; 'Reconnecting...' + Reconnect button could overflow sidebar width"
+    - component: "NotificationToast"
+      responsibility: "Fixed-position toast notifications for challenges/battle results"
+      location: "RuckR/Client/Shared/NotificationToast.razor"
+      relationship_to_domain: "position:fixed; z-index: 9999 — highest z-index in app; not causing the overlap but relevant to stacking context audit"
+  interfaces_used_by_domain: ~
+  data_flow_involving_domain: |
+    App.razor → Router → MainLayout → @Body (Map.razor)
+    MainLayout simultaneously renders NavMenu (inside .sidebar) and page content (inside main)
+    No data flow between NavMenu and Map — purely structural CSS overlap
+  key_relationships_to_domain:
+    - from: "MainLayout.razor"
+      to: "NavMenu.razor"
+      relationship: "composes (renders inside .sidebar)"
+    - from: "MainLayout.razor"
+      to: "Map.razor"
+      relationship: "hosts (via @Body route resolution)"
+    - from: "MainLayout.razor.css"
+      to: "NavMenu.razor.css"
+      relationship: "layout dependency — sidebar width (250px) constrains nav, but nav has no overflow guard"
+    - from: "app.css"
+      to: "MainLayout.razor.css"
+      relationship: "global styles — .content padding-top adds to main content area height"
+related_technology_stack:
+  languages_used_in_domain: ["C# (razor code-behind)", "HTML (razor markup)", "CSS (scoped + global)", "JavaScript (Leaflet interop)"]
+  frameworks_used_in_domain:
+    - name: "Blazor WASM"
+      usage_in_domain: "Component model, CSS isolation (*.razor.css), Router/RouteView"
+    - name: "Bootstrap 5"
+      usage_in_domain: "Grid (flex-column), utilities (px-3, px-4), components (navbar, collapse, alert, toast, badge)"
+    - name: "Leaflet.js 1.9.4"
+      usage_in_domain: "Map tile rendering loaded via CDN in index.html; map container is #ruckr-map div"
+  libraries_used_in_domain:
+    - name: "Fluxor.Blazor.Web"
+      purpose_in_domain: "State management; StoreInitializer in App.razor"
+  external_apis_used_in_domain:
+    - name: "OpenStreetMap tiles"
+      integration_point: "leaflet-map.module.js:11 — 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'"
+    - name: "unpkg.com (Leaflet CDN)"
+      integration_point: "index.html:16,34 — CSS and JS loaded from https://unpkg.com/leaflet@1.9.4/"
+related_conventions:
+  naming_patterns_in_domain: "kebab-case IDs (ruckr-map), BEM-light classes (nav-scrollable, map-overlay), Bootstrap utility classes"
+  structure_of_domain: "Standard Blazor layout: App.razor → Router → MainLayout → NavMenu (sidebar) + page @Body (main area)"
+  error_handling_in_domain: "Map.razor has explicit loading/error/empty states with retry; nav items have no error handling"
+  testing_in_domain: "No test projects exist; data-testid attributes present on nav items (e.g., data-testid='nav-map')"
+  documentation_in_domain: "PRD at docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml; ADRs in AGENTS.md"
+related_dependencies:
+  internal:
+    - component: "MainLayout.razor"
+      relationship_to_domain: "Structural parent — sidebar width constrains nav items"
+      direction: "outbound (constrains)"
+    - component: "NavMenu.razor"
+      relationship_to_domain: "Rendered inside sidebar — its text content overflows sidebar on desktop"
+      direction: "outbound (causes overflow)"
+    - component: "Map.razor"
+      relationship_to_domain: "Page where overlap is most visually apparent"
+      direction: "inbound (affected by overflow)"
+  external:
+    - name: "Bootstrap 5 CSS"
+      purpose_for_domain: "Provides .collapse, .navbar, .flex-column, .px-3, .px-4, and responsive breakpoint utilities used throughout layout"
+    - name: "Leaflet CSS (unpkg CDN)"
+      purpose_for_domain: "Required for map tile rendering; loaded in index.html <head> before app CSS"
+domain_security_considerations: ~
+testing_patterns:
+  framework: "None (no test projects in solution)"
+  coverage_areas: []
+  test_organization: "data-testid attributes present on NavMenu links (nav-map, nav-catalog, etc.)"
+  mock_patterns: []
+open_questions:
+  - question: "Should the fix add overflow:hidden to .sidebar (truncates overflow) or make .sidebar wider / nav items wrap/truncate?"
+    context: ".sidebar is 250px wide. Nav items with icon + padding leave ~186px for text. Long usernames overflow. Options: (1) overflow:hidden on sidebar (clips), (2) overflow-x:hidden + text-overflow:ellipsis on nav items, (3) increase sidebar width, (4) wrap long text."
+    type: "decision_blocker"
+    affects: ["MainLayout.razor.css", "NavMenu.razor.css"]
+  - question: "Should the map height on mobile be recalculated to account for expanded nav menu, or should the nav overlay the map on mobile?"
+    context: "The map uses height: calc(100vh - 56px) which assumes only main > .top-row exists. On mobile, the sidebar sits above main. When nav is expanded, map height pushes far below viewport. Options: (1) use flex:1 + min-height instead of calc, (2) make nav an overlay on mobile, (3) recalculate calc to subtract sidebar + nav height."
+    type: "decision_blocker"
+    affects: ["Map.razor", "MainLayout.razor.css"]
+  - question: "Is the z-index: 1 on #ruckr-map and main > .top-row intentional or vestigial?"
+    context: "#ruckr-map has z-index: 1 but no position property — z-index has no effect. The main > .top-row has position: sticky + z-index: 1. Should .sidebar get an explicit z-index for unambiguous stacking?"
+    type: "research"
+    affects: ["Map.razor", "MainLayout.razor.css"]
+gaps:
+  - area: "Sidebar overflow containment"
+    description: ".sidebar (MainLayout.razor.css) has width: 250px and position: sticky on desktop but no overflow: hidden. Nav items and ConnectionStatus text can overflow the 250px boundary into the main/map area. No text-overflow:ellipsis, word-break, or overflow-x:hidden on nav items."
+    impact: "decision_blocker"
+    affects: ["MainLayout.razor.css:58-63", "NavMenu.razor.css:63-67", "NavMenu.razor.css:34-41"]
+  - area: "Mobile map height calculation"
+    description: "Map.razor uses height: calc(100vh - 56px). The 56px subtraction accounts only for main > .top-row (3.5rem). On mobile (<641px), main > .top-row is display:none AND the sidebar navbar + expanded nav items add substantial height above the map. The map extends beyond viewport, requiring scroll."
+    impact: "decision_blocker"
+    affects: ["Map.razor:19,41,51"]
+  - area: "Sidebar z-index"
+    description: ".sidebar has position: sticky on desktop but no z-index. The sibling main > .top-row has z-index: 1. The #ruckr-map has unused z-index: 1 (no position). The .map-overlay has z-index: 1000. Stacking context is ambiguous and could cause unexpected overlap in edge cases."
+    impact: "nice_to_know"
+    affects: ["MainLayout.razor.css:58-63"]
+  - area: "No responsive nav pattern for mobile"
+    description: "On mobile, the nav menu uses Bootstrap collapse toggle but when expanded, it pushes all content down (conventional behavior). However, combined with the map's fixed calc height, this creates a broken scroll experience. No overlay/off-canvas pattern for mobile nav."
+    impact: "nice_to_know"
+    affects: ["NavMenu.razor", "NavMenu.razor.css"]

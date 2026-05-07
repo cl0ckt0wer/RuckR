@@ -1,0 +1,74 @@
+using Microsoft.Playwright;
+using RuckR.Tests.Fixtures;
+using RuckR.Tests.Pages;
+
+namespace RuckR.Tests.E2E;
+
+public class CollectionTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>
+{
+    private readonly CustomWebApplicationFactory _factory;
+    private readonly PlaywrightFixture _playwright;
+    private readonly string _baseUrl;
+
+    public CollectionTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
+    {
+        _factory = factory;
+        _playwright = playwright;
+        _baseUrl = factory.ServerBaseUrl.TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Navigating to /collection without authentication should redirect
+    /// to the ASP.NET Core Identity login page.
+    /// </summary>
+    [Fact]
+    public async Task Unauthenticated_RedirectsToLogin()
+    {
+        // Arrange
+        await using var context = await _playwright.NewContextAsync();
+        var page = await context.NewPageAsync();
+
+        // Act
+        await page.GotoAsync($"{_baseUrl}/collection");
+
+        // Wait for Blazor to initialize and perform the redirect
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        // Assert: Collection page's OnInitializedAsync redirects to login
+        Assert.Contains("/Identity/Account/Login", page.Url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// After registering (and auto-login), a new user visiting /collection
+    /// should see the empty state with the "Explore Map" CTA.
+    /// </summary>
+    [Fact]
+    public async Task Authenticated_ShowsEmptyState()
+    {
+        // Arrange
+        await using var context = await _playwright.NewContextAsync();
+        var page = await context.NewPageAsync();
+
+        var email = $"test_empty_{Guid.NewGuid():N}@test.com";
+        const string password = "TestPass123!";
+
+        // Register a new user (Identity auto-logs in after successful registration)
+        var registerPage = new RegisterPage(page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync(email, password);
+
+        // Act: navigate to Collection page as authenticated user
+        var collectionPage = new CollectionPage(page, _baseUrl);
+        await collectionPage.GoToAsync();
+        await collectionPage.WaitForCollectionLoadedAsync();
+
+        // Assert: empty state is shown for user with no captures
+        var isEmpty = await collectionPage.IsEmptyStateVisibleAsync();
+        Assert.True(isEmpty, "Newly registered user should see the empty collection state.");
+
+        // Verify the CTA button is present in the empty state
+        var exploreBtn = page.GetByText("Explore Map");
+        var isExploreVisible = await exploreBtn.IsVisibleAsync();
+        Assert.True(isExploreVisible, "Explore Map CTA button should be visible in empty state.");
+    }
+}

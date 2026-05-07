@@ -36,6 +36,25 @@ dotnet run --project RuckR\Server\RuckR.Server.csproj --launch-profile https
 - `https` profile serves on `https://localhost:7161` and `http://localhost:5282`.
 - The Client project is **never run standalone** — the Server project serves the compiled WASM assets.
 
+**Server is a long-lived process.** `dotnet run` starts the ASP.NET Core server which runs until explicitly stopped. Do NOT run it synchronously in a bash call or the session will hang forever. Always run it in the background:
+
+```powershell
+Start-Job -Name RuckRServer { dotnet run --project RuckR\Server\RuckR.Server.csproj --launch-profile https }
+```
+
+To check if it's running:
+
+```powershell
+Receive-Job -Name RuckRServer
+```
+
+To stop it:
+
+```powershell
+Stop-Job -Name RuckRServer
+Remove-Job -Name RuckRServer
+```
+
 ## Architecture
 
 | Project          | Role                                                  |
@@ -56,6 +75,24 @@ dotnet run --project RuckR\Server\RuckR.Server.csproj --launch-profile https
 - The `SupportedPlatform include="browser"` on `RuckR.Shared` marks that assembly for WASM compatibility.
 - Service worker (`service-worker.js` / `service-worker.published.js`) is registered for PWA support on the client.
 - No test projects, linting config, CI/CD, or editorconfig exist yet.
+
+## agentmemory
+
+Persistent memory across sessions — captures decisions, bugs, patterns, and architecture knowledge. Docker stack + Ollama embeddings + OpenRouter LLM. 51 MCP tools available.
+
+> **Full documentation:** Load the skill via `/agentmemory-setup` or read `~/.config/opencode/skills/agentmemory-setup/SKILL.md`.
+
+**Quick health check:**
+```powershell
+docker ps --filter "name=agentmemory"   # both containers should be Up
+curl http://localhost:3111/agentmemory/health  # should return "healthy"
+```
+
+**Start if not running:**
+```powershell
+docker compose -f $env:USERPROFILE\.agentmemory-docker\docker-compose.yml up -d
+Start-Process -FilePath "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden
+```
 
 ### Proposed Convention Changes (flagged — not auto-accepted)
 

@@ -15,8 +15,11 @@ namespace RuckR.Shared.Models
 
         /// <summary>
         /// Geography point (SRID 4326). X = longitude, Y = latitude.
+        /// Excluded from JSON serialization due to NetTopologySuite geometry cycle.
+        /// Use /pitches/nearby endpoint for spatial queries.
         /// </summary>
         [Required]
+        [System.Text.Json.Serialization.JsonIgnore]
         public Point Location { get; set; } = null!;
 
         [Required]

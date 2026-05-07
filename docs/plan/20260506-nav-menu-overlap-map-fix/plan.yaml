@@ -1,0 +1,375 @@
+plan_id: "20260506-nav-menu-overlap-map-fix"
+objective: >
+  Fix navigation menu items overlapping the map component. Two issues addressed:
+  1. Desktop: .sidebar (250px, sticky left) lacks overflow:hidden — nav item text
+     like "Hello, {username}!" overflows into the map area.
+  2. Mobile: Map.razor uses height:calc(100vh - 56px) which doesn't account for
+     the sidebar/nav bar height, causing layout breakage.
+created_at: "2026-05-06T14:00:00Z"
+created_by: gem-planner
+status: pending
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 1
+  total_dependencies: 3
+  risk_score: low
+tldr: >
+  3 waves, 5 tasks. Wave 1: baseline screenshots (gem-browser-tester). Wave 2: three
+  parallel CSS/Razor fixes — sidebar overflow+z-index (MainLayout.razor.css), nav-item
+  text truncation (NavMenu.razor.css), map height:100% (Map.razor). Wave 3: verification
+  screenshots confirming no overlap. All changes are CSS-only, no logic affected. No new
+  files created — edits only.
+
+open_questions: []
+
+gaps: []
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: "height:100% on #ruckr-map collapses to 0 because parent chain (article.content or main) lacks explicit height"
+      likelihood: medium
+      impact: medium
+      mitigation: "Task T2 adds height:100% and overflow:hidden to article.content in MainLayout.razor.css. Verify with screenshots in T5. Fallback: use min-height:100vh or revert to calc() if flex chain breaks on a specific viewport."
+    - scenario: "text-overflow:ellipsis on .nav-item ::deep a breaks the 'Hello, username!' span which is not an <a> element — span still overflows"
+      likelihood: low
+      impact: low
+      mitigation: "The sidebar overflow-x:hidden (T2) clips any overflow regardless of element type. The 'Hello' span is inside .nav-item within the .sidebar, so overflow-x:hidden on .sidebar catches it at the container level."
+    - scenario: "z-index:10 on .sidebar causes sibling stacking issues with overlays or modals that have z-index < 10"
+      likelihood: low
+      impact: low
+      mitigation: "Map overlays use z-index:1000-2000, well above 10. Bootstrap modals use z-index:1050+. The z-index:10 only affects sidebar stacking relative to the main content area. No conflict expected."
+  assumptions:
+    - "The browser supports CSS text-overflow:ellipsis (all modern browsers do)"
+    - "The Blazor WASM app renders reliably for screenshot capture"
+    - "No other components rely on the old calc(100vh - 56px) height value"
+
+implementation_specification:
+  code_structure: >
+    Edits only — no new files. Three files modified:
+    - RuckR/Client/Shared/MainLayout.razor.css → sidebar overflow+z-index, article.content height
+    - RuckR/Client/Shared/NavMenu.razor.css → nav-link text truncation
+    - RuckR/Client/Pages/Map.razor → height:calc → height:100%, remove dead z-index
+  affected_areas:
+    - "RuckR/Client/Shared/MainLayout.razor.css — .sidebar (L58-63), article.content (new rule)"
+    - "RuckR/Client/Shared/NavMenu.razor.css — .nav-item ::deep a (L34-41)"
+    - "RuckR/Client/Pages/Map.razor — <style> block (L19), loading state (L41), error state (L51)"
+  component_details:
+    - component: MainLayout sidebar (.sidebar)
+      responsibility: "Sticky left navigation column (250px desktop, natural flow mobile). Must contain its content and stack above main content."
+      interfaces: ["CSS class .sidebar applied to <div> in MainLayout.razor L4"]
+      dependencies: []
+      integration_points: ["NavMenu.razor, ConnectionStatus.razor"]
+    - component: NavMenu links (.nav-item ::deep a)
+      responsibility: "Navigation links within the sidebar. Must truncate with ellipsis when text exceeds sidebar width."
+      interfaces: ["CSS deep selector on <NavLink> and <a> elements inside .nav-item"]
+      dependencies: []
+      integration_points: ["Blazor NavLink component, AuthorizeView 'Hello, {username}' span"]
+    - component: Map container (#ruckr-map)
+      responsibility: "Full-height map viewport that fills remaining space in the main content area."
+      interfaces: ["CSS id #ruckr-map", "leaflet.js map initialization target"]
+      dependencies:
+        - component: MainLayout flex container
+          relationship: "Inherits height from parent chain: .page → main → article.content → #ruckr-map"
+      integration_points: ["MapService.InitMapAsync('ruckr-map', ...)", "loading/error state overlays"]
+
+contracts: []
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Baseline Screenshots
+  # ========================================================================
+  - id: T1
+    title: "Capture baseline screenshots of nav-menu-to-map overlap"
+    description: >
+      Launch the RuckR app, authenticate as a test user with a long username (e.g.
+      'TestUserWithAVeryLongDisplayName'), navigate to the map page, and capture
+      screenshots showing the current broken state. Capture both viewports:
+      (1) Desktop 1280×720 — sidebar visible with nav items, map area to the right.
+      (2) Mobile 375×667 (simulated) — collapsible nav above map, map height clipping.
+      Save screenshots to docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/before/.
+      These serve as the pre-fix baseline for comparison in T5.
+    wave: 1
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Map page — target for screenshot capture"
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "Nav menu with auth-aware username display at L51"
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: null
+    verification:
+      - "Screenshot exists: docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/before/desktop-map-nav-overlap.png"
+      - "Screenshot exists: docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/before/mobile-map-nav-overlap.png"
+      - "Desktop screenshot shows sidebar with nav items and map area side-by-side"
+      - "Mobile screenshot shows nav menu and map in column layout"
+    acceptance_criteria:
+      - "Browser navigates to https://localhost:7161/map after authentication"
+      - "Desktop viewport 1280×720 captures full page with sidebar + map"
+      - "Mobile viewport 375×667 captures column layout with nav + map"
+      - "Screenshots saved to docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/before/"
+      - "Username in nav is longer than 250px sidebar width to demonstrate overflow"
+    validation_matrix:
+      - scenario: "Desktop — nav text overflows into map area"
+        steps:
+          - "Launch browser at 1280×720 viewport"
+          - "Log in as 'TestUserWithAVeryLongDisplayName' / 'TestPass123!'"
+          - "Navigate to /map"
+          - "Wait for map tiles to load"
+          - "Verify sidebar is visible (250px wide)"
+          - "Capture full-page screenshot"
+        expected_result: "Screenshot shows nav items in sidebar with text potentially overflowing into the map area to the right"
+      - scenario: "Mobile — map height doesn't account for nav bar"
+        steps:
+          - "Launch browser at 375×667 viewport"
+          - "Log in as 'TestUserWithAVeryLongDisplayName' / 'TestPass123!'"
+          - "Navigate to /map"
+          - "Expand nav menu (click hamburger) so nav items are visible"
+          - "Wait for map tiles to load"
+          - "Capture full-page screenshot"
+        expected_result: "Screenshot shows nav menu above map; map may be clipped or have incorrect height"
+    fixtures: {}
+    test_data: []
+    cleanup: false
+    failure_modes:
+      - scenario: "App fails to start on https://localhost:7161 — server not running"
+        likelihood: medium
+        impact: high
+        mitigation: "Run 'dotnet run --project RuckR/Server/RuckR.Server.csproj --launch-profile https' before executing T1. Note in task instructions."
+
+  # ========================================================================
+  # WAVE 2: CSS Fixes (parallel — independent files)
+  # ========================================================================
+  - id: T2
+    title: "Fix MainLayout.razor.css — sidebar overflow and article.content height"
+    description: >
+      Two changes to RuckR/Client/Shared/MainLayout.razor.css:
+
+      1. In the @media (min-width: 641px) block, add overflow-x:hidden and z-index to
+         the .sidebar rule (L58-63). This clips any nav item text that overflows the
+         250px sidebar and ensures proper stacking above the main content.
+
+      2. Add a new rule for article.content to support the map's height:100% fix.
+         Set height:100% and overflow:hidden so that child elements (Map.razor's
+         #ruckr-map) can fill the remaining vertical space. Also remove the padding-top
+         conflict by setting display:flex; flex-direction:column on the content area
+         (or simply set box-sizing:border-box with height:100%).
+
+      Changes are scoped to the Blazor component CSS so they don't affect global styles.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: RuckR/Client/Shared/MainLayout.razor.css
+        description: "Component-scoped CSS for MainLayout — sidebar, top-row, page layout"
+      - path: RuckR/Client/Shared/MainLayout.razor
+        description: "Layout markup — .sidebar at L4, article.content at L14"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 8
+    focus_area: null
+    tech_stack: [CSS3, Blazor CSS isolation]
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Manual inspection: sidebar no longer overflows text into map area on desktop"
+      - "article.content fills remaining height so #ruckr-map { height:100% } works"
+    acceptance_criteria:
+      - ".sidebar rule (L58-63) includes overflow-x:hidden"
+      - ".sidebar rule includes z-index:10 (or z-index:var(--sidebar-z, 10))"
+      - "New rule for article.content: height:100%, overflow:hidden"
+      - "No visual regression: sidebar still 250px wide, sticky, gradient background intact"
+      - "Build succeeds without CSS errors"
+    failure_modes:
+      - scenario: "overflow-x:hidden clips the Bootstrap collapse animation or hamburger toggle on narrow viewports"
+        likelihood: low
+        impact: low
+        mitigation: "The .sidebar overflow-x:hidden is only active at min-width:641px (desktop). On mobile, the sidebar flows naturally without the sticky positioning. No animation is affected."
+
+  - id: T3
+    title: "Fix NavMenu.razor.css — add text truncation to nav links"
+    description: >
+      Add text-overflow:ellipsis, overflow:hidden, and white-space:nowrap to the
+      .nav-item ::deep a rule in RuckR/Client/Shared/NavMenu.razor.css (L34-41).
+
+      This ensures long nav link text (e.g., "Nearby Players", "Hello, TestUserWithAVeryLongDisplayName!")
+      is gracefully truncated with an ellipsis rather than overflowing the sidebar width.
+
+      Note: The "Hello, {username}!" span at NavMenu.razor L51 is not an <a> element so
+      it won't be affected by ::deep a. However, the sidebar overflow-x:hidden from T2
+      clips it at the container level. For completeness, consider adding a separate rule
+      for .nav-link-text span overflow, but the sidebar clip + this nav-link fix covers
+      the primary case.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    conflicts_with: []
+    context_files:
+      - path: RuckR/Client/Shared/NavMenu.razor.css
+        description: "Component-scoped CSS for NavMenu — nav items, links, toggler"
+      - path: RuckR/Client/Shared/NavMenu.razor
+        description: "NavMenu markup — NavLink elements, AuthorizeView span at L51"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 3
+    focus_area: null
+    tech_stack: [CSS3, Blazor CSS isolation]
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Long nav link text is truncated with '...' instead of overflowing"
+      - "Nav link icons (oi-*) remain visible and not clipped"
+    acceptance_criteria:
+      - ".nav-item ::deep a rule includes overflow:hidden"
+      - ".nav-item ::deep a rule includes text-overflow:ellipsis"
+      - ".nav-item ::deep a rule includes white-space:nowrap"
+      - "No visual regression: link colors, hover states, active states unchanged"
+      - "Build succeeds without CSS errors"
+    failure_modes:
+      - scenario: "white-space:nowrap on nav links prevents multi-line wrapping for very short sidebar widths (e.g., extremely narrow custom viewports)"
+        likelihood: low
+        impact: low
+        mitigation: "The sidebar is fixed at 250px which accommodates typical nav item text. If wrapping is needed, the overflow-x:hidden on sidebar (T2) clips regardless."
+
+  - id: T4
+    title: "Fix Map.razor — replace calc() height with flex-based 100% sizing"
+    description: >
+      Three changes to RuckR/Client/Pages/Map.razor:
+
+      1. L19: Change #ruckr-map style from height:calc(100vh - 56px) to height:100%.
+         Remove the unused z-index:1 declaration.
+
+      2. L41: Change loading state div style from height:calc(100vh - 56px) to
+         height:100%.
+
+      3. L51: Change error state div style from height:calc(100vh - 56px) to
+         height:100%.
+
+      The 100% height relies on the parent chain (article.content → main → .page)
+      having defined heights via flex layout. T2 ensures article.content has
+      height:100% and overflow:hidden, completing the chain. The old calc() assumed
+      a fixed 56px top-row which breaks on mobile where the nav menu adds extra height
+      above the main content area.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2]
+    conflicts_with: []
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Map page — Leaflet map container, loading state, error state"
+      - path: RuckR/Client/Shared/MainLayout.razor.css
+        description: "Parent layout — T2 ensures article.content supports height:100%"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 3
+    focus_area: null
+    tech_stack: [CSS3, Blazor, Leaflet.js]
+    verification:
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Map fills the remaining viewport height on both desktop and mobile"
+      - "Loading spinner and error state also fill the same area"
+      - "Leaflet map tiles render correctly within the new container height"
+    acceptance_criteria:
+      - "#ruckr-map style: height:100% (was calc(100vh - 56px))"
+      - "#ruckr-map style: z-index:1 removed"
+      - "Loading state div (L41): height:100% (was calc(100vh - 56px))"
+      - "Error state div (L51): height:100% (was calc(100vh - 56px))"
+      - "No visual regression: map still renders, tiles load, pitch markers appear"
+      - "Map-overlay still positioned correctly at bottom"
+      - "Build succeeds without errors"
+    failure_modes:
+      - scenario: "Height:100% collapses #ruckr-map to 0px because article.content height chain is broken (T2 not yet applied, or T2 fix insufficient)"
+        likelihood: medium
+        impact: medium
+        mitigation: "T4 depends on T2 (declared dependency). If still broken after both applied, add min-height:400px as safety net, or use display:flex;flex:1 on #ruckr-map with flex-direction:column on article.content. Verify with T5 screenshots."
+
+  # ========================================================================
+  # WAVE 3: Verification Screenshots
+  # ========================================================================
+  - id: T5
+    title: "Capture verification screenshots — confirm nav-menu overlap is fixed"
+    description: >
+      Re-run the same screenshot capture as T1 but against the fixed codebase.
+      Launch the RuckR app, authenticate as the same test user, navigate to the map
+      page, and capture matching screenshots at both viewports.
+
+      Compare against the T1 baseline screenshots to confirm:
+      (1) Desktop: Nav item text is truncated with ellipsis within the 250px sidebar;
+          no text overflows into the map area. Sidebar stacks correctly (z-index).
+      (2) Mobile: Map fills available height below the nav menu; no height clipping.
+          Nav menu text truncated, no overflow.
+
+      Save screenshots to docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/after/.
+      Report pass/fail with visual evidence.
+    wave: 3
+    agent: gem-browser-tester
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T2, T3, T4]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Fixed map page with height:100%"
+      - path: RuckR/Client/Shared/MainLayout.razor.css
+        description: "Fixed sidebar with overflow-x:hidden + z-index"
+      - path: RuckR/Client/Shared/NavMenu.razor.css
+        description: "Fixed nav links with text-overflow:ellipsis"
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: null
+    verification:
+      - "Screenshot exists: docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/after/desktop-map-nav-fixed.png"
+      - "Screenshot exists: docs/plan/20260506-nav-menu-overlap-map-fix/screenshots/after/mobile-map-nav-fixed.png"
+      - "Desktop: no nav text visible in map area; nav items truncated with ellipsis inside 250px sidebar"
+      - "Mobile: map fills available height; no gap or clipping at bottom"
+    acceptance_criteria:
+      - "Desktop 1280×720 screenshot shows sidebar contained (no overflow into map area)"
+      - "Text truncation visible: nav items use '...' ellipsis for long text"
+      - "z-index correct: sidebar renders above main content, not behind it"
+      - "Mobile 375×667 screenshot shows map filling content area below nav"
+      - "No visual regression: tile rendering, markers, onboarding banner, GPS banner all render correctly"
+      - "Comparison report confirms issues from T1 screenshots are resolved"
+    validation_matrix:
+      - scenario: "Desktop — nav text contained within sidebar, no map overlap"
+        steps:
+          - "Launch browser at 1280×720 viewport"
+          - "Log in as 'TestUserWithAVeryLongDisplayName' / 'TestPass123!'"
+          - "Navigate to /map"
+          - "Wait for map tiles to load"
+          - "Verify .sidebar is 250px wide with overflow:hidden applied"
+          - "Verify nav link text is truncated with ellipsis"
+          - "Capture full-page screenshot"
+        expected_result: "Sidebar content is fully contained; map area starts at 250px from left; no text visible in map region"
+      - scenario: "Mobile — map fills available height below nav"
+        steps:
+          - "Launch browser at 375×667 viewport"
+          - "Log in as 'TestUserWithAVeryLongDisplayName' / 'TestPass123!'"
+          - "Navigate to /map"
+          - "Expand nav menu (click hamburger)"
+          - "Wait for map tiles to load"
+          - "Verify map occupies remaining vertical space (no calc-based clipping)"
+          - "Capture full-page screenshot"
+        expected_result: "Nav menu above map; map fills remaining viewport height; no scrollbar on body from calc overflow"
+    fixtures: {}
+    test_data: []
+    cleanup: false
+    failure_modes:
+      - scenario: "T2/T3/T4 fixes not applied or build failed — app state unchanged from T1"
+        likelihood: low
+        impact: high
+        mitigation: "T5 depends on T2,T3,T4 in DAG. Verify dotnet build succeeds before running T5. If fixes not applied, report blocked status with reference to failed dependency tasks."

@@ -1,0 +1,748 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Design Page Object Model architecture and API testing patterns for RuckR's Playwright .NET test suite"
+focus_area: "test-architecture"
+created_at: "2026-05-06"
+created_by: "gemini-researcher"
+status: completed
+tldr: |
+  - RuckR is a 3-project Blazor WASM Hosted app targeting net10.0 with 7 game pages, 4 API controllers, 1 SignalR hub, ASP.NET Core Identity auth, Fluxor state management, Leaflet.js map, and SQL Server spatial data.
+  - NO existing test project, NO data-testid attributes, NO test infrastructure of any kind. Ground-up test architecture design required.
+  - All 7 pages follow a consistent pattern: @page route, @inject services, auth check in OnInitializedAsync, loading spinner → error state with retry → empty state → data grid/cards. Bootstrap 5 CSS throughout.
+  - 4 API controllers are [ApiController] + [Route("[controller]")] + [Authorize], returning JSON. BattleHub extends SignalR Hub with [Authorize], 6 hub methods, group management.
+  - Authentication is cookie-based ASP.NET Core Identity (14-day sliding expiration). Login/Register are server-rendered Razor pages at /Identity/Account/Login and /Identity/Account/Register.
+  - Seed data: 500 players + ~100 pitches around London (51.5074, -0.1278) via SeedService; reproducible with configurable seed value.
+
+research_metadata:
+  methodology: "Full codebase read of all 7 pages, 4 controllers, BattleHub, shared components (NavMenu, NotificationToast, ConnectionStatus), MainLayout, App.razor, ApiClientService, SignalRClientService, Fluxor stores, Program.cs, DTOs, models, PRD, AGENTS.md."
+  scope: "comprehensive"
+  confidence: high
+  coverage: 98
+  decision_blockers: 0
+  research_blockers: 0
+
+files_analyzed:
+  - file: Map.razor
+    path: RuckR/Client/Pages/Map.razor
+    purpose: "Main map page — Leaflet.js map, onboarding banner, loading/error/GPS-disabled states, pitch selection overlay"
+    key_elements:
+      - element: "#ruckr-map"
+        type: "element_id"
+        location: "Map.razor:70"
+        description: "div container id for Leaflet map initialization"
+        language: razor/css
+      - element: "_showOnboarding"
+        type: "field"
+        location: "Map.razor:27"
+        description: "Boolean controlling onboarding banner visibility; checked via localStorage['ruckr_onboarded']"
+        language: csharp
+      - element: "_isLoading / _hasError / _gpsDisabled"
+        type: "field"
+        location: "Map.razor:39-67"
+        description: "Tri-state UI control fields: loading spinner, error alert with retry, GPS warning banner"
+        language: csharp
+      - element: "_selectedPitch overlay"
+        type: "html_section"
+        location: "Map.razor:74-103"
+        description: "Bottom sheet overlay with pitch name, type badge, distance bucket, nearby player count, action buttons"
+        language: razor
+      - element: "InitializeAsync()"
+        type: "method"
+        location: "Map.razor:127"
+        description: "First-render init: MapService.InitMapAsync, localStorage check, GPS watch start, state subscriptions"
+        language: csharp
+    lines: 358
+
+  - file: Catalog.razor
+    path: RuckR/Client/Pages/Catalog.razor
+    purpose: "Player catalog — filterable grid of all 500 players with position/rarity/name filters, collected badge"
+    key_elements:
+      - element: "Position select"
+        type: "html_select"
+        location: "Catalog.razor:15-22"
+        description: "Dropdown with All + enum PlayerPosition values"
+        language: razor
+      - element: "Rarity select"
+        type: "html_select"
+        location: "Catalog.razor:23-32"
+        description: "Dropdown with All + enum PlayerRarity values"
+        language: razor
+      - element: "Name filter input"
+        type: "html_input"
+        location: "Catalog.razor:35"
+        description: "Text input with @bind:event=oninput for live search"
+        language: razor
+      - element: "Collected badge ✅"
+        type: "html_span"
+        location: "Catalog.razor:83"
+        description: "Badge rendered when player is in user's collection (InventoryState.CollectedPlayers)"
+        language: razor
+      - element: "Player card grid"
+        type: "html_div"
+        location: "Catalog.razor:71-142"
+        description: "CSS grid of cards, each with header (rarity/position badges), body (name, team, stat progress bars), bio"
+        language: razor
+    lines: 203
+
+  - file: Collection.razor
+    path: RuckR/Client/Pages/Collection.razor
+    purpose: "User's collected players — grid of owned players with expandable detail, favorite toggle, challenge button"
+    key_elements:
+      - element: "Auth check redirect"
+        type: "pattern"
+        location: "Collection.razor:214-228"
+        description: "Checks AuthenticationStateProvider in OnInitializedAsync; redirects to /Identity/Account/Login with returnUrl"
+        language: csharp
+      - element: "Favorite toggle ⭐/☆"
+        type: "button"
+        location: "Collection.razor:75-81"
+        description: "Button on card header; toggles IsFavorite with optimistic update + API call; error reverts"
+        language: razor
+      - element: "Expand/collapse detail"
+        type: "pattern"
+        location: "Collection.razor:66-203"
+        description: "Click card to toggle expandedId; expanded view shows full stat bars, team, rarity description, bio, capture info"
+        language: razor
+      - element: "Empty state"
+        type: "html_div"
+        location: "Collection.razor:48-59"
+        description: "Shown when collectedPlayers is null/empty: rugby ball emoji, message, Explore Map button"
+        language: razor
+    lines: 329
+
+  - file: PlayerGrid.razor
+    path: RuckR/Client/Pages/PlayerGrid.razor
+    purpose: "Nearby players — radius-filtered grid showing wild/owned players with fuzzy distance, challenge buttons"
+    key_elements:
+      - element: "Radius selector"
+        type: "html_select"
+        location: "PlayerGrid.razor:61-67"
+        description: "Dropdown with options [1, 5, 10, 25, 50] km; triggers OnRadiusChangedAsync reload"
+        language: razor
+      - element: "Distance display"
+        type: "html_div"
+        location: "PlayerGrid.razor:127-129"
+        description: "Fuzzy distance in buckets (< 50m, < 100m, < 250m, < 500m, ~km) with random ±20% offset, cached per session"
+        language: razor
+      - element: "Owner badges (Wild/You/username)"
+        type: "html_span"
+        location: "PlayerGrid.razor:104-118"
+        description: "Badge indicating if player is wild (unowned), owned by current user, or owned by another user"
+        language: razor
+      - element: "Challenge button"
+        type: "button"
+        location: "PlayerGrid.razor:145-148"
+        description: "Visible only for non-wild, non-self players; navigates to /battle?opponent=X&player=Y"
+        language: razor
+      - element: "GPS disabled state"
+        type: "html_div"
+        location: "PlayerGrid.razor:34-45"
+        description: "Shown when no GPS position available; Enable GPS button calls GeolocationService.StartWatchAsync"
+        language: razor
+    lines: 313
+
+  - file: Battle.razor
+    path: RuckR/Client/Pages/Battle.razor
+    purpose: "Battle arena — two-tab page (New Challenge, Active Challenges) with accept modal, result modal"
+    key_elements:
+      - element: "Tab navigation"
+        type: "html_nav"
+        location: "Battle.razor:56-76"
+        description: "Two tabs with active badge count: New Challenge, Active Challenges (with pending count badge)"
+        language: razor
+      - element: "Challenge form"
+        type: "html_form"
+        location: "Battle.razor:79-139"
+        description: "Select player from collection dropdown, opponent username input, rate-limit display, submit button"
+        language: razor
+      - element: "Accept modal"
+        type: "html_div.modal"
+        location: "Battle.razor:238-284"
+        description: "Modal dialog for selecting your fighter to accept incoming challenge; Cancel + Fight! buttons"
+        language: razor
+      - element: "Result modal"
+        type: "html_div.modal"
+        location: "Battle.razor:287-331"
+        description: "Battle result display: winner/loser usernames, player names, method of victory badge; Victory/Defeat header"
+        language: razor
+      - element: "State subscriptions"
+        type: "pattern"
+        location: "Battle.razor:423-428"
+        description: "Subscribes to BattleState.StateChanged, SignalRClient.BattleResolved, SignalRClient.ChallengeReceived for real-time updates"
+        language: csharp
+    lines: 670
+
+  - file: BattleHistory.razor
+    path: RuckR/Client/Pages/BattleHistory.razor
+    purpose: "Battle history — chronological list of past battles with expandable detail"
+    key_elements:
+      - element: "Result badge"
+        type: "html_span"
+        location: "BattleHistory.razor:79"
+        description: "Badge showing Victory (green), Defeat (red), Expired (gray), Declined (gray) based on GetBattleResult()"
+        language: razor
+      - element: "Battle list"
+        type: "html_div.list-group"
+        location: "BattleHistory.razor:57-150"
+        description: "List of card items; each shows result badge, opponent, players used, outcome description, relative time"
+        language: razor
+      - element: "Empty state"
+        type: "html_div"
+        location: "BattleHistory.razor:41-54"
+        description: "No battles yet message with link to /players/nearby"
+        language: razor
+    lines: 310
+
+  - file: PitchCreate.razor
+    path: RuckR/Client/Pages/PitchCreate.razor
+    purpose: "Pitch creation form — EditForm with validation, GPS auto-fill, rate-limit awareness"
+    key_elements:
+      - element: "[Authorize] attribute"
+        type: "annotation"
+        location: "PitchCreate.razor:6"
+        description: "Declarative authorization; page inaccessible without auth"
+        language: razor
+      - element: "EditForm"
+        type: "html_form"
+        location: "PitchCreate.razor:28-94"
+        description: "Form with DataAnnotationsValidator; InputText (name), InputSelect (type), InputNumber x2 (lat/lng); submit + cancel"
+        language: razor
+      - element: "GPS auto-fill"
+        type: "pattern"
+        location: "PitchCreate.razor:109-125"
+        description: "OnInitializedAsync calls GeolocationService.GetCurrentPositionAsync to pre-fill lat/lng"
+        language: csharp
+      - element: "Rate limit info"
+        type: "html_div.alert"
+        location: "PitchCreate.razor:16-18"
+        description: "Info alert: 'You can create up to 5 pitches per day'"
+        language: razor
+    lines: 171
+
+  - file: NavMenu.razor
+    path: RuckR/Client/Shared/NavMenu.razor
+    purpose: "Sidebar navigation with auth-aware links"
+    key_elements:
+      - element: "NavLink items"
+        type: "component"
+        location: "NavMenu.razor:13-46"
+        description: "7 NavLink components: Map, Catalog, Collection, Nearby Players, Battles, History, Create Pitch"
+        language: razor
+      - element: "AuthorizeView"
+        type: "component"
+        location: "NavMenu.razor:48-66"
+        description: "Shows Logout + username when authorized; Login link when not authorized"
+        language: razor
+      - element: "ToggleNavMenu"
+        type: "method"
+        location: "NavMenu.razor:75"
+        description: "Collapses/expands nav menu via CSS class toggling"
+        language: csharp
+    lines: 79
+
+  - file: NotificationToast.razor
+    path: RuckR/Client/Shared/NotificationToast.razor
+    purpose: "Real-time toast notifications for challenges and battle results"
+    key_elements:
+      - element: "Toast container"
+        type: "html_div.toast-container"
+        location: "NotificationToast.razor:11"
+        description: "Fixed-position top-right container showing up to 3 toasts; auto-cleanup on expiry"
+        language: razor
+      - element: "Challenge toast with Accept/Decline"
+        type: "html_div.toast"
+        location: "NotificationToast.razor:14-35"
+        description: "Toast with title, message, relative time; Accept/Decline buttons for challenge type toasts"
+        language: razor
+      - element: "SignalR subscriptions"
+        type: "pattern"
+        location: "NotificationToast.razor:58-59"
+        description: "Subscribes to SignalRClient.ChallengeReceived and SignalRClient.BattleResolved"
+        language: csharp
+    lines: 156
+
+  - file: ConnectionStatus.razor
+    path: RuckR/Client/Shared/ConnectionStatus.razor
+    purpose: "SignalR connection indicator with reconnect button"
+    key_elements:
+      - element: "Status dot"
+        type: "html_span"
+        location: "ConnectionStatus.razor:9"
+        description: "Color-coded dot: green (connected), yellow/pulsing (reconnecting), red (disconnected)"
+        language: razor/css
+      - element: "Reconnect button"
+        type: "button"
+        location: "ConnectionStatus.razor:13"
+        description: "Visible only when disconnected; calls SignalRClient.StartAsync()"
+        language: razor
+      - element: "ConnectionStateChanged subscription"
+        type: "pattern"
+        location: "ConnectionStatus.razor:74"
+        description: "Listens to SignalRClient.ConnectionStateChanged event"
+        language: csharp
+    lines: 135
+
+  - file: PlayersController.cs
+    path: RuckR/Server/Controllers/PlayersController.cs
+    purpose: "Player CRUD + spatial nearby query"
+    key_elements:
+      - element: "[Authorize] + [ApiController]"
+        type: "annotation"
+        location: "PlayersController.cs:10-13"
+        description: "All endpoints require authentication"
+        language: csharp
+      - element: "GetPlayers with filters"
+        type: "endpoint"
+        location: "PlayersController.cs:24-50"
+        description: "GET /players?position=&rarity=&name= — optional query string filters"
+        language: csharp
+      - element: "GetNearbyPlayers spatial query"
+        type: "endpoint"
+        location: "PlayersController.cs:65-105"
+        description: "GET /players/nearby?lat=&lng=&radius= — SQL Server geography STDistance spatial query, orders by distance, caps radius at 50000m"
+        language: csharp
+    lines: 107
+
+  - file: PitchesController.cs
+    path: RuckR/Server/Controllers/PitchesController.cs
+    purpose: "Pitch CRUD + spatial nearby query + rate limiting"
+    key_elements:
+      - element: "No [Authorize] on GET endpoints"
+        type: "annotation"
+        location: "PitchesController.cs:12"
+        description: "GET /pitches, GET /pitches/nearby, GET /pitches/{id} are public; POST requires [Authorize]"
+        language: csharp
+      - element: "CreatePitch rate limiting"
+        type: "pattern"
+        location: "PitchesController.cs:94-166"
+        description: "ConcurrentDictionary-based rate limiter: max 5 per user per 24h; name uniqueness within 100m radius; 409 Conflict response"
+        language: csharp
+      - element: "IsWithinDistance spatial query"
+        type: "endpoint"
+        location: "PitchesController.cs:53-73"
+        description: "GET /pitches/nearby uses geography.IsWithinDistance for proximity search"
+        language: csharp
+    lines: 175
+
+  - file: CollectionController.cs
+    path: RuckR/Server/Controllers/CollectionController.cs
+    purpose: "Collection CRUD + capture with GPS validation"
+    key_elements:
+      - element: "[Authorize] on entire controller"
+        type: "annotation"
+        location: "CollectionController.cs:15"
+        description: "All collection endpoints require authentication"
+        language: csharp
+      - element: "CapturePlayer GPS validation"
+        type: "endpoint"
+        location: "CollectionController.cs:61-124"
+        description: "POST /collection/capture — validates player/pitch exist, server-side GPS position within 60s, user within 100m of pitch, duplicate check (409), rate limit (429), DB unique constraint catch"
+        language: csharp
+      - element: "ToggleFavorite"
+        type: "endpoint"
+        location: "CollectionController.cs:130-148"
+        description: "POST /collection/{id}/favorite — toggles IsFavorite flag; ownership check with Forbid()"
+        language: csharp
+    lines: 192
+
+  - file: BattlesController.cs
+    path: RuckR/Server/Controllers/BattlesController.cs
+    purpose: "Battle challenge CRUD with lazy-expiry and concurrency"
+    key_elements:
+      - element: "Challenge endpoint validation chain"
+        type: "endpoint"
+        location: "BattlesController.cs:35-89"
+        description: "POST /battles/challenge — validates: not self, opponent exists, player in collection, ≤3 pending, rate limit 10/hr (429)"
+        language: csharp
+      - element: "Accept with concurrency handling"
+        type: "endpoint"
+        location: "BattlesController.cs:97-149"
+        description: "POST /battles/{id}/accept — lazy-expiry (24h), ownership validation, player-in-collection check, DbUpdateConcurrencyException → 409 Conflict"
+        language: csharp
+      - element: "Lazy-expiry in GetPending"
+        type: "pattern"
+        location: "BattlesController.cs:195-224"
+        description: "GET /battles/pending — filters Status=Pending, expires challenges older than 24h on access, persists expiry changes"
+        language: csharp
+    lines: 285
+
+  - file: BattleHub.cs
+    path: RuckR/Server/Hubs/BattleHub.cs
+    purpose: "SignalR hub for real-time battle operations and location tracking"
+    key_elements:
+      - element: "[Authorize] + Hub base class"
+        type: "annotation"
+        location: "BattleHub.cs:12-13"
+        description: "All hub methods require authenticated SignalR connection"
+        language: csharp
+      - element: "UpdateLocation (hub method)"
+        type: "hub_method"
+        location: "BattleHub.cs:55-77"
+        description: "Receives GPS coords, updates LocationTracker, checks for nearby pitches, sends PitchDiscovered to caller"
+        language: csharp
+      - element: "SendChallenge (hub method)"
+        type: "hub_method"
+        location: "BattleHub.cs:82-144"
+        description: "Validates opponent/player, creates BattleModel, notifies opponent via Clients.User().SendAsync('ReceiveChallenge'), confirms to caller"
+        language: csharp
+      - element: "AcceptChallenge with BattleResolver"
+        type: "hub_method"
+        location: "BattleHub.cs:149-228"
+        description: "Validates battle state, validates both players' ownership, calls IBattleResolver.Resolve(), handles DbUpdateConcurrencyException, notifies both users of result"
+        language: csharp
+      - element: "SignalR group management"
+        type: "hub_method"
+        location: "BattleHub.cs:269-280"
+        description: "JoinBattleGroup/LeaveBattleGroup for battle-specific real-time updates via group naming"
+        language: csharp
+    lines: 292
+
+  - file: ApiClientService.cs
+    path: RuckR/Client/Services/ApiClientService.cs
+    purpose: "Typed HTTP client wrapping all API calls with GetFromJsonAsync/PostAsJsonAsync"
+    key_elements:
+      - element: "All API methods"
+        type: "class"
+        location: "ApiClientService.cs:7-132"
+        description: "16 methods covering Players (4), Pitches (4), Collection (3), Battles (5); uses scoped HttpClient with BaseAddress"
+        language: csharp
+    lines: 133
+
+  - file: SignalRClientService.cs
+    path: RuckR/Client/Services/SignalRClientService.cs
+    purpose: "SignalR connection manager with automatic reconnect, event dispatch to Fluxor + custom events"
+    key_elements:
+      - element: "HubConnectionBuilder with retry"
+        type: "constructor"
+        location: "SignalRClientService.cs:34-43"
+        description: "Creates HubConnection with automatic reconnect intervals [0, 2s, 10s, 30s]; 4 server-to-client event handlers"
+        language: csharp
+      - element: "Server event subscriptions"
+        type: "events"
+        location: "SignalRClientService.cs:45-48"
+        description: "ReceiveChallenge → ChallengeReceived event; BattleResolved → BattleResolved; PitchDiscovered; NearbyPlayersUpdated"
+        language: csharp
+    lines: 189
+
+  - file: DTOs.cs
+    path: RuckR/Shared/Models/DTOs.cs
+    purpose: "Request/response DTOs shared between Server and Client"
+    key_elements:
+      - element: "ChallengeRequest"
+        type: "record"
+        location: "DTOs.cs:6"
+        description: "OpponentUsername + SelectedPlayerId"
+        language: csharp
+      - element: "NearbyPlayerDto"
+        type: "record"
+        location: "DTOs.cs:31-37"
+        description: "PlayerId, Name, Position, Rarity, FuzzyDistanceMeters, OwnerUsername"
+        language: csharp
+      - element: "CapturePlayerRequest"
+        type: "record"
+        location: "DTOs.cs:39-41"
+        description: "PlayerId + PitchId (both [Required])"
+        language: csharp
+    lines: 42
+
+  - file: PRD.yaml
+    path: docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml
+    purpose: "Product requirements — scope, user stories, acceptance criteria, constraints"
+    key_elements:
+      - element: "in_scope items"
+        type: "yaml_list"
+        location: "PRD.yaml:31-72"
+        description: "Foundation (Identity, SQL Server, EF Core), Game Data, GPS & Map, Real-Time, PVP Battles, Client State, UI/UX"
+        language: yaml
+      - element: "out_of_scope items"
+        type: "yaml_list"
+        location: "PRD.yaml:73-84"
+        description: "No tests, CI/CD, offline support, trading, admin dashboard, third-party auth — explicitly excludes test infrastructure"
+        language: yaml
+    lines: 482
+
+patterns_found:
+  - category: structure
+    pattern: "Blazor page state machine (loading → error → empty → data)"
+    description: "Every page follows a strict 4-state UI pattern: (1) auth check with redirect, (2) loading spinner with visually-hidden text, (3) error alert with dismiss/retry button, (4) empty state with CTA, (5) data grid/cards. This is consistent across all 7 game pages."
+    examples:
+      - file: Collection.razor
+        location: "Collection.razor:18-204"
+        snippet: "if (requiresAuth) → spinner → error alert → empty state → card grid"
+      - file: PlayerGrid.razor
+        location: "PlayerGrid.razor:15-155"
+        snippet: "if (_requiresAuth) → spinner → GPS disabled → error alert → radius selector → player card grid"
+      - file: Map.razor
+        location: "Map.razor:27-104"
+        snippet: "if (_showOnboarding) → spinner → error with retry → GPS disabled banner → map container + pitch overlay"
+    prevalence: common
+
+  - category: structure
+    pattern: "EditForm with DataAnnotationsValidator + [Authorize] attribute"
+    description: "Forms use Blazor's built-in EditForm component with DataAnnotationsValidator for server-side model validation. The forms are protected either via code-behind auth check (Collection, PlayerGrid) or the declarative [Authorize] attribute (PitchCreate)."
+    examples:
+      - file: PitchCreate.razor
+        location: "PitchCreate.razor:6,28-94"
+        snippet: "@attribute [Authorize] + <EditForm Model=\"formModel\" OnValidSubmit=\"HandleSubmit\">"
+      - file: Battle.razor
+        location: "Battle.razor:97-137"
+        snippet: "Select dropdown + text input + submit button with disabled binding based on validation state"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Fluxor state slices (Redux pattern) for client state"
+    description: "Client-side state managed via Fluxor with 5 feature slices: LocationFeature (GPS position), MapFeature (visible pitches, selection), InventoryFeature (collected players), BattleFeature (active challenges, history), GameFeature (SignalR connection state). Each follows the Actions → Reducers → State pattern."
+    examples:
+      - file: RuckR/Client/Store/MapFeature/MapActions.cs
+        location: "Store pattern: Actions + Reducers + State per feature directory"
+        snippet: "SetPitchesAction, SetSelectedPitchAction, ClearSelectionAction"
+      - file: RuckR/Client/Store/InventoryFeature/InventoryActions.cs
+        location: "Store pattern"
+        snippet: "FetchInventoryResultAction, ToggleFavoriteAction"
+    prevalence: common
+
+  - category: architecture
+    pattern: "Cookie-based auth with redirect to Identity Razor pages"
+    description: "ASP.NET Core Identity uses cookie authentication (not JWT bearer tokens). Protected pages check AuthenticationStateProvider.User.Identity.IsAuthenticated in OnInitializedAsync and redirect to /Identity/Account/Login?returnUrl=... with forceLoad:true. The login page is a server-rendered Razor page (not Blazor WASM)."
+    examples:
+      - file: Collection.razor
+        location: "Collection.razor:216-224"
+        snippet: "if (!user.Identity.IsAuthenticated) { Navigation.NavigateTo($\"/Identity/Account/Login?returnUrl={returnUrl}\", forceLoad: true); }"
+      - file: PlayerGrid.razor
+        location: "PlayerGrid.razor:184-189"
+        snippet: "Same auth check pattern — identical across all protected pages"
+    prevalence: common
+
+  - category: architecture
+    pattern: "JS interop for Leaflet map and geolocation"
+    description: "Map rendering uses IJSRuntime/IJSObjectReference interop through IMapService. Geolocation uses browser API through IGeolocationService. The map div is a plain HTML element (#ruckr-map) with Leaflet initialized via JS. No C# map component wrapper — all map operations cross the interop boundary."
+    examples:
+      - file: Map.razor
+        location: "Map.razor:14,70,147"
+        snippet: "@inject IJSRuntime JS → <div id=\"ruckr-map\"> → MapService.InitMapAsync(\"ruckr-map\", lat, lng, 15)"
+      - file: GeolocationService.cs
+        location: "RuckR/Client/Services/GeolocationService.cs"
+        snippet: "Calls navigator.geolocation.watchPosition via JS interop"
+    prevalence: common
+
+  - category: naming
+    pattern: "Private backing fields prefixed with underscore"
+    description: "All Blazor page code-behind fields use _camelCase naming: _isLoading, _errorMessage, _selectedPitch, etc. Public/component-visible fields (used in @bind) use camelCase without underscore: formModel, selectedPosition, nameFilter."
+    examples:
+      - file: Battle.razor
+        location: "Battle.razor:334-359"
+        snippet: "_requiresAuth, _isLoading, _errorMessage, _activeTab fields"
+      - file: PitchCreate.razor
+        location: "PitchCreate.razor:99-103"
+        snippet: "formModel (public for @bind), isSubmitting, gpsUsed, errorMessage"
+    prevalence: common
+
+related_architecture:
+  components_relevant_to_domain:
+    - component: "Blazor WASM Pages (7 game pages)"
+      responsibility: "Client-side UI rendering with Fluxor state, API calls via ApiClientService, SignalR via SignalRClientService"
+      location: "RuckR/Client/Pages/*.razor"
+      relationship_to_domain: "Primary test targets for E2E tests — each page is a Page Object"
+    - component: "ASP.NET Core API Controllers (4 controllers)"
+      responsibility: "REST JSON endpoints for players, pitches, collections, battles; SQL Server spatial queries; rate limiting"
+      location: "RuckR/Server/Controllers/*Controller.cs"
+      relationship_to_domain: "Primary test targets for API tests — each controller has 2-5 endpoints"
+    - component: "BattleHub (SignalR)"
+      responsibility: "Real-time challenge notifications, battle resolution, location tracking, group management"
+      location: "RuckR/Server/Hubs/BattleHub.cs"
+      relationship_to_domain: "API test target for SignalR hub methods; requires WebSocket connection in test"
+    - component: "Shared Components (NavMenu, NotificationToast, ConnectionStatus)"
+      responsibility: "Navigation, real-time toast notifications, connection health indicator"
+      location: "RuckR/Client/Shared/*.razor"
+      relationship_to_domain: "Test fixtures for E2E tests — reusable interaction helpers across pages"
+  interfaces_used_by_domain:
+    - interface: "HTTP REST (JSON over HTTPS)"
+      location: "Server: MapControllers(); Client: ApiClientService via HttpClient"
+      usage_pattern: "All API calls are JSON GET/POST with cookie authentication; no API keys or custom headers"
+    - interface: "SignalR WebSocket"
+      location: "Server: MapHub<BattleHub>(\"/battlehub\"); Client: HubConnectionBuilder.WithUrl(\"/battlehub\")"
+      usage_pattern: "Persistent WebSocket with automatic reconnect; 6 hub methods (UpdateLocation, SendChallenge, AcceptChallenge, DeclineChallenge, JoinBattleGroup, LeaveBattleGroup); 4 server-to-client events (ReceiveChallenge, BattleResolved, PitchDiscovered, NearbyPlayersUpdated)"
+    - interface: "Browser Geolocation API"
+      location: "Client: IGeolocationService via JS interop (navigator.geolocation)"
+      usage_pattern: "Watch position for continuous GPS updates; single-shot position for pitch create"
+    - interface: "Leaflet.js Map"
+      location: "Client: IMapService via JS interop"
+      usage_pattern: "Map initialization, marker management, event callbacks (pitch click → Fluxor action)"
+  data_flow_involving_domain: |
+    1. E2E flow: Browser → Blazor WASM → ApiClientService (HTTP) → Server Controllers → EF Core → SQL Server
+    2. Real-time flow: Browser → SignalRClientService (WebSocket) → BattleHub → EF Core → SQL Server → SignalR broadcast → other Browser
+    3. GPS flow: Browser Geolocation API → JS interop → LocationState (Fluxor) → ApiClientService (HTTP) → Server → LocationTracker
+    4. Map flow: Browser Leaflet.js → JS interop → IMapService → MapState (Fluxor) → UI re-render
+  key_relationships_to_domain:
+    - from: "RuckR.Tests (to be created)"
+      to: "RuckR.Client (Blazor WASM pages)"
+      relationship: "tests_against (E2E Playwright browser tests)"
+    - from: "RuckR.Tests (to be created)"
+      to: "RuckR.Server (API controllers + BattleHub)"
+      relationship: "tests_against (API integration tests via Playwright APIRequestContext)"
+    - from: "RuckR.Tests (to be created)"
+      to: "RuckR.Shared (DTOs, models)"
+      relationship: "references (test data construction, response deserialization)"
+
+related_technology_stack:
+  languages_used_in_domain:
+    - "C# 14 (net10.0) — all server code, client code-behind, shared models"
+    - "Razor (.razor) — Blazor component markup with C# code blocks"
+    - "JavaScript — Leaflet.js map library (loaded via index.html <script>); browser geolocation API"
+    - "CSS — Bootstrap 5 + custom inline styles"
+  frameworks_used_in_domain:
+    - name: "ASP.NET Core 10.0"
+      usage_in_domain: "Server hosting: Controllers, SignalR Hub, Identity Razor Pages, static file serving for WASM"
+    - name: "Blazor WebAssembly 10.0"
+      usage_in_domain: "Client SPA: 7 game pages, shared components, Fluxor state, SignalR client"
+    - name: "Entity Framework Core 10.0"
+      usage_in_domain: "ORM for SQL Server; DbContext (RuckRDbContext) with DbSets for all game models; migrations"
+    - name: "ASP.NET Core Identity"
+      usage_in_domain: "Cookie-based authentication; IdentityUser stored in same DB; Razor pages for Login/Register"
+    - name: "SignalR (Microsoft.AspNetCore.SignalR 10.0)"
+      usage_in_domain: "Real-time hub at /battlehub; auto-reconnect client; group management"
+    - name: "Fluxor 6.9.0"
+      usage_in_domain: "Client-side Redux store with 5 feature slices; middleware for dev tools"
+    - name: "Bootstrap 5"
+      usage_in_domain: "UI framework for all pages; cards, modals, alerts, navs, badges, progress bars, forms"
+  libraries_used_in_domain:
+    - name: "NetTopologySuite"
+      purpose_in_domain: "Spatial types (Point, geometry) for SQL Server geography column; HaversineDistance calculation; SRID 4326"
+    - name: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite"
+      purpose_in_domain: "EF Core spatial provider enabling IsWithinDistance() LINQ queries on geography columns"
+    - name: "Microsoft.AspNetCore.SignalR.Client"
+      purpose_in_domain: "Blazor WASM SignalR client library for HubConnection"
+    - name: "Fluxor.Blazor.Web.ReduxDevTools"
+      purpose_in_domain: "Redux dev tools integration for debugging Fluxor state"
+    - name: "Leaflet.js (CDN, ~42KB)"
+      purpose_in_domain: "Open-source interactive map library; OpenStreetMap tiles; marker clustering"
+  external_apis_used_in_domain:
+    - name: "OpenStreetMap tile server"
+      integration_point: "Leaflet.js tile layer (free, no API key)"
+    - name: "Browser Geolocation API"
+      integration_point: "JS interop (navigator.geolocation.watchPosition / getCurrentPosition)"
+
+related_conventions:
+  naming_patterns_in_domain: |
+    - Private fields: _camelCase (_isLoading, _errorMessage, _nearbyPlayers)
+    - Public/model fields: PascalCase with @bind (formModel, selectedPosition)
+    - Controller actions: PascalCase matching HTTP verb semantics (GetPlayers, CreatePitch, CapturePlayer)
+    - Page routes: lowercase with hyphens for multi-word (/players/nearby, /pitches/create, /battles/history)
+    - Namespace: RuckR.Shared.Models for shared types, RuckR.Client.Pages for pages, RuckR.Server.Controllers for controllers
+  structure_of_domain: |
+    - 3-project solution: Server (host), Client (WASM SPA), Shared (models/DTOs)
+    - Pages: @page directive at line 1, @inject services, @code block with OnInitializedAsync
+    - Controllers: [ApiController] + [Route("[controller]")] + [Authorize], block-scoped namespace
+    - DTOs: sealed records in DTOs.cs (ChallengeRequest, AcceptChallengeRequest, CreatePitchRequest, etc.)
+  error_handling_in_domain: |
+    - All pages catch HttpRequestException for API failures; display in alert-danger with retry button
+    - Controllers return HttpResponseMessage with status codes: 400 (BadRequest), 401 (Unauthorized), 403 (Forbid), 404 (NotFound), 409 (Conflict), 410 (Gone/Expired), 429 (RateLimit)
+    - Battle.razor catches specific HTTP status codes (400, 409, 429) for targeted user-facing messages
+    - All pages have generic Exception catch-all for unexpected errors
+  testing_in_domain: "No existing tests. No test project. No test NuGet packages. No test files. No CI/CD. No editorconfig. No linting config. 'out_of_scope' in PRD explicitly excludes automated tests."
+  documentation_in_domain: "AGENTS.md (architecture, conventions, ADRs); PRD.yaml (scope, user stories, acceptance criteria); code comments are sparse but present for complex methods."
+
+related_dependencies:
+  internal:
+    - component: "RuckR.Shared"
+      relationship_to_domain: "Provides all models (PlayerModel, PitchModel, CollectionModel, BattleModel, ProfileModel) and DTOs (ChallengeRequest, NearbyPlayerDto, etc.) used by both Server controllers and Client pages"
+      direction: bidirectional
+    - component: "RuckR.Server"
+      relationship_to_domain: "Hosts controllers, BattleHub, Identity pages, EF Core DbContext, seed service; serves WASM assets"
+      direction: outbound
+    - component: "RuckR.Client"
+      relationship_to_domain: "Blazor WASM SPA with 7 game pages, Fluxor store, SignalR client, JS interop services"
+      direction: outbound
+  external:
+    - name: "Microsoft.Playwright (NuGet)"
+      purpose_for_domain: "E2E browser automation + API testing framework for .NET; would be added to new RuckR.Tests project"
+    - name: "xUnit (NuGet)"
+      purpose_for_domain: "Test framework for .NET; would be added to new RuckR.Tests project"
+    - name: "SQL Server (LocalDB or Docker)"
+      purpose_for_domain: "Database dependency for test data seeding and API integration tests"
+    - name: "bUnit (NuGet — future consideration)"
+      purpose_for_domain: "Blazor component testing framework; alternative to Playwright component testing for Blazor-specific scenarios"
+
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Authentication cookies"
+      location: "ASP.NET Core Identity middleware (Server/Program.cs:34-46)"
+      concern: "Cookie auth with 14-day sliding expiration; test must handle cookie extraction and reuse for authenticated API calls"
+    - area: "GPS position data"
+      location: "LocationTracker (Server), GeolocationService (Client), PlayerGrid.razor fuzzy distance"
+      concern: "Server stores real user GPS positions; client displays only fuzzy distance buckets to other users; tests must verify fuzzy distance masking"
+    - area: "Rate limiting state"
+      location: "PitchesController.cs:18, CollectionController.cs:21, BattlesController.cs:20"
+      concern: "ConcurrentDictionary-based in-memory rate limiters; tests must account for rate limit state across test runs (isolated per test or reset between tests)"
+  authentication_patterns_in_domain: "Cookie-based ASP.NET Core Identity. Login POST to /Identity/Account/Login with username + password + __RequestVerificationToken (anti-CSRF). Successful login sets .AspNetCore.Identity.Application cookie. Client HttpClient auto-sends cookie on subsequent requests (same origin). No JWT bearer tokens used."
+  authorization_patterns_in_domain: "All 4 controllers have [Authorize] at class level (PitchesController has it only on POST). BattleHub has [Authorize] at class level. GET /pitches and GET /pitches/nearby are public. Protected pages check auth in OnInitializedAsync and redirect to login. [Authorize] attribute on PitchCreate.razor provides declarative protection."
+  data_validation_in_domain: "Server-side: ASP.NET Core model binding with [Required], [Range], [MaxLength] on DTOs; manual lat/lng range checks; enum parsing validation. Client-side: DataAnnotationsValidator in EditForm; form submit disabled binding on validation state. No FluentValidation or custom validators."
+
+testing_patterns:
+  framework: "None existing. Proposed: Playwright for .NET (Microsoft.Playwright) + xUnit"
+  coverage_areas:
+    - "E2E: 7 game pages (Map, Catalog, Collection, PlayerGrid, Battle, BattleHistory, PitchCreate)"
+    - "E2E: 3 shared components (NavMenu, NotificationToast, ConnectionStatus)"
+    - "E2E: 2 auth pages (Login, Register — server-rendered Razor pages)"
+    - "API: 4 controllers (PlayersController, PitchesController, CollectionController, BattlesController)"
+    - "API: 1 SignalR hub (BattleHub — WebSocket-level testing)"
+    - "API: Spatial query verification (proximity ordering, radius filtering, distance buckets)"
+  test_organization: "Proposed structure per user request:"
+  mock_patterns:
+    - "Browser context: Playwright's built-in browser isolation (new Browser.NewContextAsync per test)"
+    - "API context: Playwright.APIRequest.NewContextAsync for direct HTTP tests (no browser)"
+    - "GPS mocking: Playwright context.GrantPermissions(['geolocation']); context.SetGeolocation(lat, lng)"
+    - "No server-side mocking planned for E2E tests (real SQL Server with test seed data)"
+    - "SignalR: Playwright WebSocket route interception or separate SignalR client in test"
+    - "Seed data: Reuse existing SeedService pattern with test-specific seed values or direct DB seeding"
+
+open_questions:
+  - question: "How to extract the anti-CSRF token (__RequestVerificationToken) from the server-rendered Login page for automated form submission?"
+    context: "ASP.NET Core Identity uses anti-forgery tokens on login forms. Playwright needs to extract the hidden input value from the page before POSTing credentials."
+    type: research
+    affects: ["LoginPage Object", "API authentication setup"]
+
+  - question: "How to handle SignalR hub testing in Playwright — WebSocket route interception or separate .NET SignalR client?"
+    context: "BattleHub requires authenticated WebSocket connection. Playwright can intercept WebSocket frames via Route objects, but verifying hub method calls and receiving server-to-client events requires WebSocket frame parsing. Alternative: use Microsoft.AspNetCore.SignalR.Client in the test project to connect directly alongside Playwright for E2E."
+    type: decision_blocker
+    affects: ["BattleHub API tests", "Real-time notification E2E tests"]
+
+  - question: "How to reset rate-limit state between test runs given in-memory ConcurrentDictionary storage?"
+    context: "PitchesController, CollectionController, and BattlesController all use static ConcurrentDictionary fields for rate limiting. These persist across test runs if the same server instance is reused. Options: restart server between tests, expose a test-only reset endpoint, or use a fresh server instance per test class."
+    type: research
+    affects: ["API test isolation", "Rate limit test scenarios"]
+
+  - question: "What is the optimal test database strategy — use seed data 500 players or create minimal test-specific data?"
+    context: "Existing seed data provides 500 players around London. Spatial query tests (players/nearby, pitches/nearby) need known coordinates and distances. Options: reuse seed data with known center point, or insert minimal test-specific spatial records. Using seed data means tests depend on specific seed values."
+    type: research
+    affects: ["Spatial query tests", "Test data fixtures"]
+
+  - question: "Should data-testid attributes be added to Blazor components as part of the test setup, or rely on semantic selectors (text, role, CSS)?"
+    context: "Currently NO data-testid attributes exist anywhere in the app. Playwright recommends data-testid for stable locators, but adding them requires modifying production code. Semantic selectors (GetByRole, GetByText, GetByLabel) are resilient but may break on copy changes."
+    type: decision_blocker
+    affects: ["All Page Objects", "Locator strategy", "Test maintenance"]
+
+gaps:
+  - area: "Test project infrastructure"
+    description: "No test project exists in the solution. No NuGet test packages (xUnit, Playwright, coverlet) are referenced. No test configuration files. No CI/CD pipeline. The PRD explicitly excludes automated tests from scope ('out_of_scope: CI/CD pipelines, automated tests')."
+    impact: research_blocker
+    affects: ["All test initialization"]
+
+  - area: "WebSocket/SignalR testing pattern for Playwright"
+    description: "Playwright .NET has WebSocket route interception (Page.RouteWebSocket) but no high-level SignalR testing utilities. The BattleHub has 6 server-side hub methods and 4 client-side events. Testing real-time flows (challenge → notification → accept → result) requires either WebSocket frame-level testing or a parallel SignalR client in tests."
+    impact: research_blocker
+    affects: ["BattleHub API tests", "Real-time notification E2E tests"]
+
+  - area: "Blazor WASM initialization timing"
+    description: "Blazor WASM has a startup sequence: download WASM runtime → initialize .NET → start SignalR connection → render first page. Playwright needs to wait for Blazor to fully initialize before interacting with pages. The existing app has NO 'ready' event or DOM marker to signal Blazor readiness. Tests must poll for known DOM elements or use Playwright's WaitForSelector with timeout."
+    impact: research_blocker
+    affects: ["BasePage.WaitForBlazorAsync implementation", "All page navigation waits"]
+
+  - area: "GPS mock strategy for E2E tests"
+    description: "Playwright supports geolocation mocking (context.SetGeolocation) for browser tests. However, the app's IGeolocationService calls navigator.geolocation.watchPosition via JS interop. The Playwright geolocation API should work since it overrides the browser's native geolocation. Need to verify that Blazor JS interop calls to navigator.geolocation respect Playwright's mocked geolocation."
+    impact: research_blocker
+    affects: ["MapPage E2E tests", "PlayerGridPage E2E tests", "PitchCreatePage GPS auto-fill tests"]
+
+  - area: "Leaflet.js map interaction testing"
+    description: "The map is rendered entirely in JavaScript via Leaflet.js. Pitch markers are added via JS interop (MapService.AddPitchMarkersAsync). Testing map interactions (click marker, verify overlay) requires either (a) Playwright to click on Leaflet-generated DOM elements based on their CSS classes, or (b) the Blazor page to expose click handlers via JS interop callbacks. Current code uses Fluxor state change callbacks (MapState.StateChanged) to detect pitch selection."
+    impact: research_blocker
+    affects: ["MapPage.GetPitchMarkersAsync", "MapPage.ClickPitchMarkerAsync", "MapPage.IsUserMarkerVisibleAsync"]

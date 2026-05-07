@@ -1,4 +1,5 @@
 using Fluxor;
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using RuckR.Client.Store.LocationFeature;
 using RuckR.Shared.Models;
@@ -9,6 +10,7 @@ public class GeolocationService : IGeolocationService
 {
     private readonly IJSRuntime _jsRuntime;
     private readonly IDispatcher _dispatcher;
+    private readonly ILogger<GeolocationService> _logger;
     private IJSObjectReference? _module;
     private DotNetObjectReference<GeolocationService>? _dotNetRef;
     private DateTime? _lastPositionUpdate;
@@ -16,10 +18,11 @@ public class GeolocationService : IGeolocationService
 
     public event Action<GeoPosition>? PositionChanged;
 
-    public GeolocationService(IJSRuntime jsRuntime, IDispatcher dispatcher)
+    public GeolocationService(IJSRuntime jsRuntime, IDispatcher dispatcher, ILogger<GeolocationService> logger)
     {
         _jsRuntime = jsRuntime;
         _dispatcher = dispatcher;
+        _logger = logger;
     }
 
     public async Task<GeoPosition?> GetCurrentPositionAsync()
@@ -41,8 +44,9 @@ public class GeolocationService : IGeolocationService
                 Timestamp = DateTime.UtcNow
             };
         }
-        catch (JSException)
+        catch (JSException ex)
         {
+            _logger.LogWarning(ex, "Geolocation getCurrentPosition failed");
             return null;
         }
     }
@@ -96,8 +100,16 @@ public class GeolocationService : IGeolocationService
         if (_module is not null)
             return;
 
-        _module = await _jsRuntime.InvokeAsync<IJSObjectReference>(
-            "import", "./js/geolocation.module.js");
+        try
+        {
+            _module = await _jsRuntime.InvokeAsync<IJSObjectReference>(
+                "import", "./js/geolocation.module.js");
+        }
+        catch (JSException ex)
+        {
+            _logger.LogError(ex, "Failed to import geolocation JS module");
+            throw;
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -106,9 +118,9 @@ public class GeolocationService : IGeolocationService
         {
             StopWatch();
         }
-        catch (JSDisconnectedException)
+        catch (JSDisconnectedException ex)
         {
-            // JS runtime already disconnected; no action needed.
+            _logger.LogDebug(ex, "JS disconnected during geolocation StopWatch");
         }
 
         _dotNetRef?.Dispose();
@@ -120,9 +132,9 @@ public class GeolocationService : IGeolocationService
             {
                 await _module.DisposeAsync();
             }
-            catch (JSDisconnectedException)
+            catch (JSDisconnectedException ex)
             {
-                // JS runtime already disconnected; no action needed.
+                _logger.LogDebug(ex, "JS disconnected during geolocation module disposal");
             }
 
             _module = null;

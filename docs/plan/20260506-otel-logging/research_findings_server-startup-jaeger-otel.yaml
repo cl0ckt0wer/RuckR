@@ -1,0 +1,420 @@
+plan_id: "20260506-otel-logging"
+objective: "Research server startup automation and Jaeger OTEL backend configuration for the RuckR project."
+focus_area: "server-startup-jaeger-otel"
+created_at: "2026-05-06T20:45:00Z"
+created_by: "RESEARCHER"
+status: completed
+tldr: |
+  - .opencode/commands/ does NOT exist — no custom OpenCode slash commands are defined.
+  - No project-level skills/ directory exists either; only ~/.config/opencode/skills/ (global).
+  - scripts/ directory contains 3 JS files (Playwright screenshot capture) — no server startup scripts.
+  - OTEL is fully configured: 7 OTLP packages in RuckR.Server.csproj, full pipeline in Program.cs (tracing, metrics, logging), OTLP exporter reads OTEL_EXPORTER_OTLP_ENDPOINT, Console exporter always on.
+  - Live server log confirms OTLP exporter actively attempts POST to localhost:4317 — connection errors prove no collector/Jaeger is running to receive telemetry.
+  - AGENTS.md documents PowerShell Start-Job as the canonical server startup pattern. No Docker, bash, or cmd scripts exist.
+  - Docker availability and PowerShell version are unresolvable from file analysis alone — require system-level command execution.
+  - Jaeger all-in-one Docker image is the recommended backend (no binaries found in repo; no docker-compose.yml exists).
+research_metadata:
+  methodology: "file_read + glob + grep across solution root, .opencode/, scripts/, docs/plan/; cross-reference AGENTS.md, plan.yaml, server log"
+  scope: "workspace root (.opencode/commands/, scripts/), server OTEL config (Program.cs, csproj, appsettings, controllers), existing docs (AGENTS.md, plan.yaml, Developer Guide), server runtime log"
+  confidence: medium
+  coverage: 88
+  decision_blockers: 2
+  research_blockers: 2
+files_analyzed:
+  - file: ".opencode directory"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\.opencode\\"
+    purpose: "Check for custom OpenCode commands directory"
+    key_elements:
+      - element: "opencode.json"
+        type: "config"
+        location: ".opencode\\opencode.json:1-6"
+        description: "OpenCode plugin config — 'plugin: [list]' only. No commands or skills defined."
+        language: "json"
+      - element: "package.json"
+        type: "config"
+        location: ".opencode\\package.json:1-5"
+        description: "Single dependency: @opencode-ai/plugin@1.14.39. No command definitions."
+        language: "json"
+    lines: 6
+  - file: "scripts directory"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\scripts\\"
+    purpose: "Check for existing server startup or infrastructure scripts"
+    key_elements:
+      - element: "capture-t5-screenshots.mjs"
+        type: "script"
+        location: "scripts/capture-t5-screenshots.mjs"
+        description: "Playwright screenshot capture utility (Node.js ESM)"
+        language: "javascript"
+      - element: "compare-screenshots.mjs"
+        type: "script"
+        location: "scripts/compare-screenshots.mjs"
+        description: "Screenshot comparison utility"
+        language: "javascript"
+      - element: "verify-css-fixes.mjs"
+        type: "script"
+        location: "scripts/verify-css-fixes.mjs"
+        description: "CSS regression verification"
+        language: "javascript"
+    lines: 3
+  - file: "AGENTS.md"
+    path: "C:\\Users\\clock\\source\\repos\\RuckR\\AGENTS.md"
+    purpose: "Canonical server startup pattern documentation"
+    key_elements:
+      - element: "Start-Job pattern"
+        type: "documented command"
+        location: "AGENTS.md:41-55"
+        description: "PowerShell Start-Job -Name RuckRServer { dotnet run --project RuckR\\Server\\RuckR.Server.csproj --launch-profile https } — documented as the ONLY way to run the long-lived server"
+        language: "powershell"
+      - element: "Server lifecycle management"
+        type: "documented commands"
+        location: "AGENTS.md:48-55"
+        description: "Receive-Job (check status), Stop-Job + Remove-Job (stop). No script file wraps these — they are inline commands."
+        language: "powershell"
+      - element: "Server URLs"
+        type: "runtime info"
+        location: "AGENTS.md:36"
+        description: "https profile: https://localhost:7161 and http://localhost:5282"
+        language: "text"
+    lines: 89
+  - file: "Program.cs (Server)"
+    path: "RuckR\\Server\\Program.cs"
+    purpose: "OTEL configuration — full pipeline analysis"
+    key_elements:
+      - element: "OTEL pipeline registration"
+        type: "code block"
+        location: "RuckR/Server/Program.cs:71-101"
+        description: |
+          Full OTEL setup: IOpenTelemetryBuilder with ConfigureResource (serviceName: 'RuckR.Server', version '1.0.0').
+          Tracing: AspNetCore (filter /healthz, /_framework), HttpClient (RecordException=true), EF Core (SetDbStatementForText=true), custom ActivitySource 'RuckR.Server', Console exporter.
+          Metrics: AspNetCore, HttpClient, Runtime instrumentation, custom Meter 'RuckR.Server.Metrics', Console exporter.
+          Logging: WithLogging() with IncludeScopes=true and IncludeFormattedMessage=true.
+          OTLP exporter: UseOtlpExporter() — reads OTEL_EXPORTER_OTLP_ENDPOINT env var; NO custom OtlpExporterOptions configured (all defaults).
+        language: "csharp"
+      - element: "Console exporter"
+        type: "warning"
+        location: "RuckR/Server/Program.cs:92,98"
+        description: "Console exporter is ALWAYS ON (not conditional on Development environment). Plan.yaml T2 spec'd Development-only console export — implementation deviates."
+        language: "csharp"
+      - element: "HTTP logging middleware"
+        type: "middleware"
+        location: "RuckR/Server/Program.cs:66-69,135"
+        description: "AddHttpLogging() with HttpLoggingFields.All (verbose) + UseHttpLogging() middleware. Plan spec'd limited fields (RequestPath, RequestMethod, ResponseStatusCode, Duration) — implementation uses All fields."
+        language: "csharp"
+    lines: 174
+  - file: "RuckR.Server.csproj"
+    path: "RuckR\\Server\\RuckR.Server.csproj"
+    purpose: "OTEL NuGet package inventory"
+    key_elements:
+      - element: "OTEL package references"
+        type: "PackageReference collection"
+        location: "RuckR/Server/RuckR.Server.csproj:19-25"
+        description: "7 OTEL packages: Exporter.Console 1.11.2, Exporter.OpenTelemetryProtocol 1.11.2, Extensions.Hosting 1.11.2, Instrumentation.AspNetCore 1.11.1, Instrumentation.EntityFrameworkCore 1.11.0-beta.2, Instrumentation.Http 1.11.1, Instrumentation.Runtime 1.11.1"
+        language: "xml/msbuild"
+    lines: 37
+  - file: "launchSettings.json"
+    path: "RuckR\\Server\\Properties\\launchSettings.json"
+    purpose: "Server launch profile configuration"
+    key_elements:
+      - element: "https profile"
+        type: "launch profile"
+        location: "RuckR/Server/Properties/launchSettings.json:21-30"
+        description: "commandName: Project, urls: https://localhost:7161;http://localhost:5282, env: ASPNETCORE_ENVIRONMENT=Development. No OTEL_EXPORTER_OTLP_ENDPOINT set."
+        language: "json"
+      - element: "http profile"
+        type: "launch profile"
+        location: "RuckR/Server/Properties/launchSettings.json:11-20"
+        description: "commandName: Project, url: http://localhost:5282, env: ASPNETCORE_ENVIRONMENT=Development"
+        language: "json"
+      - element: "IIS Express profile"
+        type: "launch profile"
+        location: "RuckR/Server/Properties/launchSettings.json:31-38"
+        description: "commandName: IISExpress, urls: http://localhost:35038;https://localhost:44314"
+        language: "json"
+    lines: 40
+  - file: "TelemetryController.cs"
+    path: "RuckR\\Server\\Controllers\\TelemetryController.cs"
+    purpose: "OTEL status/health endpoint"
+    key_elements:
+      - element: "Status endpoint"
+        type: "API endpoint"
+        location: "RuckR/Server/Controllers/TelemetryController.cs:36-51"
+        description: "GET /api/telemetry/status returns OTEL status: serviceName, exporters (Console + OTLP), otlpEndpoint from env var (falls back to 'not set'), signals, uptime, environment"
+        language: "csharp"
+      - element: "Health endpoint"
+        type: "API endpoint"
+        location: "RuckR/Server/Controllers/TelemetryController.cs:30-34"
+        description: "GET /api/telemetry/health — returns { status: 'healthy', timestamp }"
+        language: "csharp"
+    lines: 53
+  - file: "appsettings.json"
+    path: "RuckR\\Server\\appsettings.json"
+    purpose: "Server configuration — no OTEL settings"
+    key_elements:
+      - element: "LogLevel config"
+        type: "config section"
+        location: "RuckR/Server/appsettings.json:2-7"
+        description: "Default=Information, Microsoft.AspNetCore=Warning. No OTEL_EXPORTER_OTLP_ENDPOINT or OpenTelemetry section."
+        language: "json"
+      - element: "Connection strings"
+        type: "config section"
+        location: "RuckR/Server/appsettings.json:16-20"
+        description: "LocalDB primary; Docker SQL Server alternative commented out"
+        language: "json"
+    lines: 21
+  - file: "appsettings.Development.json"
+    path: "RuckR\\Server\\appsettings.Development.json"
+    purpose: "Dev config — no OTEL settings"
+    key_elements:
+      - element: "LogLevel config"
+        type: "config section"
+        location: "RuckR/Server/appsettings.Development.json:2-7"
+        description: "Same as production — no OTEL configuration"
+        language: "json"
+    lines: 13
+  - file: "plan.yaml (otel-logging)"
+    path: "docs\\plan\\20260506-otel-logging\\plan.yaml"
+    purpose: "OTEL implementation plan — scope and decisions reference"
+    key_elements:
+      - element: "OTLP endpoint question"
+        type: "open question"
+        location: "docs/plan/20260506-otel-logging/plan.yaml:24-27"
+        description: "Decision blocker: 'Should the OTLP exporter be required at startup, or should the app start gracefully when no collector is available?' — confirmed from server log that app starts without collector (connection errors are non-fatal)."
+        language: "yaml"
+      - element: "OTLP endpoint config gap"
+        type: "gap"
+        location: "docs/plan/20260506-otel-logging/plan.yaml:33-37"
+        description: "Gap: 'No environment variable or configuration pattern defined for the OTEL collector endpoint' — still open."
+        language: "yaml"
+    lines: 576
+  - file: "server runtime log"
+    path: "docs\\plan\\20260506-otel-logging\\logs\\server-20260506-203022.log"
+    purpose: "Live server evidence — OTLP exporter behavior"
+    key_elements:
+      - element: "OTLP connection attempt"
+        type: "metric evidence"
+        location: "server log lines 407-418, 420-448"
+        description: "http.client.active_requests + http.client.request.duration show POST to server.address:localhost, server.port:4317 with error.type:connection_error. Metric shows 1 failed attempt with 4.07s duration. Confirms OTLP exporter is active but no collector is listening."
+        language: "text"
+      - element: "NU1902 warnings"
+        type: "build warning"
+        location: "server log lines 3-6"
+        description: "OpenTelemetry.Api 1.11.2 (GHSA-g94r-2vxg-569j) and OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2 (GHSA-4625-4j76-fww9) have known moderate severity vulnerabilities."
+        language: "text"
+      - element: "Console exporter output"
+        type: "runtime behavior"
+        location: "server log lines 28-1290"
+        description: "Console exporter dumps all metrics to stdout (dotnet.gc.*, dotnet.process.*, dotnet.jit.*, http.client.*, dns.lookup.*). Always on, not Dev-only."
+        language: "text"
+    lines: 1290
+  - file: "Developer Guide"
+    path: "docs\\plan\\20260505-creature-collector-rugby-gps\\DEVELOPER_GUIDE.md"
+    purpose: "Docker SQL Server reference"
+    key_elements:
+      - element: "Docker SQL Server command"
+        type: "documentation"
+        location: "DEVELOPER_GUIDE.md:24,829"
+        description: "docker run -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=YourStrong!Pass' -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest — documented Docker usage for SQL Server only, not Jaeger"
+        language: "bash"
+    lines: 829
+patterns_found:
+  - category: "structure"
+    pattern: "No server startup script — inline PowerShell commands only"
+    description: "AGENTS.md documents PowerShell Start-Job/Receive-Job/Stop-Job commands as inline snippets. No .ps1 wrapper script exists. No scripts/ directory contains any server launcher. The scripts/ directory is exclusively Playwright screenshot tooling (3 .mjs files)."
+    examples:
+      - file: "AGENTS.md"
+        location: "AGENTS.md:41-55"
+        snippet: "Start-Job -Name RuckRServer { dotnet run --project RuckR\\Server\\RuckR.Server.csproj --launch-profile https }"
+    prevalence: "common"
+  - category: "architecture"
+    pattern: "OTEL pipeline deviates from plan spec"
+    description: "Plan.yaml T2 spec'd Console exporter conditional on Development environment. Program.cs implementation has Console exporter always on (lines 92, 98). Plan spec'd HttpLogging with limited fields — implementation uses HttpLoggingFields.All. Plan spec'd OTLP endpoint config via env var only — implementation matches (reads OTEL_EXPORTER_OTLP_ENDPOINT, no appsettings fallback)."
+    examples:
+      - file: "Program.cs"
+        location: "RuckR/Server/Program.cs:92"
+        snippet: "tracing.AddConsoleExporter())  // always on for dev visibility"
+      - file: "Program.cs"
+        location: "RuckR/Server/Program.cs:68"
+        snippet: "options.LoggingFields = Microsoft.AspNetCore.HttpLogging.HttpLoggingFields.All;"
+    prevalence: "common"
+  - category: "architecture"
+    pattern: "OTLP exporter connects without custom options"
+    description: "UseOtlpExporter() called with no OtlpExporterOptions configuration — uses all defaults: gRPC protocol, BatchExportProcessor, http://localhost:4317 endpoint (overridable via OTEL_EXPORTER_OTLP_ENDPOINT env var). Server log proves non-blocking behavior — connection errors are logged but app continues running."
+    examples:
+      - file: "Program.cs"
+        location: "RuckR/Server/Program.cs:100"
+        snippet: "otel.UseOtlpExporter();     // reads OTEL_EXPORTER_OTLP_ENDPOINT env var"
+    prevalence: "common"
+  - category: "architecture"
+    pattern: "No OTEL configuration in launchSettings.json or appsettings"
+    description: "OTEL_EXPORTER_OTLP_ENDPOINT is not set in any launch profile or appsettings file. The OTLP exporter defaults to http://localhost:4317 at runtime. This means the server always attempts gRPC export to localhost:4317 unless the env var is set externally."
+    examples:
+      - file: "launchSettings.json"
+        location: "RuckR/Server/Properties/launchSettings.json:27-29"
+        snippet: "\"environmentVariables\": { \"ASPNETCORE_ENVIRONMENT\": \"Development\" }"
+    prevalence: "common"
+  - category: "structure"
+    pattern: "No container orchestration files exist"
+    description: "No docker-compose.yml, Dockerfile, or .containerfile anywhere in the repo. Docker usage is limited to ad-hoc docker run commands in documentation (SQL Server in Developer Guide). No Jaeger, OTEL Collector, or any observability container configuration."
+    examples:
+      - file: "DEVELOPER_GUIDE.md"
+        location: "docs/plan/20260505-creature-collector-rugby-gps/DEVELOPER_GUIDE.md:24"
+        snippet: "docker run -e \"ACCEPT_EULA=Y\" -e \"MSSQL_SA_PASSWORD=YourStrong!Pass\" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest"
+    prevalence: "common"
+  - category: "structure"
+    pattern: "OpenCode custom commands feature is unused"
+    description: ".opencode/ exists but contains only plugin scaffolding (package.json, node_modules, opencode.json). No .opencode/commands/ directory exists. The opencode.json config only declares 'plugin: [list]'. No custom slash commands are defined."
+    examples:
+      - file: "opencode.json"
+        location: ".opencode/opencode.json:1-6"
+        snippet: "{\"$schema\": \"https://opencode.ai/config.json\", \"plugin\": [\"list\"] }"
+    prevalence: "common"
+related_architecture:
+  components_relevant_to_domain:
+    - component: "OpenTelemetry OTLP Exporter (Server)"
+      responsibility: "Exports traces, metrics, and logs to OTLP-compatible collector via gRPC on localhost:4317"
+      location: "RuckR/Server/Program.cs:100"
+      relationship_to_domain: "Primary OTEL export path — currently failing because no collector (Jaeger/OTEL Collector) is running"
+    - component: "OpenTelemetry Console Exporter (Server)"
+      responsibility: "Exports traces and metrics to stdout for local dev visibility"
+      location: "RuckR/Server/Program.cs:92,98"
+      relationship_to_domain: "Always-on dev exporter — dumps all metrics every 10s to console"
+    - component: "TelemetryController Status endpoint"
+      responsibility: "Exposes OTEL runtime status at /api/telemetry/status — reports OTLP endpoint, active signals, uptime"
+      location: "RuckR/Server/Controllers/TelemetryController.cs:36-51"
+      relationship_to_domain: "Diagnostic endpoint to verify OTEL configuration at runtime"
+    - component: "launchSettings.json profiles"
+      responsibility: "Define server startup URLs and environment variables"
+      location: "RuckR/Server/Properties/launchSettings.json"
+      relationship_to_domain: "Controls what URLs the server binds to; does NOT set OTEL_EXPORTER_OTLP_ENDPOINT — env var must come from external source (script or system)"
+  interfaces_used_by_domain:
+    - interface: "OTEL_EXPORTER_OTLP_ENDPOINT (environment variable)"
+      location: "System environment or launch profile"
+      usage_pattern: "Read by UseOtlpExporter() extension method at startup. Defaults to http://localhost:4317 if unset. Standard OTEL SDK convention."
+    - interface: "OTLP gRPC (port 4317)"
+      location: "Jaeger/OTEL Collector"
+      usage_pattern: "Server pushes telemetry via gRPC POST to {OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces, /v1/metrics, /v1/logs"
+    - interface: "Jaeger UI (port 16686)"
+      location: "Jaeger all-in-one container"
+      usage_pattern: "Web UI for querying traces — accessed at http://localhost:16686"
+  data_flow_involving_domain: |
+    RuckR.Server (ASP.NET Core) → ILogger<T> + ActivitySource + Meter
+      → OTLP Exporter (BatchExportProcessor, gRPC)
+        → POST to {OTEL_EXPORTER_OTLP_ENDPOINT} (default http://localhost:4317)
+          → Jaeger all-in-one (OTLP receiver on :4317) → Jaeger UI (:16686)
+    Parallel: Console exporter → stdout (always on)
+  key_relationships_to_domain:
+    - from: "RuckR.Server Program.cs"
+      to: "OTLP Exporter"
+      relationship: "configures via UseOtlpExporter()"
+    - from: "OTLP Exporter"
+      to: "OTEL_EXPORTER_OTLP_ENDPOINT env var"
+      relationship: "reads at startup for collector endpoint"
+    - from: "OTLP Exporter"
+      to: "Jaeger/OTEL Collector"
+      relationship: "pushes telemetry data via gRPC"
+    - from: "AGENTS.md"
+      to: "PowerShell Start-Job"
+      relationship: "documents as canonical server startup method"
+related_technology_stack:
+  languages_used_in_domain: ["C#", "PowerShell (documented but no scripts)", "MSBuild/XML"]
+  frameworks_used_in_domain:
+    - name: "OpenTelemetry .NET SDK 1.11.x"
+      usage_in_domain: "Distributed tracing, metrics, and logging pipeline in RuckR.Server"
+    - name: "ASP.NET Core 10.0"
+      usage_in_domain: "Server host, middleware pipeline, controller hosting"
+  libraries_used_in_domain:
+    - name: "OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2"
+      purpose_in_domain: "OTLP gRPC exporter — sends all three signals to collector"
+    - name: "OpenTelemetry.Exporter.Console 1.11.2"
+      purpose_in_domain: "Console exporter — always-on dev output to stdout"
+    - name: "OpenTelemetry.Instrumentation.AspNetCore 1.11.1"
+      purpose_in_domain: "Auto-instrumentation for ASP.NET Core request pipeline"
+    - name: "OpenTelemetry.Instrumentation.Http 1.11.1"
+      purpose_in_domain: "Auto-instrumentation for HttpClient outbound calls"
+    - name: "OpenTelemetry.Instrumentation.Runtime 1.11.1"
+      purpose_in_domain: "Runtime metrics (GC, thread pool, JIT, exceptions)"
+    - name: "OpenTelemetry.Instrumentation.EntityFrameworkCore 1.11.0-beta.2"
+      purpose_in_domain: "EF Core query instrumentation (beta — note vulnerability warning)"
+  external_apis_used_in_domain:
+    - name: "OTLP gRPC protocol"
+      integration_point: "RuckR.Server Program.cs:100 — UseOtlpExporter()"
+    - name: "Jaeger all-in-one (proposed)"
+      integration_point: "OTLP receiver on port 4317 (gRPC), UI on port 16686"
+related_conventions:
+  naming_patterns_in_domain: "OTEL_EXPORTER_OTLP_ENDPOINT env var follows standard OpenTelemetry SDK convention. Service name: 'RuckR.Server' with version '1.0.0'. Meter name: 'RuckR.Server.Metrics'. ActivitySource name: 'RuckR.Server'."
+  structure_of_domain: |
+    Server startup is entirely manual — no automation scripts exist:
+    - PowerShell Start-Job documented in AGENTS.md as inline commands (not scripted)
+    - No .ps1, .sh, .bat, or .cmd files in repo for server management
+    - scripts/ directory is exclusively Playwright tooling (Node.js .mjs)
+    - launchSettings.json controls URLs and env vars but has no OTEL configuration
+    - OTEL pipeline is fully code-configured in Program.cs with no external config files
+  error_handling_in_domain: "OTLP exporter uses BatchExportProcessor (default) — connection failures are handled in background, do NOT block app startup. Server log confirms: app starts, serves requests, OTLP connection attempts fail silently in background with connection_error metrics logged."
+  testing_in_domain: "No tests for OTEL configuration or server startup. No integration test for OTLP export path."
+  documentation_in_domain: "AGENTS.md is the sole startup documentation. No README for server setup. Developer Guide covers SQL Server Docker setup only."
+related_dependencies:
+  internal:
+    - component: "RuckR.Server (OTEL pipeline)"
+      relationship_to_domain: "Generates and exports telemetry — source of all traces/metrics/logs"
+      direction: "outbound"
+    - component: "launchSettings.json profiles"
+      relationship_to_domain: "Controls server binding URLs and ASPNETCORE_ENVIRONMENT"
+      direction: "inbound"
+  external:
+    - name: "Jaeger all-in-one Docker image"
+      purpose_for_domain: "OTLP-compatible tracing backend — receives telemetry on port 4317, provides UI on port 16686"
+    - name: "OTEL_EXPORTER_OTLP_ENDPOINT"
+      purpose_for_domain: "Environment variable controlling OTLP collector endpoint — must be set in startup context (script, launch profile, or system)"
+domain_security_considerations:
+  sensitive_areas:
+    - area: "OTLP transport"
+      location: "RuckR/Server/Program.cs:100"
+      concern: "OTLP gRPC to localhost:4317 uses HTTP (not HTTPS). In local dev this is acceptable. For production, collector endpoint should be HTTPS."
+    - area: "OpenTelemetry NuGet vulnerabilities"
+      location: "RuckR/Server/RuckR.Server.csproj:19-20"
+      concern: "OpenTelemetry.Api 1.11.2 (GHSA-g94r-2vxg-569j) and OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2 (GHSA-4625-4j76-fww9) have known moderate severity vulnerabilities. Upgrade to 1.11.3+ when available."
+    - area: "TelemetryController endpoints"
+      location: "RuckR/Server/Controllers/TelemetryController.cs:30-51"
+      concern: "/api/telemetry/health and /api/telemetry/status are open (no [Authorize]) — expose service name, uptime, and env. Low risk for MVP but should be behind auth in production."
+  authentication_patterns_in_domain: "No auth on telemetry endpoints — open for MVP"
+  authorization_patterns_in_domain: "No authorization on telemetry endpoints"
+  data_validation_in_domain: "TelemetryController POST validates JSON deserialization; returns 400 on malformed payload per plan spec"
+testing_patterns:
+  framework: "xUnit 2.9.3 (via RuckR.Tests)"
+  coverage_areas: ["No OTEL-specific tests exist"]
+  test_organization: "No test for OTEL pipeline, OTLP exporter configuration, or server startup"
+  mock_patterns: []
+open_questions:
+  - question: "Is Docker available on the development machine?"
+    context: "Jaeger all-in-one Docker image is the recommended OTEL backend. Server log shows OTLP connection failures to localhost:4317 — no collector is running. Cannot verify Docker availability from file analysis alone; requires shell command (docker --version). Docker is referenced in Developer Guide for SQL Server but no docker-compose.yml exists."
+    type: "decision_blocker"
+    affects: ["Jaeger deployment method", "docker-compose.yml creation", "startup script design"]
+  - question: "What PowerShell version is available — Windows PowerShell 5.1 or PowerShell Core (pwsh)?"
+    context: "AGENTS.md uses Start-Job which is available in both. But pwsh (PowerShell Core 7+) is cross-platform and preferred for modern tooling. Playwright documentation references 'pwsh' specifically. Cannot verify from file analysis; requires shell command (Get-Command pwsh)."
+    type: "decision_blocker"
+    affects: ["script shebang/execution method", "cross-platform compatibility", "CI/CD integration"]
+  - question: "Should OTEL_EXPORTER_OTLP_ENDPOINT be set in launchSettings.json, a startup script, or appsettings.json?"
+    context: "Currently unset anywhere — defaults to http://localhost:4317. launchSettings.json is the logical place for dev (would set it per-profile). A startup script could set it before launching dotnet run. appsettings.json would require custom code to read (OTEL SDK doesn't read appsettings for this). Plan.yaml question is still open."
+    type: "research"
+    affects: ["startup script design", "launchSettings.json modification", "documentation"]
+  - question: "Should the Console exporter be conditional on Development environment?"
+    context: "Plan.yaml T2 spec'd Development-only console export. Current implementation has Console exporter always on. Always-on console export dumps verbose metrics to stdout every 10s — useful for dev but noisy for production."
+    type: "research"
+    affects: ["Program.cs cleanup", "production deployment", "log noise"]
+gaps:
+  - area: "Server startup automation"
+    description: "No PowerShell script (.ps1), batch file (.bat/.cmd), or shell script (.sh) exists to start the RuckR server. AGENTS.md documents inline PowerShell commands (Start-Job, Receive-Job, Stop-Job) but these are manual copy-paste operations. A reusable script would: set OTEL_EXPORTER_OTLP_ENDPOINT, start Jaeger container if Docker available, launch server in background, and provide status/stop commands."
+    impact: "research_blocker"
+    affects: ["developer workflow", "CI/CD server startup", "new developer onboarding"]
+  - area: "Jaeger/OTEL collector deployment"
+    description: "No Jaeger binary, Docker container configuration, docker-compose.yml, or any collector setup exists in the repo. Server OTLP exporter actively attempts connections to localhost:4317 and fails (confirmed by server log). Without a collector, all OTLP telemetry is lost — only Console exporter output is retained."
+    impact: "decision_blocker"
+    affects: ["distributed tracing visibility", "metrics aggregation", "OTEL investment value"]
+  - area: "OTEL_EXPORTER_OTLP_ENDPOINT configuration"
+    description: "Endpoint is not set in launchSettings.json, appsettings.json, or any script. Defaults to http://localhost:4317 at runtime. No mechanism exists for a developer to easily configure a different collector endpoint without manually setting an environment variable."
+    impact: "research_blocker"
+    affects: ["collector endpoint flexibility", "developer experience", "production configuration"]
+  - area: "OpenTelemetry NuGet vulnerability"
+    description: "OpenTelemetry.Api 1.11.2 and OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2 have known moderate severity vulnerabilities (NU1902 warning in build). No newer patched versions currently available in the 1.11.x line per NuGet."
+    impact: "nice_to_know"
+    affects: ["security posture", "future package upgrades"]

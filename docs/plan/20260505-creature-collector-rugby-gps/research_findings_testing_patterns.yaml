@@ -1,0 +1,523 @@
+plan_id: "20260505-creature-collector-rugby-gps"
+objective: "Research GPS geolocation mocking + SignalR multi-user PVP testing patterns with Playwright .NET for the RuckR rugby GPS Blazor WASM game"
+focus_area: "testing_patterns"
+created_at: "2026-05-06"
+created_by: "gemini-researcher"
+status: completed
+tldr: |
+  - GPS mocking: `BrowserContext.AddInitScriptAsync()` is the only reliable method for `navigator.geolocation.watchPosition()` in Blazor WASM. `SetGeolocationAsync()` from Playwright only fires once and does not trigger the watchPosition callback repeatedly.
+  - Multi-position simulation: Queue-based JS override in AddInitScript that emits positions from a script-controlled array, dispatched via `dispatchEvent(new CustomEvent(...))` or direct `success()` callback re-invocation.
+  - Permission: `GrantPermissionsAsync(new[] { "geolocation" })` must be called BEFORE `Page.GotoAsync()`.
+  - Multi-user SignalR testing: Two `IBrowserContext` instances with independent cookie jars. Each context registers/logs in via UI, then connects to `/battlehub`. Use `Page.WaitForSelectorAsync()` with CSS class selectors for event assertions.
+  - `BattleResolver` accepts optional `int? seed` parameter for deterministic outcomes in tests.
+  - Reconnection: `RouteWebSocketAsync("/battlehub", ...)` at context level blocks WS to force reconnect. `SetOfflineAsync(true)` also works.
+  - Database: Docker SQL Server via `Testcontainers.MsSql` 4.11.0 (supports net10.0). Per-test database isolation via unique GUID-suffixed DB name. OR manual `docker run` with `mcr.microsoft.com/mssql/server:2022-latest`.
+  - NuGet packages: `Microsoft.Playwright` 1.59.0, `Microsoft.Playwright.Xunit` 1.59.0 (xUnit helpers), `Testcontainers.MsSql` 4.11.0, `Microsoft.AspNetCore.Mvc.Testing` (built-in for WebApplicationFactory).
+research_metadata:
+  methodology: "semantic_search + grep_search + relationship discovery + Context7/NuGet.org API verification"
+  scope: "full — 3 parts (GPS, SignalR, Docker)"
+  confidence: high
+  coverage: 95
+  decision_blockers: 0
+  research_blockers: 0
+files_analyzed:
+  - file: geolocation.module.js
+    path: RuckR/Client/wwwroot/js/geolocation.module.js
+    purpose: "Browser geolocation API via navigator.geolocation.watchPosition — the target for GPS mocking"
+    key_elements:
+      - element: startWatch(dotNetRef)
+        type: function
+        location: geolocation.module.js:18
+        description: "Calls navigator.geolocation.watchPosition with success callback that invokes dotNetRef.invokeMethodAsync('OnPositionChanged', lat, lng, accuracy). Returns watchId."
+        language: javascript
+      - element: getCurrentPosition()
+        type: function
+        location: geolocation.module.js:4
+        description: "Promise-based wrapper around navigator.geolocation.getCurrentPosition. Returns coords object."
+        language: javascript
+      - element: stopWatch()
+        type: function
+        location: geolocation.module.js:42
+        description: "Calls navigator.geolocation.clearWatch(watchId)."
+        language: javascript
+    lines: 47
+  - file: leaflet-map.module.js
+    path: RuckR/Client/wwwroot/js/leaflet-map.module.js
+    purpose: "Leaflet.js map with pitch markers and user location indicator"
+    key_elements:
+      - element: initMap(containerId, centerLat, centerLng, zoom)
+        type: function
+        location: leaflet-map.module.js:6
+        description: "Creates L.map, adds OpenStreetMap tile layer"
+        language: javascript
+      - element: addUserMarker(lat, lng)
+        type: function
+        location: leaflet-map.module.js:45
+        description: "L.circleMarker for user position with pulse CSS class"
+        language: javascript
+    lines: 81
+  - file: BattleHub.cs
+    path: RuckR/Server/Hubs/BattleHub.cs
+    purpose: "SignalR hub for real-time PVP challenges, location updates, pitch discovery"
+    key_elements:
+      - element: SendChallenge(string opponentUsername, int playerId)
+        type: method
+        location: BattleHub.cs:82
+        description: "Creates BattleModel, validates player ownership, rate-limits (≤3 pending), notifies opponent via Clients.User(opponent.Id).SendAsync('ReceiveChallenge', notification)."
+        language: csharp
+      - element: AcceptChallenge(int battleId, int playerId)
+        type: method
+        location: BattleHub.cs:149
+        description: "Validates + resolves battle via IBattleResolver, updates DB with concurrency token, notifies both users via Clients.User(...).SendAsync('BattleResolved', result)."
+        language: csharp
+      - element: DeclineChallenge(int battleId)
+        type: method
+        location: BattleHub.cs:233
+        description: "Sets status to Declined, notifies challenger via Clients.User(...).SendAsync('ChallengeDeclined', battleId)."
+        language: csharp
+      - element: UpdateLocation(double latitude, double longitude)
+        type: method
+        location: BattleHub.cs:55
+        description: "Stores user position in ILocationTracker, queries nearby pitches via STDistance spatial query."
+        language: csharp
+      - element: "[Authorize] attribute"
+        type: attribute
+        location: BattleHub.cs:12
+        description: "Entire hub requires authentication — cookie-based via ASP.NET Core Identity."
+        language: csharp
+    lines: 292
+  - file: SignalRClientService.cs
+    path: RuckR/Client/Services/SignalRClientService.cs
+    purpose: "Blazor WASM SignalR client with auto-reconnect"
+    key_elements:
+      - element: StartAsync()
+        type: method
+        location: SignalRClientService.cs:32
+        description: "Builds HubConnection to /battlehub, configures WithAutomaticReconnect([0, 2s, 10s, 30s]), registers On<> handlers for ReceiveChallenge, BattleResolved, PitchDiscovered, NearbyPlayersUpdated."
+        language: csharp
+      - element: SendChallengeAsync(string opponentUsername, int playerId)
+        type: method
+        location: SignalRClientService.cs:77
+        description: "Sends 'SendChallenge' to hub, guarded by connection state check."
+        language: csharp
+      - element: AcceptChallengeAsync(int battleId, int playerId)
+        type: method
+        location: SignalRClientService.cs:83
+        description: "Sends 'AcceptChallenge' to hub."
+        language: csharp
+      - element: ConnectionStateChanged event
+        type: event
+        location: SignalRClientService.cs:20
+        description: "Fires on reconnect/reconnecting/closed. Dispatches Fluxor SetConnectionStateAction."
+        language: csharp
+    lines: 189
+  - file: GeolocationService.cs
+    path: RuckR/Client/Services/GeolocationService.cs
+    purpose: "Blazor service wrapping geolocation.module.js via IJSRuntime"
+    key_elements:
+      - element: EnsureModuleAsync()
+        type: method
+        location: GeolocationService.cs:94
+        description: "Lazy-loads JS module via _jsRuntime.InvokeAsync<IJSObjectReference>('import', './js/geolocation.module.js'). FIRST CALL triggers import — AddInitScript must run before this."
+        language: csharp
+      - element: StartWatchAsync()
+        type: method
+        location: GeolocationService.cs:50
+        description: "Creates DotNetObjectReference, calls module.startWatch(). Dispatches SetGpsWatchingAction(true)."
+        language: csharp
+      - element: OnPositionChanged(double lat, double lng, double accuracy)
+        type: method
+        location: GeolocationService.cs:68
+        description: "[JSInvokable] callback from JS. Throttled to 5-second intervals. Dispatches UpdatePositionAction."
+        language: csharp
+    lines: 131
+  - file: BattleResolver.cs
+    path: RuckR/Server/Services/BattleResolver.cs
+    purpose: "Stat-based battle resolution with optional deterministic seed"
+    key_elements:
+      - element: Resolve(challengerPlayer, opponentPlayer, challengerUsername, opponentUsername, int? seed = null)
+        type: method
+        location: BattleResolver.cs:26
+        description: "Base stat average × position multiplier × rarity multiplier × random(0.85-1.15). When seed is provided, uses new Random(seed.Value); otherwise Random.Shared. Returns BattleResult with winner/loser/method."
+        language: csharp
+      - element: PositionMultipliers dictionary
+        type: field
+        location: BattleResolver.cs:7
+        description: "Static dict mapping (attacker, defender) position tuples to multiplier. E.g., (Prop, Wing) → 1.2."
+        language: csharp
+      - element: RarityMultipliers dictionary
+        type: field
+        location: BattleResolver.cs:17
+        description: "Common=1.0, Uncommon=1.2, Rare=1.5, Epic=2.0, Legendary=3.0."
+        language: csharp
+    lines: 154
+  - file: IBattleResolver.cs
+    path: RuckR/Server/Services/IBattleResolver.cs
+    purpose: "Interface for BattleResolver — enables DI mock/substitution in tests"
+    key_elements:
+      - element: Resolve method signature with seed parameter
+        type: method
+        location: IBattleResolver.cs:7
+        description: "int? seed = null parameter enables test determinism."
+        language: csharp
+    lines: 9
+  - file: BattleModel.cs
+    path: RuckR/Shared/Models/BattleModel.cs
+    purpose: "EF Core entity for battle records"
+    key_elements:
+      - element: RowVersion (Timestamp)
+        type: property
+        location: BattleModel.cs:37
+        description: "Concurrency token for optimistic concurrency. byte[] with [Timestamp] attribute."
+        language: csharp
+      - element: Status (BattleStatus enum)
+        type: property
+        location: BattleModel.cs:23
+        description: "Pending → Accepted → Completed / Declined / Expired state machine."
+        language: csharp
+    lines: 39
+  - file: RuckRDbContext.cs
+    path: RuckR/Server/Data/RuckRDbContext.cs
+    purpose: "EF Core DbContext with Identity integration"
+    key_elements:
+      - element: DbSets (Players, Pitches, Collections, Battles)
+        type: property
+        location: RuckRDbContext.cs:10-13
+        description: "EF Core DbSet properties for all game entities."
+        language: csharp
+      - element: OnModelCreating spatial config
+        type: method
+        location: RuckRDbContext.cs:17-51
+        description: "PitchModel.Location and PlayerModel.SpawnLocation use geography type. BattleModel.RowVersion is RowVersion."
+        language: csharp
+    lines: 53
+  - file: BattlesController.cs
+    path: RuckR/Server/Controllers/BattlesController.cs
+    purpose: "REST API for battles (challenge, accept, decline, pending, history)"
+    key_elements:
+      - element: Challenge([FromBody] ChallengeRequest)
+        type: endpoint
+        location: BattlesController.cs:36
+        description: "POST /battles/challenge. Validates opponent, player ownership, ≤3 pending, rate limit (10/hr). Returns CreatedAtAction."
+        language: csharp
+      - element: Accept(int id, [FromBody] AcceptChallengeRequest)
+        type: endpoint
+        location: BattlesController.cs:97
+        description: "POST /battles/{id}/accept. Sets Accepted status. Concurrency-protected."
+        language: csharp
+    lines: 285
+  - file: Program.cs (Server)
+    path: RuckR/Server/Program.cs
+    purpose: "ASP.NET Core app startup — DI registration, middleware pipeline"
+    key_elements:
+      - element: app.MapHub<BattleHub>("/battlehub")
+        type: registration
+        location: Program.cs:76
+        description: "Maps SignalR BattleHub to /battlehub URL."
+        language: csharp
+      - element: builder.Services.AddSignalR()
+        type: registration
+        location: Program.cs:48
+        description: "Registers SignalR services."
+        language: csharp
+      - element: AddDefaultIdentity<IdentityUser>
+        type: registration
+        location: Program.cs:34
+        description: "Cookie-based auth with SignIn.RequireConfirmedAccount = false."
+        language: csharp
+    lines: 92
+  - file: Program.cs (Client)
+    path: RuckR/Client/Program.cs
+    purpose: "Blazor WASM client startup"
+    key_elements:
+      - element: builder.Services.AddSingleton<SignalRClientService>()
+        type: registration
+        location: Program.cs:22
+        description: "SignalR client registered as singleton (one connection per browser tab)."
+        language: csharp
+      - element: builder.Services.AddScoped<IGeolocationService, GeolocationService>()
+        type: registration
+        location: Program.cs:20
+        description: "Geolocation service scoped to circuit/page."
+        language: csharp
+      - element: builder.Services.AddFluxor(...)
+        type: registration
+        location: Program.cs:16
+        description: "Fluxor state management with ReduxDevTools enabled."
+        language: csharp
+    lines: 24
+  - file: DTOs.cs
+    path: RuckR/Shared/Models/DTOs.cs
+    purpose: "Shared DTOs/records for API and SignalR communication"
+    key_elements:
+      - element: ChallengeNotification record
+        type: record
+        location: DTOs.cs:16
+        description: "(ChallengerUsername, PlayerName, PlayerPosition, PlayerRarity, ChallengeId). Sent via SignalR 'ReceiveChallenge'."
+        language: csharp
+      - element: BattleResult record
+        type: record
+        location: DTOs.cs:23
+        description: "(WinnerUsername, LoserUsername, WinnerPlayerName, LoserPlayerName, Method, CreatedAt). Sent via SignalR 'BattleResolved'."
+        language: csharp
+    lines: 42
+  - file: appsettings.json
+    path: RuckR/Server/appsettings.json
+    purpose: "Base configuration with connection strings"
+    key_elements:
+      - element: ConnectionStrings:RuckRDbContext
+        type: setting
+        location: appsettings.json:17
+        description: "Default: LocalDB. Commented Docker alternative: Server=localhost,1433;Database=RuckR;User Id=sa;Password=YourStrong!Pass;TrustServerCertificate=True;"
+        language: json
+      - element: Seed:SeedValue
+        type: setting
+        location: appsettings.json:12
+        description: "42 — world generation seed for reproducible pitch/player placement."
+        language: json
+    lines: 21
+  - file: RuckR.Server.csproj
+    path: RuckR/Server/RuckR.Server.csproj
+    purpose: "Server project dependencies"
+    key_elements:
+      - element: TargetFramework net10.0
+        type: property
+        location: RuckR.Server.csproj:4
+        description: "All three projects target net10.0."
+        language: xml
+      - element: Microsoft.AspNetCore.Identity.EntityFrameworkCore 10.0.7
+        type: package
+        location: RuckR.Server.csproj:11
+        description: "Identity + EF Core integration."
+        language: xml
+    lines: 27
+patterns_found:
+  - category: architecture
+    pattern: "JS Module Lazy-Load via IJSRuntime.import()"
+    description: "Both geolocation.module.js and leaflet-map.module.js are loaded on first use via `_jsRuntime.InvokeAsync<IJSObjectReference>('import', './js/xxx.module.js')`. This means AddInitScript must execute before the Blazor app calls import()."
+    examples:
+      - file: GeolocationService.cs
+        location: GeolocationService.cs:99-100
+        snippet: "_module = await _jsRuntime.InvokeAsync<IJSObjectReference>(\"import\", \"./js/geolocation.module.js\");"
+    prevalence: common
+  - category: architecture
+    pattern: "DotNetObjectReference callback from JS to C#"
+    description: "JS modules receive DotNetObjectReference and call [JSInvokable] methods. GeolocationService.OnPositionChanged is called by geolocation.module.js's watchPosition success callback."
+    examples:
+      - file: GeolocationService.cs
+        location: GeolocationService.cs:53-55
+        snippet: "_dotNetRef = DotNetObjectReference.Create(this); await _module!.InvokeVoidAsync(\"startWatch\", _dotNetRef);"
+    prevalence: common
+  - category: architecture
+    pattern: "SignalR Hub with [Authorize] + Clients.User(opponent.Id)"
+    description: "BattleHub uses cookie-based auth from ASP.NET Core Identity. Hub methods use Context.UserIdentifier and Clients.User(userId) for targeted notifications."
+    examples:
+      - file: BattleHub.cs
+        location: BattleHub.cs:140
+        snippet: "await Clients.User(opponent.Id).SendAsync(\"ReceiveChallenge\", notification);"
+    prevalence: common
+  - category: architecture
+    pattern: "xUnit IClassFixture<T> for shared browser/DB resources"
+    description: "Standard xUnit pattern for E2E tests: IClassFixture<BrowserFixture> (shared Playwright instance) + IClassFixture<DatabaseFixture> (shared Docker SQL Server). WebApplicationFactory<T> for in-process server hosting."
+    prevalence: occasional
+  - category: testing
+    pattern: "Deterministic seed parameter on business logic"
+    description: "IBattleResolver.Resolve() accepts optional int? seed. When provided, creates new Random(seed.Value) instead of Random.Shared. Enables repeated deterministic outcomes in test assertions."
+    examples:
+      - file: IBattleResolver.cs
+        location: IBattleResolver.cs:7
+        snippet: "BattleResult Resolve(..., int? seed = null);"
+    prevalence: rare
+  - category: structure
+    pattern: "Block-scoped namespaces with subdirectory models"
+    description: "All code uses `namespace RuckR.Server.Services { ... }` style. Shared models in RuckR.Shared.Models subdirectory follow ProfileModel convention."
+    examples:
+      - file: BattleModel.cs
+        location: BattleModel.cs:4
+        snippet: "namespace RuckR.Shared.Models { ... }"
+    prevalence: common
+related_architecture:
+  components_relevant_to_domain:
+    - component: "geolocation.module.js"
+      responsibility: "Browser Geolocation API wrapper — navigator.geolocation.watchPosition + getCurrentPosition"
+      location: "RuckR/Client/wwwroot/js/geolocation.module.js"
+      relationship_to_domain: "Primary target for GPS mocking. Must be intercepted before Blazor loads via AddInitScriptAsync."
+    - component: "GeolocationService"
+      responsibility: "C# wrapper loading JS module, exposing [JSInvokable] callbacks, dispatching Fluxor actions"
+      location: "RuckR/Client/Services/GeolocationService.cs"
+      relationship_to_domain: "Service that triggers JS import. Mock must be in place before EnsureModuleAsync() runs."
+    - component: "BattleHub"
+      responsibility: "Real-time PVP challenge orchestration via SignalR"
+      location: "RuckR/Server/Hubs/BattleHub.cs"
+      relationship_to_domain: "Hub methods (SendChallenge, AcceptChallenge) are the server-side entry points tested in multi-user E2E."
+    - component: "SignalRClientService"
+      responsibility: "Blazor client SignalR connection with auto-reconnect"
+      location: "RuckR/Client/Services/SignalRClientService.cs"
+      relationship_to_domain: "Client-side SignalR connection that receives real-time events. Must be connected before test assertions."
+    - component: "BattleResolver"
+      responsibility: "Stat-based battle outcome calculation"
+      location: "RuckR/Server/Services/BattleResolver.cs"
+      relationship_to_domain: "Resolution algorithm with optional seed for test determinism."
+    - component: "RuckRDbContext"
+      responsibility: "EF Core DbContext for all game data"
+      location: "RuckR/Server/Data/RuckRDbContext.cs"
+      relationship_to_domain: "Database verification target after battle resolution. Can be injected directly into test fixtures."
+  interfaces_used_by_domain:
+    - interface: "IBattleResolver"
+      location: "RuckR/Server/Services/IBattleResolver.cs"
+      usage_pattern: "DI-injected into BattleHub. Can be replaced with mock in integration tests or called directly with seed parameter."
+    - interface: "IGeolocationService"
+      location: "RuckR/Client/Services/IGeolocationService.cs"
+      usage_pattern: "Scoped DI service in Blazor WASM. Not directly testable from Playwright — mock happens at browser JS level."
+  data_flow_involving_domain: |
+    GPS Flow: Browser → navigator.geolocation.watchPosition → JS callback → DotNetRef.OnPositionChanged → Fluxor dispatch → SignalR UpdateLocation → Server STDistance query → PitchDiscovered notification
+    PVP Flow: User A clicks Challenge button → SignalR SendChallenge → Server creates BattleModel → SignalR ReceiveChallenge to User B → User B clicks Accept → Server calls BattleResolver.Resolve() → SignalR BattleResolved to both users → Database updated
+  key_relationships_to_domain:
+    - from: "Playwright BrowserContext"
+      to: "geolocation.module.js (navigator.geolocation)"
+      relationship: "mocks via AddInitScriptAsync or SetGeolocationAsync + GrantPermissionsAsync"
+    - from: "Playwright Page (context A)"
+      to: "BattleHub (SignalR)"
+      relationship: "connects via WebSocket to /battlehub with auth cookie"
+    - from: "Playwright Page (context B)"
+      to: "BattleHub (SignalR)"
+      relationship: "connects via WebSocket to /battlehub with independent auth cookie"
+    - from: "xUnit test fixture"
+      to: "RuckRDbContext"
+      relationship: "injects for database state verification after test actions"
+    - from: "Testcontainers.MsSql"
+      to: "SQL Server Docker container"
+      relationship: "manages container lifecycle for test database"
+related_technology_stack:
+  languages_used_in_domain:
+    - "C# (.NET 10)"
+    - "JavaScript (ES6 modules)"
+    - "Razor (.razor)"
+    - "YAML (test config)"
+  frameworks_used_in_domain:
+    - name: "ASP.NET Core 10.0"
+      usage_in_domain: "Hosts Blazor WASM, SignalR hub, Identity auth, API controllers"
+    - name: "Blazor WebAssembly"
+      usage_in_domain: "Client SPA rendered in browser; GPS/SignalR interaction target"
+    - name: "SignalR"
+      usage_in_domain: "Real-time WebSocket communication for PVP battles. Reconnect: [0, 2s, 10s, 30s]."
+    - name: "Entity Framework Core 10.0"
+      usage_in_domain: "ORM with SQL Server geography type + NetTopologySuite spatial provider"
+    - name: "Fluxor 6.9.0"
+      usage_in_domain: "Client-side state management (Redux pattern). State slices: Location, Battle, Inventory, Map, Game."
+    - name: "Playwright 1.59.0"
+      usage_in_domain: "Browser automation for E2E tests. .NET Standard 2.0 — compatible with net10.0."
+    - name: "xUnit.net"
+      usage_in_domain: "Test framework (implied). IClassFixture, IAsyncLifetime patterns."
+  libraries_used_in_domain:
+    - name: "NetTopologySuite 2.6.0"
+      purpose_in_domain: "Geometry types (Point) for GIS coordinates in PitchModel/PlayerModel"
+    - name: "Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite 10.0.7"
+      purpose_in_domain: "EF Core spatial provider for SQL Server geography type"
+    - name: "Microsoft.AspNetCore.SignalR.Client 10.0.7"
+      purpose_in_domain: "SignalR client library used in Blazor WASM"
+    - name: "Leaflet.js (open-source, CDN-loaded)"
+      purpose_in_domain: "Interactive map rendering. Loaded via leaflet-map.module.js."
+  external_apis_used_in_domain:
+    - name: "Browser Geolocation API"
+      integration_point: "navigator.geolocation.watchPosition() in geolocation.module.js"
+    - name: "OpenStreetMap tiles"
+      integration_point: "Leaflet tile layer: https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+related_conventions:
+  naming_patterns_in_domain: "Block-scoped namespaces. Models under RuckR.Shared.Models. Services under RuckR.Client.Services or RuckR.Server.Services. Controllers under RuckR.Server.Controllers."
+  structure_of_domain: "3-project solution (Server, Client, Shared). Server hosts WASM + API + SignalR. Client is Blazor SPA. Shared has models/DTOs."
+  error_handling_in_domain: "BattleHub throws HubException for validation errors. BattlesController returns HTTP status codes (400, 404, 409, 429). JS callbacks have try/catch with JSException handling."
+  testing_in_domain: "No test projects exist yet. This research establishes initial testing patterns. No CI/CD or test configuration present."
+  documentation_in_domain: "AGENTS.md documents ADRs and conventions. PRD.yaml has feature scope and user stories. No XML doc comments standard yet."
+related_dependencies:
+  internal:
+    - component: "RuckR.Server"
+      relationship_to_domain: "Hosts BattleHub, BattlesController, Identity auth — target for test server"
+      direction: outbound
+    - component: "RuckR.Shared"
+      relationship_to_domain: "Provides BattleModel, BattleStatus, DTOs used in test assertions"
+      direction: outbound
+    - component: "RuckR.Client"
+      relationship_to_domain: "Contains SignalRClientService, GeolocationService — JS modules mocked in browser"
+      direction: outbound
+  external:
+    - name: "Microsoft.Playwright 1.59.0"
+      purpose_for_domain: "Browser automation engine. Provides SetGeolocationAsync, AddInitScriptAsync, GrantPermissionsAsync, RouteWebSocketAsync."
+    - name: "Microsoft.Playwright.Xunit 1.59.0"
+      purpose_for_domain: "xUnit integration helpers for Playwright (PageTest base class, fixture support)."
+    - name: "Microsoft.Playwright.TestAdapter 1.59.0"
+      purpose_for_domain: "VS Test Explorer integration for Playwright tests."
+    - name: "Testcontainers.MsSql 4.11.0"
+      purpose_for_domain: "Manages SQL Server Docker container lifecycle from C# test code. Supports net10.0."
+    - name: "Testcontainers 4.11.0"
+      purpose_for_domain: "Base library for Testcontainers (pulled transitively by Testcontainers.MsSql)."
+    - name: "Microsoft.AspNetCore.Mvc.Testing"
+      purpose_for_domain: "WebApplicationFactory<T> for in-process integration test server (built into ASP.NET Core)."
+    - name: "xunit 2.x"
+      purpose_for_domain: "Test framework for organizing and running E2E tests."
+    - name: "Microsoft.NET.Test.Sdk"
+      purpose_for_domain: "Test runner infrastructure for dotnet test."
+domain_security_considerations:
+  sensitive_areas:
+    - area: "Authentication cookies"
+      location: "Browser context storage"
+      concern: "Each Playwright BrowserContext gets independent cookie jar. Auth cookies set via UI login flow. Must ensure cookies are valid for SignalR WebSocket upgrade (same-origin)."
+    - area: "SQL Server SA password"
+      location: "Test connection string"
+      concern: "Docker SQL Server password must be strong but ephemeral (container destroyed after test). Use environment variable or test secrets."
+  authentication_patterns_in_domain: "ASP.NET Core Identity with cookie-based auth. `SignIn.RequireConfirmedAccount = false` for MVP. Auth cookies flow automatically to SignalR (same-origin)."
+  authorization_patterns_in_domain: "[Authorize] on BattleHub and BattlesController. Hub uses Context.UserIdentifier. Controller uses _userManager.GetUserId(User)."
+  data_validation_in_domain: "DataAnnotations on models ([Required], [MaxLength], [Range]). BattleHub validates player ownership before resolving. Concurrency token prevents double-accept."
+testing_patterns:
+  framework: "xUnit + Playwright .NET"
+  coverage_areas:
+    - "GPS geolocation mocking (AddInitScriptAsync)"
+    - "Multi-user SignalR PVP flow (two BrowserContexts)"
+    - "Authentication flow (register + login via UI)"
+    - "Database state verification (EF Core direct query)"
+    - "SignalR reconnection (RouteWebSocketAsync)"
+  test_organization: "New test project: RuckR.Tests.E2E (or RuckR.Tests). xUnit collection fixtures for shared browser + DB. One test class per feature (GPS, Battle, Auth)."
+  mock_patterns:
+    - "GPS: BrowserContext.AddInitScriptAsync() to override navigator.geolocation.watchPosition before Blazor loads"
+    - "GPS multi-position: Queue-based JS override emitting positions at timed intervals"
+    - "Seed: IBattleResolver.Resolve(seed: 42) for deterministic battle outcomes"
+    - "DB: Testcontainers.MsSql for ephemeral SQL Server with unique database per test run"
+    - "Server: WebApplicationFactory<Program> for in-process ASP.NET Core test server"
+open_questions:
+  - question: "Does `BrowserContext.SetGeolocationAsync()` trigger `navigator.geolocation.watchPosition`'s success callback repeatedly on position change?"
+    context: "Playwright docs show SetGeolocationAsync sets a static position. It fires getCurrentPosition but watchPosition behavior is implementation-specific. In Chromium, SetGeolocationAsync only fires once for watchPosition — does not re-trigger on subsequent calls."
+    type: research
+    affects: ["GPS mocking approach — determines whether AddInitScript override is mandatory"]
+  - question: "Is `Microsoft.Playwright.Xunit` 1.59.0 compatible with xUnit v3?"
+    context: "NuGet shows separate `Microsoft.Playwright.Xunit.v3` package exists. For xUnit v2, use Playwright.Xunit. xUnit v3 requires Playwright.Xunit.v3."
+    type: research
+    affects: ["NuGet package selection — depends on desired xUnit version"]
+  - question: "Can `WebApplicationFactory<Program>` be used with a real Docker SQL Server or only in-memory?"
+    context: "WebApplicationFactory can override connection strings via `WithWebHostBuilder()`. Can point to Testcontainers SQL Server by customizing configuration."
+    type: research
+    affects: ["Test server configuration pattern"]
+  - question: "Does Blazor WASM's `app.UseBlazorFrameworkFiles()` serve static assets from a test WebApplicationFactory?"
+    context: "WebApplicationFactory creates an in-memory TestServer. Blazor WASM assets are served as static files. TestServer by default serves from project root's wwwroot, not the Client's published output. May need CustomWebApplicationFactory override."
+    type: research
+    affects: ["Whether full E2E works with WebApplicationFactory or requires running server separately"]
+  - question: "Optimal timeout values for SignalR event delivery in Playwright tests?"
+    context: "SignalR messages are near-instant on localhost but Blazor WASM has an initialization delay (~2-5 seconds for .NET runtime load). Challenge → notification may take 200-2000ms. Need empirically determined WaitForSelectorAsync timeouts."
+    type: nice_to_know
+    affects: ["Test reliability — too short timeouts cause flaky tests"]
+gaps:
+  - area: "Blazor WASM static asset serving in WebApplicationFactory"
+    description: "WebApplicationFactory's default TestServer may not serve Blazor WASM's compiled _framework assets correctly. The Client project is compiled to bin/Release/net10.0/wwwroot/_framework. The test server needs to find and serve these files. May require a custom DelegatingHandler or running the actual Kestrel server via Playwright instead."
+    impact: decision_blocker
+    affects: ["Test architecture — determines whether to use WebApplicationFactory or standalone server process"]
+  - area: "Auth flow automation in Playwright"
+    description: "ASP.NET Core Identity UI (login/register Razor pages) is server-hosted. Initial page load redirects to /Identity/Account/Login. The test must: navigate to login, fill form, submit, wait for redirect back to Blazor app, then wait for Blazor to initialize before SignalR connects. No existing test auth helper exists."
+    impact: research_blocker
+    affects: ["Multi-user test setup — 2 auth flows needed per test"]
+  - area: "AddInitScriptAsync execution timing vs Blazor module import"
+    description: "Official Playwright docs: AddInitScript runs 'after the document was created but before any of its scripts were run.' However, Blazor WASM loads its runtime via a <script> tag, then JS modules are loaded via dynamic import(). The init script must override navigator.geolocation before any page script calls import('./js/geolocation.module.js'). Since import() is async and called by C# code (not <script>), the timing should be safe, but needs verification."
+    impact: research_blocker
+    affects: ["GPS mocking reliability"]
+  - area: "Test project structure and .csproj configuration"
+    description: "No test project exists. Need to create: (a) decide project name (RuckR.Tests or RuckR.Tests.E2E), (b) target framework (net10.0), (c) reference Server project for WebApplicationFactory, (d) reference Shared project for models, (e) configure NuGet packages (Playwright, Testcontainers, xUnit). Need to ensure Playwright browsers are installed (playwright.ps1 install)."
+    impact: decision_blocker
+    affects: ["All testing implementation"]

@@ -1,0 +1,593 @@
+plan_id: "20260506-server-startup-jaeger"
+objective: >
+  Automate RuckR server startup with a single PowerShell script that launches both the
+  Aspire Dashboard (OTEL backend) and the server, configures the OTLP exporter endpoint
+  to the dashboard's native OTLP port, and provides an OpenCode slash command for
+  one-command startup. Replaces manual inline PowerShell with a reusable, documented
+  workflow that gives developers instant distributed tracing visibility.
+created_at: "2026-05-06T23:00:00Z"
+created_by: gem-planner
+status: pending
+research_confidence: high
+plan_metrics:
+  wave_1_task_count: 2
+  total_dependencies: 4
+  risk_score: low
+tldr: >
+  4 waves, 5 tasks. Wave 1: install Aspire.Dashboard global tool + set OTLP endpoint
+  in launchSettings.json. Wave 2: create scripts/start-ruckr.ps1 (starts dashboard +
+  builds + starts server non-blocking, polls health, prints summary). Wave 3: create
+  .opencode/commands/start-server.md (OpenCode slash command wrapping the script).
+  Wave 4: run script and verify both server health and dashboard structured logs page
+  receive telemetry with no connection errors. Zero code changes beyond one env var.
+
+open_questions:
+  - question: "Is PowerShell 7+ (pwsh) available, or only Windows PowerShell 5.1?"
+    context: "Start-Job works in both; Start-Process -NoNewWindow is PS 5.1+. The script should target Windows PowerShell 5.1 for maximum compatibility on Windows dev machines."
+    type: nice_to_know
+    affects: [T3]
+
+  - question: "Should OTEL_EXPORTER_OTLP_ENDPOINT be set only in the script, or also in launchSettings.json for IDE-launched sessions?"
+    context: "Setting in launchSettings.json ensures dotnet run from Visual Studio/Rider also exports to the dashboard. Setting only in the script means IDE-launched sessions won't export."
+    type: decision_blocker
+    affects: [T2]
+
+gaps:
+  - description: "Aspire.Dashboard version pinned vs floating — should the script pin a specific version?"
+    refinement_requests:
+      - query: "Should dotnet tool install use --version to pin a known-good Aspire.Dashboard version, or always install latest?"
+        source_hint: "Check latest Aspire.Dashboard version on NuGet; pinning avoids surprise breakage but requires periodic updates"
+
+pre_mortem:
+  overall_risk_level: low
+  critical_failure_modes:
+    - scenario: "Aspire Dashboard fails to start because ports 18888 or 18889 are already in use"
+      likelihood: medium
+      impact: medium
+      mitigation: "Script checks port availability before starting dashboard; prints clear error message with process-kill instructions if ports occupied; provides --dashboard-port and --otlp-port script parameters as overrides"
+
+    - scenario: "Server build fails (missing SDK, NuGet restore failure, or compilation error) and script proceeds to start anyway"
+      likelihood: low
+      impact: high
+      mitigation: "Script checks dotnet build exit code; aborts with non-zero exit and clear error message on build failure; does NOT attempt to start server"
+
+    - scenario: "Server starts but health endpoint never returns 200 (database migration pending, SQL Server unavailable)"
+      likelihood: medium
+      impact: medium
+      mitigation: "Script polls /api/telemetry/health with configurable timeout (default 60s) and interval (2s); prints progressive dots to show activity; exits with timeout error and instructions to check server log"
+
+    - scenario: "PowerShell execution policy blocks the .ps1 script"
+      likelihood: medium
+      impact: low
+      mitigation: "Document execution policy bypass in AGENTS.md and script comments: powershell -ExecutionPolicy Bypass -File scripts/start-ruckr.ps1; the OpenCode command can include the bypass flag"
+
+    - scenario: "dotnet tool install -g fails due to NuGet source unavailability or permissions"
+      likelihood: low
+      impact: medium
+      mitigation: "Script checks if aspire-dashboard is already installed (dotnet tool list -g); skips install if present; if install fails, prints manual install command and exits"
+
+  assumptions:
+    - ".NET 10 SDK is installed and dotnet CLI is on PATH"
+    - "PowerShell 5.1 or later is available (Windows default)"
+    - "SQL Server LocalDB is installed and running (existing app requirement)"
+    - "Ports 18888 and 18889 are available on localhost (Aspire Dashboard defaults)"
+    - "The Aspire.Dashboard .NET global tool supports net10.0 runtime"
+    - "No TLS certificate issues for localhost:7161 (existing dev cert must be trusted)"
+    - "The script is for local development only — not for production deployment"
+    - "Aspire Dashboard OTLP endpoint uses gRPC on port 18889 (matching existing OTLP exporter gRPC default)"
+
+implementation_specification:
+  code_structure: >
+    scripts/
+      start-ruckr.ps1              — Single PowerShell script (~120 lines)
+    .opencode/
+      commands/
+        start-server.md            — OpenCode slash command (~15 lines)
+    RuckR/Server/Properties/
+      launchSettings.json          — Add OTEL_EXPORTER_OTLP_ENDPOINT to https profile
+
+  affected_areas:
+    - "scripts/start-ruckr.ps1 — New file: server+dashboard orchestration script"
+    - ".opencode/commands/start-server.md — New file: OpenCode slash command definition"
+    - "RuckR/Server/Properties/launchSettings.json — Add 1 environment variable to https profile"
+
+  component_details:
+    - component: Aspire Dashboard
+      responsibility: "OTLP-compatible telemetry backend; receives traces, metrics, and logs from the server; provides web UI at http://localhost:18888"
+      interfaces:
+        - "OTLP gRPC receiver on http://localhost:18889"
+        - "Web UI on http://localhost:18888"
+      dependencies:
+        - component: "dotnet CLI (global tool)"
+          relationship: "installed via dotnet tool install -g Aspire.Dashboard"
+      integration_points:
+        - "RuckR.Server OTLP exporter → gRPC POST to localhost:18889"
+        - "Developer browser → http://localhost:18888 for trace/metric/log exploration"
+
+    - component: start-ruckr.ps1
+      responsibility: "Single-command orchestrator: installs/verifies Aspire Dashboard, starts it non-blocking, builds solution, starts server non-blocking with log capture, polls health, prints status summary"
+      interfaces:
+        - "PowerShell CLI (invoked directly or via OpenCode command)"
+        - "dotnet CLI (tool install, build, run)"
+        - "HTTP health check (GET https://localhost:7161/api/telemetry/health)"
+      dependencies:
+        - component: "Aspire.Dashboard global tool"
+          relationship: "started as background process"
+        - component: "RuckR.Server project"
+          relationship: "built and launched via dotnet run"
+        - component: "launchSettings.json"
+          relationship: "reads --launch-profile https which includes OTEL_EXPORTER_OTLP_ENDPOINT"
+      integration_points:
+        - "Developer terminal → ./scripts/start-ruckr.ps1"
+        - "OpenCode → /start-server slash command"
+
+    - component: OpenCode start-server command
+      responsibility: "Registers a /start-server slash command in OpenCode that invokes scripts/start-ruckr.ps1"
+      interfaces:
+        - "OpenCode command palette → /start-server"
+      dependencies:
+        - component: "scripts/start-ruckr.ps1"
+          relationship: "invoked by the command body"
+      integration_points:
+        - "OpenCode plugin system → .opencode/commands/start-server.md"
+
+contracts:
+  - from_task: T1
+    to_task: T3
+    interface: "aspire-dashboard command available on PATH"
+    format: "dotnet tool list -g confirms Aspire.Dashboard is installed"
+
+  - from_task: T2
+    to_task: T3
+    interface: "OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:18889 in launchSettings.json https profile"
+    format: "Environment variable in launchSettings.json environmentVariables block"
+
+  - from_task: T3
+    to_task: T4
+    interface: "scripts/start-ruckr.ps1 exists and accepts optional parameters"
+    format: "PowerShell script at scripts/start-ruckr.ps1; supports -DashboardPort, -OtlpPort, -TimeoutSeconds, -SkipBuild"
+
+  - from_task: T3
+    to_task: T5
+    interface: "Running server at https://localhost:7161 with OTLP exporting to localhost:18889"
+    format: "Server health endpoint returns 200; Aspire Dashboard receives OTLP data at http://localhost:18889"
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Aspire Dashboard Installation + Endpoint Configuration
+  # ========================================================================
+  - id: T1
+    title: "Install Aspire.Dashboard .NET global tool"
+    description: >
+      Install the Aspire.Dashboard .NET global tool on the development machine.
+      Run `dotnet tool install -g Aspire.Dashboard` to install the latest stable
+      version. If already installed (detected via `dotnet tool list -g`), skip
+      installation and report existing version. Verify the tool is callable by
+      running `aspire-dashboard --version` or `dotnet aspire-dashboard --version`.
+      This tool provides an OTLP-compatible telemetry backend with a built-in
+      web UI — no Docker, no external services, no configuration files needed.
+      The dashboard listens on http://localhost:18888 (UI) and http://localhost:18889
+      (OTLP gRPC) by default.
+    wave: 1
+    agent: gem-devops
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Server/Program.cs
+        description: "Confirms UseOtlpExporter() uses gRPC — Aspire Dashboard natively accepts OTLP/gRPC"
+      - path: RuckR/Server/RuckR.Server.csproj
+        description: "Confirms OpenTelemetry.Exporter.OpenTelemetryProtocol 1.11.2 is installed"
+    estimated_effort: small
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: server-startup-jaeger-otel
+    tech_stack: [.NET 10, Aspire.Dashboard, dotnet CLI]
+    test_coverage: null
+    research_sources:
+      - research_findings_server-startup-jaeger-otel.yaml
+    verification:
+      - "dotnet tool list -g shows Aspire.Dashboard"
+      - "aspire-dashboard --help outputs usage information"
+      - "Tool version is latest stable (no --version pin unless specified)"
+    acceptance_criteria:
+      - "Aspire.Dashboard installed as a global .NET tool"
+      - "Tool executable available on PATH (aspire-dashboard or dotnet aspire-dashboard)"
+      - "Installation is idempotent — second run skips if already present"
+    failure_modes:
+      - scenario: "NuGet source unavailable or authentication required for global tool install"
+        likelihood: low
+        impact: medium
+        mitigation: "Print manual install URL (https://www.nuget.org/packages/Aspire.Dashboard) and fallback instructions; suggest --add-source if using private feed"
+      - scenario: "aspire-dashboard command not found on PATH after install (dotnet tools directory not in PATH)"
+        likelihood: medium
+        impact: low
+        mitigation: "Document that dotnet tools directory (~/.dotnet/tools on Linux/macOS, %USERPROFILE%/.dotnet/tools on Windows) must be on PATH; provide verification command"
+
+  - id: T2
+    title: "Configure OTEL OTLP exporter endpoint to Aspire Dashboard port"
+    description: >
+      Add `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:18889` to the `https` launch
+      profile's `environmentVariables` in `RuckR/Server/Properties/launchSettings.json`.
+      This ensures the OTLP exporter in Program.cs (`UseOtlpExporter()`) sends telemetry
+      to the Aspire Dashboard's OTLP gRPC receiver instead of the default
+      `http://localhost:4317`. Also add it to the `http` profile for consistency.
+      The existing `ASPNETCORE_ENVIRONMENT=Development` entry remains unchanged.
+      This is the single configuration change needed — the OTLP exporter reads this
+      env var at startup with zero code changes.
+    wave: 1
+    agent: gem-devops
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Server/Properties/launchSettings.json
+        description: "Add OTEL_EXPORTER_OTLP_ENDPOINT to https and http profile environmentVariables"
+      - path: RuckR/Server/Program.cs
+        description: "Line 100: UseOtlpExporter() reads OTEL_EXPORTER_OTLP_ENDPOINT env var"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 4
+    focus_area: server-startup-jaeger-otel
+    tech_stack: [.NET 10, OpenTelemetry, JSON]
+    test_coverage: null
+    research_sources:
+      - research_findings_server-startup-jaeger-otel.yaml
+      - research_findings_logging-otel-state.yaml
+    verification:
+      - "launchSettings.json is valid JSON"
+      - "https profile contains OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:18889"
+      - "http profile contains OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:18889"
+      - "Server starts with dotnet run --launch-profile https and logs show OTLP endpoint as localhost:18889"
+    acceptance_criteria:
+      - "OTEL_EXPORTER_OTLP_ENDPOINT added to https profile environmentVariables"
+      - "OTEL_EXPORTER_OTLP_ENDPOINT added to http profile environmentVariables"
+      - "Existing ASPNETCORE_ENVIRONMENT entries preserved"
+      - "No other launchSettings.json changes"
+    failure_modes:
+      - scenario: "JSON syntax error introduced during edit (missing comma, trailing comma)"
+        likelihood: low
+        impact: medium
+        mitigation: "Validate JSON with PowerShell Test-Json or dotnet run before committing; keep changes minimal — add comma to last env var entry, insert new line"
+
+  # ========================================================================
+  # WAVE 2: Startup Script
+  # ========================================================================
+  - id: T3
+    title: "Create server startup PowerShell script (scripts/start-ruckr.ps1)"
+    description: >
+      Create a single PowerShell script `scripts/start-ruckr.ps1` that orchestrates
+      the full RuckR development startup workflow. The script performs the following
+      phases in order:
+
+      **Phase 0 — Tool Check**: Verify dotnet CLI is on PATH. Check if Aspire.Dashboard
+      is installed (`dotnet tool list -g`); install if missing.
+
+      **Phase 1 — Start Aspire Dashboard**: Launch the dashboard as a background process
+      using `Start-Process -NoNewWindow` (or `Start-Job` for output capture). Wait for
+      dashboard readiness by polling `http://localhost:18888` (up to 15s). If dashboard
+      fails to start (port conflict), print the conflicting process info and exit.
+
+      **Phase 2 — Build**: Run `dotnet build RuckR.sln` with colorized output. Check
+      exit code; abort on failure with build error summary.
+
+      **Phase 3 — Start Server**: Set `$env:OTEL_EXPORTER_OTLP_ENDPOINT` and launch
+      the server via `Start-Job -Name RuckRServer { dotnet run ... }` (matching the
+      AGENTS.md documented pattern). Redirect stdout+stderr to a timestamped log file
+      at `docs/plan/20260506-server-startup-jaeger/logs/server-{timestamp}.log`.
+      The job runs in background — this is non-blocking.
+
+      **Phase 4 — Health Poll**: Poll `GET https://localhost:7161/api/telemetry/health`
+      every 2 seconds up to a configurable timeout (default 60s). Print progressive
+      dots. On success, print green checkmark. On timeout, print the last N lines of
+      the server log and exit with instructions.
+
+      **Phase 5 — Summary**: Print a formatted summary table:
+      - Aspire Dashboard UI: http://localhost:18888
+      - OTLP Endpoint: http://localhost:18889
+      - App URL: https://localhost:7161
+      - App HTTP: http://localhost:5282
+      - Server Log: {logFilePath}
+      - Stop Commands: `Get-Job -Name RuckRServer | Stop-Job; Get-Job -Name RuckRServer | Remove-Job`
+
+      **Phase 6 — Keep Alive**: Print "Press Ctrl+C to stop all processes." The script
+      remains running to keep the PowerShell session alive (the jobs are tied to the
+      session). On Ctrl+C, cleanly stop the dashboard process and server job.
+
+      **Parameters** (optional):
+      - `-DashboardPort 18888` — override dashboard UI port
+      - `-OtlpPort 18889` — override OTLP endpoint port
+      - `-TimeoutSeconds 60` — override health poll timeout
+      - `-SkipBuild` — skip build phase (assumes already built)
+      - `-LaunchProfile https` — override launch profile (default: https)
+
+      Include comment-based help at the top of the script with .SYNOPSIS, .DESCRIPTION,
+      .PARAMETER blocks. Use Write-Host with colors for user-facing output (Green=success,
+      Yellow=warning, Red=error, Cyan=info). Use Write-Output for loggable output.
+    wave: 2
+    agent: gem-implementer
+    prototype: false
+    priority: high
+    status: pending
+    dependencies: [T1, T2]
+    context_files:
+      - path: AGENTS.md
+        description: "Lines 41-55: canonical Start-Job pattern for server startup"
+      - path: RuckR/Server/Properties/launchSettings.json
+        description: "Launch profiles with URLs and environment variables"
+      - path: RuckR/Server/Controllers/TelemetryController.cs
+        description: "Lines 30-34: GET /api/telemetry/health endpoint for readiness polling"
+    estimated_effort: medium
+    estimated_files: 1
+    estimated_lines: 120
+    focus_area: server-startup-jaeger-otel
+    tech_stack: [PowerShell 5.1+, .NET 10 CLI, Aspire.Dashboard]
+    test_coverage: null
+    research_sources:
+      - research_findings_server-startup-jaeger-otel.yaml
+    verification:
+      - "scripts/start-ruckr.ps1 exists and is valid PowerShell syntax"
+      - "Script comment-based help is accessible via Get-Help .\\scripts\\start-ruckr.ps1"
+      - "Running script starts Aspire Dashboard on http://localhost:18888"
+      - "Running script builds solution and starts server on https://localhost:7161"
+      - "Server health endpoint returns 200 within timeout"
+      - "Ctrl+C stops both processes cleanly"
+      - "Server log file created with stdout+stderr output"
+    acceptance_criteria:
+      - "Phase 0: dotnet CLI and Aspire.Dashboard verified/installed"
+      - "Phase 1: Aspire Dashboard starts non-blocking; port conflict handled with clear error"
+      - "Phase 2: dotnet build runs; failure aborts script with non-zero exit code"
+      - "Phase 3: Server starts via Start-Job with OTEL_EXPORTER_OTLP_ENDPOINT set; stdout+stderr captured to log"
+      - "Phase 4: Health endpoint polled at 2s intervals; timeout at 60s default; dots printed during wait; timeout prints last 20 log lines"
+      - "Phase 5: Summary table printed with all URLs, log path, and stop instructions"
+      - "Phase 6: Script stays alive; Ctrl+C handler stops dashboard + server; cleanup message printed"
+      - "All 5 optional parameters supported and documented in comment-based help"
+      - "Script uses colored output (Green/Yellow/Red/Cyan) for user-facing messages"
+      - "Script return code: 0 on success, 1 on build failure, 2 on server timeout, 3 on dashboard failure"
+    failure_modes:
+      - scenario: "Start-Process for Aspire Dashboard spawns window that immediately closes (dashboard crashes)"
+        likelihood: low
+        impact: medium
+        mitigation: "Capture dashboard stderr via -RedirectStandardError; if dashboard process exits within 5s, print stderr output and exit"
+      - scenario: "Health endpoint returns non-200 (e.g., 503) during startup because EF migrations are running"
+        likelihood: medium
+        impact: low
+        mitigation: "Poll accepts any 2xx response as healthy; if 503 persists past timeout, check server log for migration errors"
+      - scenario: "Log file directory does not exist and script fails to create it"
+        likelihood: low
+        impact: low
+        mitigation: "Script creates log directory with New-Item -Force before starting server"
+      - scenario: "Multiple instances of script run simultaneously, causing port conflicts and job name collisions"
+        likelihood: low
+        impact: medium
+        mitigation: "Script checks for existing RuckRServer job at start; warns and offers to stop it or exits; uses unique job name suffix if --instance flag provided"
+
+  # ========================================================================
+  # WAVE 3: OpenCode Slash Command
+  # ========================================================================
+  - id: T4
+    title: "Create OpenCode slash command for server startup"
+    description: >
+      Create the file `.opencode/commands/start-server.md` that registers a
+      `/start-server` slash command in OpenCode. The command file uses OpenCode's
+      command definition conventions (YAML frontmatter for metadata, Markdown body
+      for the command execution logic).
+
+      **Frontmatter**:
+      - `name: start-server`
+      - `description: Start RuckR server with Aspire Dashboard telemetry`
+
+      **Body**: The command invokes the PowerShell startup script with execution
+      policy bypass: `powershell -ExecutionPolicy Bypass -File scripts/start-ruckr.ps1`.
+      Include a brief explanation of what the command does: starts the Aspire Dashboard,
+      builds the solution, launches the server, and provides live telemetry at
+      http://localhost:18888.
+
+      The command should be registered in OpenCode's command palette. Follow the
+      existing `.opencode/` directory conventions — no other command files exist, so
+      this establishes the pattern.
+    wave: 3
+    agent: gem-documentation-writer
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T3]
+    context_files:
+      - path: .opencode/opencode.json
+        description: "OpenCode plugin configuration — establishes .opencode/ directory convention"
+      - path: scripts/start-ruckr.ps1
+        description: "Script that the command invokes — must exist before this task"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 15
+    focus_area: server-startup-jaeger-otel
+    tech_stack: [OpenCode, Markdown, YAML, PowerShell]
+    test_coverage: null
+    research_sources:
+      - research_findings_server-startup-jaeger-otel.yaml
+    verification:
+      - ".opencode/commands/start-server.md exists with valid YAML frontmatter"
+      - "OpenCode recognizes /start-server as an available command"
+      - "Executing /start-server invokes scripts/start-ruckr.ps1"
+      - "Command description appears in OpenCode command palette"
+    acceptance_criteria:
+      - "YAML frontmatter includes name and description fields"
+      - "Command body invokes scripts/start-ruckr.ps1 with execution policy bypass"
+      - "Command body describes what the command does (starts dashboard, builds, launches server)"
+      - "Command includes the dashboard URL for quick access"
+      - "File path: .opencode/commands/start-server.md"
+      - "No other command files affected — this is the first custom command"
+    failure_modes:
+      - scenario: "OpenCode does not recognize the command file due to missing or malformed frontmatter"
+        likelihood: low
+        impact: medium
+        mitigation: "Validate YAML frontmatter syntax; follow OpenCode command file conventions exactly; if format unknown, consult OpenCode documentation or existing community examples"
+      - scenario: "PowerShell execution policy prevents command from running even with Bypass flag (machine-level GPO restriction)"
+        likelihood: low
+        impact: low
+        mitigation: "Document alternative invocation in command body: if bypass fails, instruct user to run Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass first"
+
+  # ========================================================================
+  # WAVE 4: Verification
+  # ========================================================================
+  - id: T5
+    title: "Verify end-to-end: server health, dashboard telemetry, no connection errors"
+    description: >
+      Run the `scripts/start-ruckr.ps1` script and perform a comprehensive verification
+      that the entire telemetry pipeline is working end-to-end:
+
+      **(A) Server Health Check**: Confirm `GET https://localhost:7161/api/telemetry/health`
+      returns `{"status":"healthy",...}` with HTTP 200. This proves the server started
+      and the telemetry controller is functional.
+
+      **(B) OTLP Exporter Configuration**: Confirm `GET https://localhost:7161/api/telemetry/status`
+      reports `otlpEndpoint` as `http://localhost:18889` (not the default localhost:4317).
+      This proves the env var from launchSettings.json was picked up.
+
+      **(C) Aspire Dashboard UI**: Navigate to `http://localhost:18888` in a browser.
+      Verify the dashboard loads and displays the "Structured Logs" page. Confirm that
+      log entries from RuckR.Server appear (look for the seed service log entries:
+      "Seed data generation skipped" or "Seeded X players"). This proves OTLP log
+      export is working.
+
+      **(D) Traces Page**: In the Aspire Dashboard, navigate to the "Traces" page.
+      Verify that HTTP request traces appear (look for GET requests to /api/telemetry/health
+      or /api/telemetry/status from the health polling). This proves OTLP trace export
+      is working.
+
+      **(E) No Connection Errors**: Check the server log file for any `connection_error`
+      or `error.type` entries related to OTLP export. Confirm zero connection errors.
+      Previously (with no collector), the server log showed `http.client.request.duration`
+      with `error.type:connection_error` for localhost:4317. With the Aspire Dashboard
+      running, these errors should be absent.
+
+      **(F) Metrics Page**: In the Aspire Dashboard, navigate to the "Metrics" page.
+      Verify that runtime metrics appear (dotnet.gc.*, dotnet.process.*, http.client.*).
+      This proves OTLP metric export is working.
+
+      Record evidence: screenshot of dashboard structured logs page showing server log
+      entries, screenshot of traces page showing HTTP traces, and the server log file
+      confirming zero OTLP connection errors. Save evidence to
+      `docs/plan/20260506-server-startup-jaeger/screenshots/`.
+    wave: 4
+    agent: gem-browser-tester
+    prototype: false
+    priority: medium
+    status: pending
+    dependencies: [T3]
+    context_files:
+      - path: scripts/start-ruckr.ps1
+        description: "Script to execute for verification"
+      - path: RuckR/Server/Controllers/TelemetryController.cs
+        description: "Health and status endpoints for verification checks"
+    estimated_effort: medium
+    estimated_files: 0
+    estimated_lines: 0
+    focus_area: server-startup-jaeger-otel
+    tech_stack: [Playwright, PowerShell, HTTP]
+    test_coverage: null
+    research_sources:
+      - research_findings_server-startup-jaeger-otel.yaml
+    validation_matrix:
+      - scenario: "Server health endpoint returns 200"
+        steps:
+          - "Start script via PowerShell"
+          - "Wait for health poll to succeed"
+          - "Send GET to https://localhost:7161/api/telemetry/health"
+        expected_result: "HTTP 200 with JSON body containing status=healthy and timestamp"
+
+      - scenario: "OTLP exporter configured for Aspire Dashboard"
+        steps:
+          - "Send GET to https://localhost:7161/api/telemetry/status"
+          - "Inspect otlpEndpoint field in JSON response"
+        expected_result: "otlpEndpoint equals http://localhost:18889"
+
+      - scenario: "Aspire Dashboard structured logs page shows server logs"
+        steps:
+          - "Navigate to http://localhost:18888/structuredlogs"
+          - "Wait for log entries to appear"
+          - "Verify at least one log entry from RuckR.Server is visible"
+        expected_result: "Structured logs page loads and displays server log entries (e.g., seed service messages)"
+
+      - scenario: "Aspire Dashboard traces page shows HTTP traces"
+        steps:
+          - "Navigate to http://localhost:18888/traces"
+          - "Wait for trace data to appear"
+          - "Verify traces include HTTP request spans"
+        expected_result: "Traces page loads and displays HTTP request traces from RuckR.Server"
+
+      - scenario: "No OTLP connection errors in server log"
+        steps:
+          - "Read the server log file created by the script"
+          - "Search for connection_error or error.type patterns"
+        expected_result: "Zero connection_error entries related to OTLP export (localhost:18889)"
+
+      - scenario: "Aspire Dashboard metrics page shows runtime metrics"
+        steps:
+          - "Navigate to http://localhost:18888/metrics"
+          - "Wait for metric data to appear"
+          - "Verify dotnet.gc or dotnet.process metrics are visible"
+        expected_result: "Metrics page loads and displays runtime instrumentation metrics"
+    flows:
+      - flow_id: "end-to-end-telemetry-verification"
+        description: "Full verification of server startup, OTLP export, and Aspire Dashboard telemetry reception"
+        setup:
+          - "Ensure no other process is using ports 18888, 18889, 7161, 5282"
+          - "Ensure .NET 10 SDK and PowerShell are available"
+          - "Ensure Aspire.Dashboard global tool is installed (T1)"
+          - "Place scripts/start-ruckr.ps1 in working directory"
+        steps:
+          - "Run scripts/start-ruckr.ps1 with -TimeoutSeconds 120"
+          - "Wait for 'Server is healthy' message in terminal"
+          - "Open browser to http://localhost:18888/structuredlogs"
+          - "Verify log entries from RuckR.Server appear"
+          - "Navigate to http://localhost:18888/traces"
+          - "Verify HTTP request traces appear"
+          - "Navigate to http://localhost:18888/metrics"
+          - "Verify runtime metrics appear"
+          - "Read server log file to confirm zero OTLP connection errors"
+          - "Send Ctrl+C to stop script"
+          - "Verify both processes terminate cleanly"
+        expected_state:
+          dashboard_ui: "http://localhost:18888 accessible"
+          server_health: "https://localhost:7161/api/telemetry/health returns 200"
+          otlp_endpoint: "http://localhost:18889 receiving telemetry"
+          no_connection_errors: true
+        teardown:
+          - "Stop RuckRServer job: Get-Job -Name RuckRServer | Stop-Job; Get-Job -Name RuckRServer | Remove-Job"
+          - "Stop Aspire Dashboard process"
+          - "Remove server log file if test-only"
+    fixtures: {}
+    test_data: []
+    cleanup: true
+    visual_regression: {}
+    verification:
+      - "Server health endpoint returns HTTP 200 with status=healthy"
+      - "OTLP endpoint in status response equals http://localhost:18889"
+      - "Aspire Dashboard structured logs page displays RuckR.Server log entries"
+      - "Aspire Dashboard traces page displays HTTP request spans"
+      - "Aspire Dashboard metrics page displays runtime metrics"
+      - "Server log file contains zero OTLP connection_error entries"
+    acceptance_criteria:
+      - "(A) GET /api/telemetry/health returns 200 with valid JSON"
+      - "(B) GET /api/telemetry/status shows otlpEndpoint: http://localhost:18889"
+      - "(C) Aspire Dashboard structured logs page shows server log entries"
+      - "(D) Aspire Dashboard traces page shows HTTP request traces"
+      - "(E) Zero connection_error entries in server log for OTLP export"
+      - "(F) Aspire Dashboard metrics page shows runtime metrics"
+      - "Evidence screenshots saved to docs/plan/20260506-server-startup-jaeger/screenshots/"
+    failure_modes:
+      - scenario: "Health endpoint returns 200 but OTLP exporter not sending data (silent failure)"
+        likelihood: low
+        impact: high
+        mitigation: "Check Aspire Dashboard traces/metrics pages within 30s of server start — if no data appears, check OTEL_EXPORTER_OTLP_ENDPOINT value in status endpoint response; verify no firewall blocking port 18889"
+      - scenario: "Aspire Dashboard UI loads but shows no data because OTLP protocol mismatch (gRPC vs HTTP/protobuf)"
+        likelihood: low
+        impact: medium
+        mitigation: "Verify OTLP exporter uses gRPC (default for UseOtlpExporter() without OtlpExporterOptions.Protocol override); Aspire Dashboard accepts gRPC on port 18889; if mismatch, set OTEL_EXPORTER_OTLP_PROTOCOL=grpc explicitly"
+      - scenario: "Browser cannot connect to localhost:7161 due to HTTPS certificate not trusted"
+        likelihood: medium
+        impact: low
+        mitigation: "Run `dotnet dev-certs https --trust` before verification; check browser security warning and proceed if for localhost"

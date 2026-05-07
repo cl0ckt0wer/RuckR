@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 using RuckR.Shared.Models;
 
 namespace RuckR.Client.Services;
@@ -7,17 +8,27 @@ namespace RuckR.Client.Services;
 public class ApiClientService
 {
     private readonly HttpClient _http;
+    private readonly ILogger<ApiClientService> _logger;
 
-    public ApiClientService(HttpClient http)
+    public ApiClientService(HttpClient http, ILogger<ApiClientService> logger)
     {
         _http = http;
+        _logger = logger;
     }
 
     // Players
     public async Task<List<PlayerModel>> GetPlayersAsync(string? position = null, string? rarity = null, string? name = null)
     {
-        var query = BuildQueryString(new { position, rarity, name });
-        return await _http.GetFromJsonAsync<List<PlayerModel>>($"players{query}") ?? new();
+        try
+        {
+            var query = BuildQueryString(new { position, rarity, name });
+            return await _http.GetFromJsonAsync<List<PlayerModel>>($"players{query}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch players");
+            return new();
+        }
     }
 
     public async Task<PlayerModel?> GetPlayerAsync(int id)
@@ -27,15 +38,33 @@ public class ApiClientService
 
     public async Task<List<NearbyPlayerDto>> GetNearbyPlayersAsync(double lat, double lng, double radius = 10_000)
     {
-        return await _http.GetFromJsonAsync<List<NearbyPlayerDto>>(
-            $"players/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        try
+        {
+            _logger.LogDebug("Fetching nearby players at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            return await _http.GetFromJsonAsync<List<NearbyPlayerDto>>(
+                $"players/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch nearby players at ({Lat}, {Lng})", lat, lng);
+            return new();
+        }
     }
 
     // Pitches
     public async Task<List<PitchModel>> GetNearbyPitchesAsync(double lat, double lng, double radius = 5_000)
     {
-        return await _http.GetFromJsonAsync<List<PitchModel>>(
-            $"pitches/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        try
+        {
+            _logger.LogDebug("Fetching nearby pitches at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            return await _http.GetFromJsonAsync<List<PitchModel>>(
+                $"pitches/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch nearby pitches at ({Lat}, {Lng})", lat, lng);
+            return new();
+        }
     }
 
     public async Task<List<PitchModel>> GetPitchesAsync(int page = 1, int pageSize = 20)
