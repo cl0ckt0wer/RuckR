@@ -25,7 +25,7 @@
 @* --- LOADING --- *@
 @if (isLoading)
 {
-    <div class="d-flex justify-content-center py-5">
+    <div class="d-flex justify-content-center py-5" data-testid="collection-loading">
         <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -37,9 +37,9 @@
 @* --- ERROR --- *@
 @if (!string.IsNullOrEmpty(errorMessage))
 {
-    <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="collection-error">
         <span>@errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadCollectionAsync">Retry</button>
+        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="collection-retry-btn" @onclick="LoadCollectionAsync">Retry</button>
     </div>
     return;
 }
@@ -67,12 +67,13 @@
         var pitchName = item.CapturedAtPitchId is not null && pitchNames.TryGetValue(item.CapturedAtPitchId.Value, out var pn) ? pn : "Unknown pitch";
 
         <div class="col">
-            <div class="card h-100 @(isExpanded ? "border-primary border-2" : "")">
+            <div class="card h-100 @(isExpanded ? "border-primary border-2" : "")" data-testid="collection-card">
                 @* --- CARD HEADER: Player Name + Favorite Toggle --- *@
                 <div class="card-header d-flex justify-content-between align-items-center"
                      role="button" @onclick="() => ToggleExpand(item.Id)">
-                    <h5 class="card-title mb-0">@player!.Name</h5>
+                    <h5 class="card-title mb-0" data-testid="collection-player-name">@player!.Name</h5>
                     <button class="btn btn-link p-0 border-0 text-decoration-none"
+                            data-testid="favorite-btn"
                             style="font-size: 1.5rem;"
                             @onclick="(e) => ToggleFavoriteAsync(item)"
                             @onclick:stopPropagation="true"
@@ -83,10 +84,10 @@
 
                 <div class="card-body" role="button" @onclick="() => ToggleExpand(item.Id)">
                     @* --- Position Badge --- *@
-                    <span class="badge bg-secondary me-1">@player.Position</span>
+                    <span class="badge bg-secondary me-1" data-testid="collection-position-badge">@player.Position</span>
 
                     @* --- Rarity Badge (color-coded) --- *@
-                    <span class="badge @RarityBadgeClass(player.Rarity)">@player.Rarity</span>
+                    <span class="badge @RarityBadgeClass(player.Rarity)" data-testid="collection-rarity-badge">@player.Rarity</span>
 
                     @* --- Capture Info --- *@
                     <p class="card-text mt-2 mb-1">
@@ -107,7 +108,7 @@
                 @* --- EXPANDED DETAIL --- *@
                 @if (isExpanded)
                 {
-                    <div class="card-footer bg-light">
+                    <div class="card-footer bg-light" data-testid="collection-detail">
                         @* --- Full Stat Bars --- *@
                         <h6>Stats</h6>
                         <div class="mb-2">
@@ -192,6 +193,7 @@
 
                         @* --- Challenge Button --- *@
                         <button class="btn btn-outline-primary btn-sm w-100"
+                                data-testid="collection-challenge-btn"
                                 @onclick="(e) => ChallengePlayer(item)"
                                 @onclick:stopPropagation="true">
                             Challenge Someone

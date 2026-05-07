@@ -20,7 +20,7 @@ public class NotificationToast : BasePage
     {
         try
         {
-            await Page.WaitForSelectorAsync(".toast:has-text('⚔️ Challenge!')", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('⚔️ Challenge!')", new PageWaitForSelectorOptions
             {
                 Timeout = timeoutMs,
                 State = WaitForSelectorState.Visible
@@ -34,21 +34,19 @@ public class NotificationToast : BasePage
     }
 
     /// <summary>
-    /// Click the "Accept" button inside the challenge toast.
+    /// Click the "Accept" button inside a challenge toast.
     /// </summary>
     public async Task AcceptChallengeFromToastAsync()
     {
-        var acceptBtn = Page.Locator(".toast:has-text('Challenge!') .btn-success", new() { HasText = "Accept" });
-        await acceptBtn.ClickAsync();
+        await Page.GetByTestId("toast-accept").ClickAsync();
     }
 
     /// <summary>
-    /// Click the "Decline" button inside the challenge toast.
+    /// Click the "Decline" button inside a challenge toast.
     /// </summary>
     public async Task DeclineChallengeFromToastAsync()
     {
-        var declineBtn = Page.Locator(".toast:has-text('Challenge!') .btn-outline-danger", new() { HasText = "Decline" });
-        await declineBtn.ClickAsync();
+        await Page.GetByTestId("toast-decline").ClickAsync();
     }
 
     // ── Battle result toast ────────────────────────────────────────────
@@ -61,7 +59,7 @@ public class NotificationToast : BasePage
     {
         try
         {
-            await Page.WaitForSelectorAsync(".toast:has-text('🏆 Battle Complete!')", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('🏆 Battle Complete!')", new PageWaitForSelectorOptions
             {
                 Timeout = timeoutMs,
                 State = WaitForSelectorState.Visible
@@ -82,7 +80,7 @@ public class NotificationToast : BasePage
     /// </summary>
     public async Task<string?> GetToastTextAsync()
     {
-        var toast = Page.Locator(".toast.show").First;
+        var toast = Page.GetByTestId("toast").First;
         if (await toast.IsVisibleAsync())
             return await toast.TextContentAsync();
         return null;
@@ -93,7 +91,7 @@ public class NotificationToast : BasePage
     /// </summary>
     public async Task<bool> IsToastVisibleAsync()
     {
-        var toast = Page.Locator(".toast.show");
+        var toast = Page.GetByTestId("toast");
         return await toast.IsVisibleAsync();
     }
 
@@ -103,7 +101,7 @@ public class NotificationToast : BasePage
     /// </summary>
     public async Task DismissToastAsync()
     {
-        var closeBtn = Page.Locator(".toast.show .btn-close").First;
+        var closeBtn = Page.GetByTestId("toast-close").First;
         if (await closeBtn.IsVisibleAsync())
         {
             await closeBtn.ClickAsync();

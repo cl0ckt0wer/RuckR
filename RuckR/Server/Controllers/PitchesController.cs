@@ -15,7 +15,9 @@ namespace RuckR.Server.Controllers
         private const int MaxPitchesPerUserPerDay = 5;
         private const double NameUniquenessRadiusMeters = 100.0;
 
-        private static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+
+        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
         private static readonly GeometryFactory _geometryFactory =
             NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 

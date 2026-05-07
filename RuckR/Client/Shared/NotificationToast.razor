@@ -8,24 +8,24 @@
 @inject SignalRClientService SignalRClient
 @inject NavigationManager Navigation
 
-<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;" data-testid="toast-container">
     @foreach (var toast in _activeToasts.OrderBy(t => t.CreatedAt).Take(3))
     {
-        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true" data-testid="toast">
             <div class="toast-header">
-                <strong class="me-auto">@toast.Title</strong>
+                <strong class="me-auto" data-testid="toast-title">@toast.Title</strong>
                 <small>@FormatTimeAgo(toast.CreatedAt)</small>
-                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close" @onclick="() => DismissToast(toast.Id)"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close" data-testid="toast-close" @onclick="() => DismissToast(toast.Id)"></button>
             </div>
             <div class="toast-body">
-                @toast.Message
+                <span data-testid="toast-message">@toast.Message</span>
                 @if (toast.Type == ToastType.Challenge && toast.ChallengeId.HasValue)
                 {
                     <div class="mt-2 pt-2 border-top">
-                        <button class="btn btn-success btn-sm me-1" @onclick="() => AcceptChallengeAsync(toast.ChallengeId!.Value)">
+                        <button class="btn btn-success btn-sm me-1" data-testid="toast-accept" @onclick="() => AcceptChallengeAsync(toast.ChallengeId!.Value)">
                             Accept
                         </button>
-                        <button class="btn btn-outline-danger btn-sm" @onclick="() => DeclineChallengeAsync(toast.ChallengeId!.Value)">
+                        <button class="btn btn-outline-danger btn-sm" data-testid="toast-decline" @onclick="() => DeclineChallengeAsync(toast.ChallengeId!.Value)">
                             Decline
                         </button>
                     </div>

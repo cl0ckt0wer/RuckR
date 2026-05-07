@@ -5,12 +5,12 @@
 @inject IState<GameState> GameState
 @inject SignalRClientService SignalRClient
 
-<div class="connection-status @StatusClass">
-    <span class="status-dot @DotClass"></span>
-    <span class="status-text">@StatusText</span>
+<div class="connection-status @StatusClass" data-testid="connection-status">
+    <span class="status-dot @DotClass" data-testid="status-dot"></span>
+    <span class="status-text" data-testid="status-text">@StatusText</span>
     @if (_connectionStatus == ConnectionStatusEnum.Disconnected)
     {
-        <button class="btn btn-sm btn-outline-light ms-2" @onclick="ReconnectAsync">Reconnect</button>
+        <button class="btn btn-sm btn-outline-light ms-2" data-testid="reconnect-btn" @onclick="ReconnectAsync">Reconnect</button>
     }
 </div>
 

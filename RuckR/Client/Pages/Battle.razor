@@ -24,7 +24,7 @@
 @* --- LOADING --- *@
 @if (_isLoading)
 {
-    <div class="d-flex justify-content-center py-5">
+    <div class="d-flex justify-content-center py-5" data-testid="battle-loading">
         <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -36,9 +36,9 @@
 @* --- ERROR --- *@
 @if (!string.IsNullOrEmpty(_errorMessage))
 {
-    <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="battle-error">
         <span>@_errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadBattlesAsync">Retry</button>
+        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="battle-retry-btn" @onclick="LoadBattlesAsync">Retry</button>
     </div>
     return;
 }
@@ -46,14 +46,14 @@
 @* --- SUCCESS TOAST --- *@
 @if (!string.IsNullOrEmpty(_successMessage))
 {
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
+    <div class="alert alert-success alert-dismissible fade show" role="alert" data-testid="battle-success">
         @_successMessage
         <button type="button" class="btn-close" @onclick="() => _successMessage = null"></button>
     </div>
 }
 
 @* --- TABS --- *@
-<ul class="nav nav-tabs mb-4">
+<ul class="nav nav-tabs mb-4" data-testid="battle-tabs">
     <li class="nav-item">
         <a class="nav-link @(_activeTab == "new" ? "active" : "")" href="#"
            @onclick='() => SwitchTab("new")' @onclick:preventDefault data-testid="challenge-tab">
@@ -80,7 +80,7 @@
 {
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-6">
-            <div class="card">
+            <div class="card" data-testid="challenge-card">
                 <div class="card-header">
                     <h5 class="card-title mb-0">Send a Challenge</h5>
                 </div>
@@ -96,7 +96,7 @@
                         }
                         else
                         {
-                            <select class="form-select" @bind="_selectedPlayerId">
+                            <select class="form-select" @bind="_selectedPlayerId" data-testid="player-select">
                                 <option value="">-- Select your fighter --</option>
                                 @foreach (var c in _collectedPlayers)
                                 {
@@ -116,7 +116,7 @@
                                placeholder="Enter opponent&apos;s username" data-testid="opponent-input" />
                     </div>
                     <div class="mb-3">
-                        <small class="text-muted">
+                        <small class="text-muted" data-testid="rate-limit-info">
                             @_challengesSentThisHour of 10 challenges sent this hour
                         </small>
                     </div>
@@ -146,7 +146,7 @@
     @* --- EMPTY STATE --- *@
     @if (_incomingChallenges.Count == 0 && _outgoingChallenges.Count == 0)
     {
-        <div class="text-center py-5">
+        <div class="text-center py-5" data-testid="battle-empty">
             <div style="font-size: 4rem;">⚔️</div>
             <h4 class="mt-3">No active challenges</h4>
             <p class="text-muted">
@@ -163,7 +163,7 @@
             <p class="text-muted small">
                 @_incomingChallenges.Count of 3 pending
             </p>
-            <div class="row g-3 mb-4">
+            <div class="row g-3 mb-4" data-testid="incoming-challenges">
                 @foreach (var challenge in _incomingChallenges)
                 {
                     <div class="col-md-6 col-lg-4">
@@ -181,10 +181,12 @@
                                 {
                                     <div class="d-flex gap-2">
                                         <button class="btn btn-success btn-sm"
+                                                data-testid="accept-btn"
                                                 @onclick="() => OpenAcceptModal(challenge)">
                                             Accept
                                         </button>
                                         <button class="btn btn-outline-danger btn-sm"
+                                                data-testid="decline-btn"
                                                 @onclick="() => DeclineChallengeAsync(challenge.Id)">
                                             Decline
                                         </button>
@@ -205,7 +207,7 @@
         @if (_outgoingChallenges.Count > 0)
         {
             <h4>Outgoing Challenges</h4>
-            <div class="row g-3">
+            <div class="row g-3" data-testid="outgoing-challenges">
                 @foreach (var challenge in _outgoingChallenges)
                 {
                     <div class="col-md-6 col-lg-4">
@@ -238,12 +240,12 @@
 @* ---------- ACCEPT MODAL ---------- *@
 @if (_showAcceptModal && _acceptTargetBattle is not null)
 {
-    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" data-testid="accept-modal">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Pick Your Fighter</h5>
-                    <button type="button" class="btn-close" @onclick="CloseAcceptModal"></button>
+                    <button type="button" class="btn-close" data-testid="accept-cancel-btn" @onclick="CloseAcceptModal"></button>
                 </div>
                 <div class="modal-body">
                     <p>Choose a player to face <strong>@_acceptTargetBattle.ChallengerId</strong>:</p>
@@ -255,7 +257,7 @@
                     }
                     else
                     {
-                        <select class="form-select" @bind="_selectedPlayerForAccept">
+                        <select class="form-select" @bind="_selectedPlayerForAccept" data-testid="accept-player-select">
                             <option value="">-- Select your player --</option>
                             @foreach (var c in _collectedPlayers)
                             {
@@ -268,8 +270,9 @@
                     }
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="CloseAcceptModal">Cancel</button>
+                    <button type="button" class="btn btn-secondary" data-testid="accept-cancel-btn" @onclick="CloseAcceptModal">Cancel</button>
                     <button type="button" class="btn btn-success"
+                            data-testid="accept-fight-btn"
                             @onclick="ConfirmAcceptAsync"
                             disabled="@(!_selectedPlayerForAccept.HasValue || _isAccepting)">
                         @if (_isAccepting)
@@ -289,10 +292,10 @@
 {
     var isWinner = string.Equals(result.WinnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
 
-    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" data-testid="result-modal">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header @(isWinner ? "bg-success text-white" : "bg-danger text-white")">
+                <div class="modal-header @(isWinner ? "bg-success text-white" : "bg-danger text-white")" data-testid="result-header">
                     <h5 class="modal-title">
                         @(isWinner ? "🏆 Victory!" : "💔 Defeat")
                     </h5>
@@ -324,7 +327,7 @@
                     </p>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" @onclick="DismissResultModal">Close</button>
+                    <button type="button" class="btn btn-primary" data-testid="result-close-btn" @onclick="DismissResultModal">Close</button>
                 </div>
             </div>
         </div>

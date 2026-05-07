@@ -20,8 +20,8 @@ public class CollectionPage : BasePage
         try
         {
             await Task.WhenAny(
-                Page.WaitForSelectorAsync(".card", new() { Timeout = timeoutMs }),
-                Page.WaitForSelectorAsync("text=You haven't discovered any players yet!", new() { Timeout = timeoutMs })
+                Page.WaitForSelectorAsync("[data-testid='collection-card']", new() { Timeout = timeoutMs }),
+                Page.WaitForSelectorAsync("[data-testid='empty-state']", new() { Timeout = timeoutMs })
             );
         }
         catch { }
@@ -34,7 +34,7 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task<int> GetCollectedPlayerCountAsync()
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='collection-card']");
         return cards.Count;
     }
 
@@ -44,10 +44,10 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task<string?> GetPlayerNameAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='collection-card']");
         if (index >= 0 && index < cards.Count)
         {
-            var title = await cards[index].QuerySelectorAsync(".card-title");
+            var title = await cards[index].QuerySelectorAsync("[data-testid='collection-player-name']");
             if (title is not null)
                 return await title.TextContentAsync();
         }
@@ -62,10 +62,10 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task ToggleFavoriteAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='collection-card']");
         if (index >= 0 && index < cards.Count)
         {
-            var starBtn = await cards[index].QuerySelectorAsync(".card-header button.btn-link");
+            var starBtn = await cards[index].QuerySelectorAsync("[data-testid='favorite-btn']");
             if (starBtn is not null)
                 await starBtn.ClickAsync();
         }
@@ -77,10 +77,10 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task<bool> IsFavoriteAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='collection-card']");
         if (index >= 0 && index < cards.Count)
         {
-            var starBtn = await cards[index].QuerySelectorAsync(".card-header button.btn-link");
+            var starBtn = await cards[index].QuerySelectorAsync("[data-testid='favorite-btn']");
             if (starBtn is not null)
             {
                 var text = await starBtn.TextContentAsync();
@@ -98,7 +98,7 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task ExpandPlayerDetailAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='collection-card']");
         if (index >= 0 && index < cards.Count)
         {
             var cardBody = await cards[index].QuerySelectorAsync(".card-body");
@@ -116,23 +116,23 @@ public class CollectionPage : BasePage
     /// </summary>
     public async Task<bool> IsPlayerDetailExpandedAsync()
     {
-        return await ExistsAsync(".card-footer.bg-light");
+        return await ExistsAsync("[data-testid='collection-detail']");
     }
 
     // ── State checks ───────────────────────────────────────────────────
 
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
-        return await ExistsAsync("text=You haven't discovered any players yet!");
+        return await ExistsAsync("[data-testid='empty-state']");
     }
 
     public async Task<bool> IsLoadingVisibleAsync()
     {
-        return await ExistsAsync(".spinner-border");
+        return await ExistsAsync("[data-testid='collection-loading']");
     }
 
     public async Task<bool> IsErrorVisibleAsync()
     {
-        return await ExistsAsync(".alert-danger");
+        return await ExistsAsync("[data-testid='collection-error']");
     }
 }

@@ -41,10 +41,10 @@ public class MapPage : BasePage
     public async Task<bool> IsMapRenderedAsync() => await ExistsAsync(".leaflet-container");
 
     /// <summary>Check whether the loading spinner is currently visible.</summary>
-    public async Task<bool> IsLoadingSpinnerVisibleAsync() => await ExistsAsync(".spinner-border");
+    public async Task<bool> IsLoadingSpinnerVisibleAsync() => await ExistsAsync("[data-testid='map-loading']");
 
     /// <summary>Check whether the error state alert is visible.</summary>
-    public async Task<bool> IsErrorStateVisibleAsync() => await ExistsAsync(".alert-danger");
+    public async Task<bool> IsErrorStateVisibleAsync() => await ExistsAsync("[data-testid='map-error']");
 
     // ── GPS disabled banner ────────────────────────────────────────────
 
@@ -54,13 +54,13 @@ public class MapPage : BasePage
     /// </summary>
     public async Task<bool> IsGpsDisabledBannerVisibleAsync()
     {
-        return await Page.GetByText("Enable GPS").IsVisibleAsync();
+        return await Page.GetByTestId("gps-disabled-banner").IsVisibleAsync();
     }
 
     /// <summary>Click the "Enable" button in the GPS disabled banner.</summary>
     public async Task ClickEnableGpsAsync()
     {
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Enable" }).ClickAsync();
+        await Page.GetByTestId("gps-enable-btn").ClickAsync();
     }
 
     // ── Onboarding banner ──────────────────────────────────────────────
@@ -70,7 +70,7 @@ public class MapPage : BasePage
     /// </summary>
     public async Task<bool> IsOnboardingBannerVisibleAsync()
     {
-        return await Page.GetByText("Welcome to RuckR").IsVisibleAsync();
+        return await Page.GetByTestId("onboarding-banner").IsVisibleAsync();
     }
 
     /// <summary>
@@ -79,13 +79,8 @@ public class MapPage : BasePage
     /// </summary>
     public async Task DismissOnboardingAsync()
     {
-        // Scope the close button to the alert that contains the welcome text
-        var closeBtn = Page.Locator(".alert:has-text('Welcome to RuckR') .btn-close");
-        if (await closeBtn.IsVisibleAsync())
-        {
-            await closeBtn.ClickAsync();
-            await Page.WaitForTimeoutAsync(500);
-        }
+        await Page.GetByTestId("onboarding-close").ClickAsync();
+        await Page.WaitForTimeoutAsync(500);
     }
 
     // ── Error retry ────────────────────────────────────────────────────
@@ -93,7 +88,7 @@ public class MapPage : BasePage
     /// <summary>Click the "Retry" button shown in the error state.</summary>
     public async Task ClickRetryAsync()
     {
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Retry" }).ClickAsync();
+        await Page.GetByTestId("map-retry-btn").ClickAsync();
     }
 
     // ── Pitch markers ─────────────────────────────────────────────────
@@ -115,8 +110,7 @@ public class MapPage : BasePage
         if (await marker.IsVisibleAsync())
         {
             await marker.ClickAsync();
-            // Wait for the overlay to slide up
-            await Page.WaitForSelectorAsync(".map-overlay", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='pitch-overlay']", new PageWaitForSelectorOptions
             {
                 State = WaitForSelectorState.Visible,
                 Timeout = 5_000
@@ -134,7 +128,7 @@ public class MapPage : BasePage
         if (index >= 0 && index < count)
         {
             await markers.Nth(index).ClickAsync();
-            await Page.WaitForSelectorAsync(".map-overlay", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='pitch-overlay']", new PageWaitForSelectorOptions
             {
                 State = WaitForSelectorState.Visible,
                 Timeout = 5_000
@@ -145,24 +139,19 @@ public class MapPage : BasePage
     // ── Pitch detail overlay ──────────────────────────────────────────
 
     /// <summary>Check whether the pitch detail overlay (bottom sheet) is visible.</summary>
-    public async Task<bool> IsPitchOverlayVisibleAsync() => await ExistsAsync(".map-overlay");
+    public async Task<bool> IsPitchOverlayVisibleAsync() => await ExistsAsync("[data-testid='pitch-overlay']");
 
     /// <summary>Return the selected pitch name from the overlay heading.</summary>
     public async Task<string?> GetPitchOverlayNameAsync()
     {
-        var heading = await Page.QuerySelectorAsync(".map-overlay h5");
-        return heading is not null ? await heading.TextContentAsync() : null;
+        return await Page.GetByTestId("pitch-name").TextContentAsync();
     }
 
     /// <summary>Close the pitch detail overlay by clicking its close button.</summary>
     public async Task ClosePitchOverlayAsync()
     {
-        var closeBtn = Page.Locator(".map-overlay .btn-close");
-        if (await closeBtn.IsVisibleAsync())
-        {
-            await closeBtn.ClickAsync();
-            await Page.WaitForTimeoutAsync(300);
-        }
+        await Page.GetByTestId("pitch-close").ClickAsync();
+        await Page.WaitForTimeoutAsync(300);
     }
 
     // ── User location marker ───────────────────────────────────────────

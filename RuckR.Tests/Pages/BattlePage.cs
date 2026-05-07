@@ -33,7 +33,7 @@ public class BattlePage : BasePage
     /// </summary>
     public async Task WaitForBattlePageLoadedAsync(int timeoutMs = 15000)
     {
-        await Page.WaitForSelectorAsync(".nav-tabs", new PageWaitForSelectorOptions
+        await Page.WaitForSelectorAsync("[data-testid='battle-tabs']", new PageWaitForSelectorOptions
         {
             Timeout = timeoutMs,
             State = WaitForSelectorState.Visible
@@ -45,25 +45,23 @@ public class BattlePage : BasePage
     /// <summary>Click the "New Challenge" tab and wait for the form to appear.</summary>
     public async Task SelectChallengeTabAsync()
     {
-        await Page.Locator(".nav-link", new() { HasText = "New Challenge" }).ClickAsync();
-        // Wait for the "Send a Challenge" card to render in this tab
-        await Page.WaitForSelectorAsync("text=Send a Challenge", new PageWaitForSelectorOptions
+        await Page.GetByTestId("challenge-tab").ClickAsync();
+        await Page.WaitForSelectorAsync("[data-testid='challenge-card']", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = 5000
         });
     }
 
-    /// <summary>Click the "Active Challenges" tab and wait for the section heading.</summary>
+    /// <summary>Click the "Active Challenges" tab and wait for content.</summary>
     public async Task SelectActiveChallengesTabAsync()
     {
-        await Page.Locator(".nav-link", new() { HasText = "Active Challenges" }).ClickAsync();
-        // Wait for either "No active challenges" (empty) or "Incoming Challenges" heading
+        await Page.GetByTestId("active-tab").ClickAsync();
         try
         {
             await Task.WhenAny(
-                Page.WaitForSelectorAsync("text=Incoming Challenges", new() { Timeout = 5000 }),
-                Page.WaitForSelectorAsync("text=No active challenges", new() { Timeout = 5000 })
+                Page.WaitForSelectorAsync("[data-testid='incoming-challenges']", new() { Timeout = 5000 }),
+                Page.WaitForSelectorAsync("[data-testid='battle-empty']", new() { Timeout = 5000 })
             );
         }
         catch { }
@@ -77,31 +75,28 @@ public class BattlePage : BasePage
     /// </summary>
     public async Task SelectPlayerForChallengeAsync(int index)
     {
-        var select = Page.Locator(".card:has-text('Send a Challenge') select.form-select");
-        // Option at index 0 is "-- Select your fighter --" placeholder; actual players start at index 1
+        var select = Page.GetByTestId("player-select");
         await select.SelectOptionAsync(new SelectOptionValue { Index = index + 1 });
     }
 
     /// <summary>Fill the opponent username input field.</summary>
     public async Task EnterOpponentUsernameAsync(string username)
     {
-        await Page.GetByPlaceholder("Enter opponent's username").FillAsync(username);
+        await Page.GetByTestId("opponent-input").FillAsync(username);
     }
 
     /// <summary>Click the "Send Challenge" submit button.</summary>
     public async Task ClickSendChallengeAsync()
     {
-        await Page.Locator(".card:has-text('Send a Challenge') button", new() { HasText = "Send Challenge" }).ClickAsync();
+        await Page.GetByTestId("send-challenge-btn").ClickAsync();
     }
 
     /// <summary>
     /// Get the rate limit text showing how many challenges have been sent this hour.
-    /// Returns the "X of 10 challenges sent this hour" string.
     /// </summary>
     public async Task<string?> GetRateLimitTextAsync()
     {
-        var el = await Page.QuerySelectorAsync(".card:has-text('Send a Challenge') small.text-muted");
-        return el is not null ? await el.TextContentAsync() : null;
+        return await Page.GetByTestId("rate-limit-info").TextContentAsync();
     }
 
     // ── Active Challenges ──────────────────────────────────────────────
@@ -112,7 +107,7 @@ public class BattlePage : BasePage
     /// </summary>
     public async Task<int> GetIncomingChallengeCountAsync()
     {
-        var cards = await Page.Locator(".card:has(button:has-text('Accept'))").AllAsync();
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='incoming-challenges'] .card");
         return cards.Count;
     }
 
@@ -120,37 +115,32 @@ public class BattlePage : BasePage
     /// Accept an incoming challenge by zero-based index. Clicks the Accept button
     /// on the challenge card, then selects the first available player in the
     /// "Pick Your Fighter" modal and confirms with "Fight!".
-    /// Assumes the "Active Challenges" tab is selected.
     /// </summary>
     public async Task AcceptChallengeAsync(int challengeIndex)
     {
-        var acceptButtons = Page.Locator(".card:has(button:has-text('Accept')) button", new() { HasText = "Accept" });
+        var acceptButtons = Page.Locator("[data-testid='incoming-challenges'] [data-testid='accept-btn']");
         var count = await acceptButtons.CountAsync();
         if (challengeIndex >= 0 && challengeIndex < count)
         {
             await acceptButtons.Nth(challengeIndex).ClickAsync();
-            // Wait for the accept modal to appear
-            await Page.WaitForSelectorAsync("text=Pick Your Fighter", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='accept-modal']", new PageWaitForSelectorOptions
             {
                 State = WaitForSelectorState.Visible,
                 Timeout = 5000
             });
-            // Select first player in the modal dropdown (skip placeholder at option index 0)
-            var modalSelect = Page.Locator(".modal:has-text('Pick Your Fighter') select.form-select");
+            var modalSelect = Page.GetByTestId("accept-player-select");
             await modalSelect.SelectOptionAsync(new SelectOptionValue { Index = 1 });
-            // Confirm by clicking "Fight!" button
-            await Page.GetByRole(AriaRole.Button, new() { Name = "Fight! ⚔️" }).ClickAsync();
+            await Page.GetByTestId("accept-fight-btn").ClickAsync();
             await Page.WaitForTimeoutAsync(500);
         }
     }
 
     /// <summary>
-    /// Decline an incoming challenge by zero-based index. Clicks the Decline
-    /// button on the challenge card. Assumes the "Active Challenges" tab is selected.
+    /// Decline an incoming challenge by zero-based index.
     /// </summary>
     public async Task DeclineChallengeAsync(int challengeIndex)
     {
-        var declineButtons = Page.Locator(".card:has(button:has-text('Decline')) button", new() { HasText = "Decline" });
+        var declineButtons = Page.Locator("[data-testid='incoming-challenges'] [data-testid='decline-btn']");
         var count = await declineButtons.CountAsync();
         if (challengeIndex >= 0 && challengeIndex < count)
         {
@@ -166,7 +156,7 @@ public class BattlePage : BasePage
     /// </summary>
     public async Task WaitForBattleResultModalAsync(int timeoutMs = 10000)
     {
-        await Page.WaitForSelectorAsync("text=Victory!, text=Defeat", new PageWaitForSelectorOptions
+        await Page.WaitForSelectorAsync("[data-testid='result-modal']", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = timeoutMs
@@ -176,14 +166,14 @@ public class BattlePage : BasePage
     /// <summary>Get the full text content from the battle result modal.</summary>
     public async Task<string?> GetBattleResultTextAsync()
     {
-        var modal = await Page.QuerySelectorAsync(".modal:has-text('Victory!'), .modal:has-text('Defeat')");
+        var modal = await Page.QuerySelectorAsync("[data-testid='result-modal']");
         return modal is not null ? await modal.TextContentAsync() : null;
     }
 
     /// <summary>Close the battle result modal by clicking the Close button.</summary>
     public async Task CloseBattleResultModalAsync()
     {
-        await Page.GetByRole(AriaRole.Button, new() { Name = "Close" }).ClickAsync();
+        await Page.GetByTestId("result-close-btn").ClickAsync();
         await Page.WaitForTimeoutAsync(300);
     }
 
@@ -192,18 +182,18 @@ public class BattlePage : BasePage
     /// <summary>Check whether the empty state ("No active challenges") is visible.</summary>
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
-        return await Page.GetByText("No active challenges").IsVisibleAsync();
+        return await ExistsAsync("[data-testid='battle-empty']");
     }
 
     /// <summary>Check whether the loading spinner is visible.</summary>
     public async Task<bool> IsLoadingVisibleAsync()
     {
-        return await ExistsAsync(".spinner-border");
+        return await ExistsAsync("[data-testid='battle-loading']");
     }
 
     /// <summary>Check whether the error alert is visible.</summary>
     public async Task<bool> IsErrorVisibleAsync()
     {
-        return await ExistsAsync(".alert-danger");
+        return await ExistsAsync("[data-testid='battle-error']");
     }
 }

@@ -4,12 +4,6 @@ namespace RuckR.Tests.Pages;
 
 public class PitchCreatePage : BasePage
 {
-    private const string PitchNameInput = "input[name='Name']";
-    private const string PitchTypeSelect = "select[name='Type']";
-    private const string LatitudeInput = "input[name='Latitude']";
-    private const string LongitudeInput = "input[name='Longitude']";
-    private const string SubmitButton = "button[type='submit']";
-
     public PitchCreatePage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     public async Task GoToAsync() => await NavigateToAsync("/pitches/create");
@@ -19,7 +13,7 @@ public class PitchCreatePage : BasePage
     /// </summary>
     public async Task WaitForFormLoadedAsync(int timeoutMs = 15000)
     {
-        await Page.WaitForSelectorAsync(PitchNameInput, new PageWaitForSelectorOptions
+        await Page.WaitForSelectorAsync("[data-testid='pitch-name']", new PageWaitForSelectorOptions
         {
             Timeout = timeoutMs,
             State = WaitForSelectorState.Visible
@@ -29,26 +23,26 @@ public class PitchCreatePage : BasePage
     /// <summary>Fill the pitch name input field.</summary>
     public async Task FillPitchNameAsync(string name)
     {
-        await Page.FillAsync(PitchNameInput, name);
+        await Page.GetByTestId("pitch-name").FillAsync(name);
     }
 
     /// <summary>Select a pitch type from the dropdown.</summary>
     public async Task SelectPitchTypeAsync(string type)
     {
-        await Page.SelectOptionAsync(PitchTypeSelect, type);
+        await Page.GetByTestId("pitch-type").SelectOptionAsync(type);
     }
 
     /// <summary>Fill the latitude and longitude coordinate inputs.</summary>
     public async Task FillCoordinatesAsync(double lat, double lng)
     {
-        await Page.FillAsync(LatitudeInput, lat.ToString("F6"));
-        await Page.FillAsync(LongitudeInput, lng.ToString("F6"));
+        await Page.GetByTestId("pitch-latitude").FillAsync(lat.ToString("F6"));
+        await Page.GetByTestId("pitch-longitude").FillAsync(lng.ToString("F6"));
     }
 
     /// <summary>Click the Create Pitch submit button and wait for result.</summary>
     public async Task SubmitAsync()
     {
-        await Page.ClickAsync(SubmitButton);
+        await Page.GetByTestId("pitch-submit").ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
@@ -58,7 +52,7 @@ public class PitchCreatePage : BasePage
     /// </summary>
     public async Task<string?> GetErrorMessageAsync()
     {
-        var element = await Page.QuerySelectorAsync(".alert-danger, .validation-message");
+        var element = await Page.QuerySelectorAsync("[data-testid='pitch-error'], .validation-message");
         if (element is null) return null;
 
         return (await element.TextContentAsync())?.Trim();
@@ -70,12 +64,10 @@ public class PitchCreatePage : BasePage
     /// </summary>
     public async Task<bool> GetSuccessMessageAsync()
     {
-        // Success is indicated by either a redirect or a success alert
         var successAlert = await Page.QuerySelectorAsync(".alert-success");
         if (successAlert is not null)
             return true;
 
-        // Check if we navigated away (URL no longer contains /pitches/create)
         var url = Page.Url;
         return !url.Contains("/pitches/create", StringComparison.OrdinalIgnoreCase);
     }
@@ -83,17 +75,15 @@ public class PitchCreatePage : BasePage
     /// <summary>Check whether a 429 rate-limit message is displayed.</summary>
     public async Task<bool> IsRateLimitedAsync()
     {
-        return await ExistsAsync("text=429")
-            || await Page.GetByText("too many", new() { Exact = false }).IsVisibleAsync()
-            || await Page.GetByText("rate limit", new() { Exact = false }).IsVisibleAsync();
+        return await ExistsAsync("[data-testid='pitch-error']")
+            && (await Page.GetByText("5 pitches per day", new() { Exact = false }).IsVisibleAsync());
     }
 
     /// <summary>Check whether a 409 duplicate pitch error is displayed.</summary>
     public async Task<bool> IsDuplicateErrorAsync()
     {
-        return await ExistsAsync("text=409")
-            || await Page.GetByText("already exists", new() { Exact = false }).IsVisibleAsync()
-            || await Page.GetByText("duplicate", new() { Exact = false }).IsVisibleAsync();
+        return await ExistsAsync("[data-testid='pitch-error']")
+            && await Page.GetByText("already exists", new() { Exact = false }).IsVisibleAsync();
     }
 
     // ── State checks ────────────────────────────────────────────────
@@ -105,6 +95,6 @@ public class PitchCreatePage : BasePage
 
     public async Task<bool> IsErrorVisibleAsync()
     {
-        return await ExistsAsync(".alert-danger");
+        return await ExistsAsync("[data-testid='pitch-error']");
     }
 }

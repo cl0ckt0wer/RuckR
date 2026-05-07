@@ -326,4 +326,15 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         var db = scope.ServiceProvider.GetRequiredService<RuckRDbContext>();
         await action(db);
     }
+
+    /// <summary>
+    /// Reset all in-memory rate-limit trackers across controllers.
+    /// Call between tests to prevent rate-limit state contamination.
+    /// </summary>
+    public static void ResetAllRateLimits()
+    {
+        RuckR.Server.Controllers.PitchesController.ResetRateLimits();
+        RuckR.Server.Controllers.BattlesController.ResetRateLimits();
+        RuckR.Server.Controllers.CollectionController.ResetRateLimits();
+    }
 }

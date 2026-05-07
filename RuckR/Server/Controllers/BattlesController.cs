@@ -17,7 +17,9 @@ namespace RuckR.Server.Controllers
         private const int MaxPendingChallenges = 3;
         private static readonly TimeSpan ChallengeExpiryDuration = TimeSpan.FromHours(24);
 
-        private static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+
+        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;

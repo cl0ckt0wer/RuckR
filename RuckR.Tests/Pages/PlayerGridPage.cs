@@ -26,8 +26,8 @@ public class PlayerGridPage : BasePage
         try
         {
             await Task.WhenAny(
-                Page.WaitForSelectorAsync(".card", new() { Timeout = timeoutMs }),
-                Page.WaitForSelectorAsync("text=No nearby players", new() { Timeout = timeoutMs })
+                Page.WaitForSelectorAsync("[data-testid='player-card']", new() { Timeout = timeoutMs }),
+                Page.WaitForSelectorAsync("[data-testid='empty-state']", new() { Timeout = timeoutMs })
             );
         }
         catch { }
@@ -38,7 +38,7 @@ public class PlayerGridPage : BasePage
     /// <summary>Return the total number of player cards currently visible.</summary>
     public async Task<int> GetNearbyPlayerCountAsync()
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         return cards.Count;
     }
 
@@ -47,39 +47,34 @@ public class PlayerGridPage : BasePage
     /// <summary>Get the player name from a card at the given zero-based index.</summary>
     public async Task<string?> GetPlayerNameAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var heading = await cards[index].QuerySelectorAsync("h5, .card-title");
+        var heading = await cards[index].QuerySelectorAsync("[data-testid='player-name']");
         return heading is not null ? await heading.TextContentAsync() : null;
     }
 
-    /// <summary>Get the owner username from a card at the given zero-based index.</summary>
-    public async Task<string?> GetOwnerUsernameAsync(int index)
+    /// <summary>Get the owner badge text from a card at the given zero-based index.</summary>
+    public async Task<string?> GetOwnerBadgeAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var subtitle = await cards[index].QuerySelectorAsync(".card-subtitle, .text-muted");
-        return subtitle is not null ? await subtitle.TextContentAsync() : null;
+        var badge = await cards[index].QuerySelectorAsync("[data-testid='owner-badge']");
+        return badge is not null ? await badge.TextContentAsync() : null;
     }
 
     /// <summary>
-    /// Get the fuzzy distance text from a card (e.g. "~1.2km away").
+    /// Get the fuzzy distance text from a card (e.g. "&lt; 100m").
     /// Returns null if the index is out of range or no distance text is found.
     /// </summary>
     public async Task<string?> GetFuzzyDistanceTextAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var distance = await cards[index].QuerySelectorAsync(".distance, .fuzzy-distance");
-        if (distance is not null)
-            return await distance.TextContentAsync();
-        // Fallback: search for any element containing "km away"
-        var text = await cards[index].TextContentAsync();
-        var match = System.Text.RegularExpressions.Regex.Match(text ?? "", @"~\d+\.?\d*km away");
-        return match.Success ? match.Value : null;
+        var distance = await cards[index].QuerySelectorAsync("[data-testid='distance-display']");
+        return distance is not null ? (await distance.TextContentAsync())?.Trim() : null;
     }
 
     // ── Card actions ────────────────────────────────────────────────────
@@ -89,10 +84,10 @@ public class PlayerGridPage : BasePage
     /// </summary>
     public async Task ClickChallengeButtonAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         if (index < 0 || index >= cards.Count)
             throw new ArgumentOutOfRangeException(nameof(index));
-        var challengeBtn = await cards[index].QuerySelectorAsync("button:has-text('Challenge')");
+        var challengeBtn = await cards[index].QuerySelectorAsync("[data-testid='challenge-btn']");
         if (challengeBtn is not null)
             await challengeBtn.ClickAsync();
     }
@@ -103,10 +98,10 @@ public class PlayerGridPage : BasePage
     /// </summary>
     public async Task ClickScoutButtonAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
         if (index < 0 || index >= cards.Count)
             throw new ArgumentOutOfRangeException(nameof(index));
-        var scoutBtn = await cards[index].QuerySelectorAsync("button:has-text('Scout')");
+        var scoutBtn = await cards[index].QuerySelectorAsync("[data-testid='scout-btn']");
         if (scoutBtn is not null)
             await scoutBtn.ClickAsync();
     }
@@ -118,21 +113,18 @@ public class PlayerGridPage : BasePage
     /// </summary>
     public async Task ChangeRadiusAsync(string radius)
     {
-        var select = await Page.QuerySelectorAsync("select[id*='radius']");
-        if (select is not null)
-            await select.SelectOptionAsync(radius);
+        await Page.GetByTestId("radius-selector").SelectOptionAsync(radius);
         await Page.WaitForTimeoutAsync(500);
     }
 
     // ── GPS disabled banner ─────────────────────────────────────────────
 
     /// <summary>
-    /// Check whether the "Enable GPS" banner is visible (shown when the
-    /// browser denies or blocks geolocation permission).
+    /// Check whether the GPS disabled message is visible.
     /// </summary>
     public async Task<bool> HasGPSDisabledMessageAsync()
     {
-        return await Page.GetByText("Enable GPS").IsVisibleAsync();
+        return await ExistsAsync("[data-testid='gps-disabled-state']");
     }
 
     // ── State checks ────────────────────────────────────────────────────
@@ -140,18 +132,18 @@ public class PlayerGridPage : BasePage
     /// <summary>Check whether the empty-state message is visible.</summary>
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
-        return await ExistsAsync("text=No nearby players");
+        return await ExistsAsync("[data-testid='empty-state']");
     }
 
     /// <summary>Check whether the loading spinner is visible.</summary>
     public async Task<bool> IsLoadingVisibleAsync()
     {
-        return await ExistsAsync(".spinner-border");
+        return await ExistsAsync("[data-testid='nearby-loading']");
     }
 
     /// <summary>Check whether an error alert is visible.</summary>
     public async Task<bool> IsErrorVisibleAsync()
     {
-        return await ExistsAsync(".alert-danger");
+        return await ExistsAsync("[data-testid='nearby-error']");
     }
 }

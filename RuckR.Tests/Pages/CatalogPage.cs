@@ -12,12 +12,11 @@ public class CatalogPage : BasePage
     public async Task WaitForCatalogLoadedAsync(int timeoutMs = 15000)
     {
         await WaitForBlazorAsync(timeoutMs);
-        // Wait for either cards or empty state
         try
         {
             await Task.WhenAny(
-                Page.WaitForSelectorAsync(".card", new() { Timeout = timeoutMs }),
-                Page.WaitForSelectorAsync("text=No players", new() { Timeout = timeoutMs })
+                Page.WaitForSelectorAsync("[data-testid='catalog-card']", new() { Timeout = timeoutMs }),
+                Page.WaitForSelectorAsync("[data-testid='catalog-empty']", new() { Timeout = timeoutMs })
             );
         }
         catch { }
@@ -26,49 +25,38 @@ public class CatalogPage : BasePage
     // Filters
     public async Task FilterByPositionAsync(string position)
     {
-        // Find the position dropdown and select
-        var select = await Page.QuerySelectorAsync("select[id*='position']");
-        if (select != null)
-            await select.SelectOptionAsync(position);
+        await Page.GetByTestId("position-filter").SelectOptionAsync(position);
         await Page.WaitForTimeoutAsync(500);
     }
 
     public async Task FilterByRarityAsync(string rarity)
     {
-        var select = await Page.QuerySelectorAsync("select[id*='rarity']");
-        if (select != null)
-            await select.SelectOptionAsync(rarity);
+        await Page.GetByTestId("rarity-filter").SelectOptionAsync(rarity);
         await Page.WaitForTimeoutAsync(500);
     }
 
     public async Task SearchByNameAsync(string name)
     {
-        var input = await Page.QuerySelectorAsync("input[type='search'], input[id*='name'], input[placeholder*='search' i], input[placeholder*='name' i]");
-        if (input != null)
-        {
-            await input.FillAsync(name);
-            await Page.WaitForTimeoutAsync(500);
-        }
+        await Page.GetByTestId("name-search").FillAsync(name);
+        await Page.WaitForTimeoutAsync(500);
     }
 
     public async Task ClearFiltersAsync()
     {
-        var clearBtn = await Page.QuerySelectorAsync("button:has-text('Clear')");
-        if (clearBtn != null)
-            await clearBtn.ClickAsync();
+        await Page.GetByTestId("catalog-clear-btn").ClickAsync();
         await Page.WaitForTimeoutAsync(300);
     }
 
     // Player cards
     public async Task<int> GetPlayerCardCountAsync()
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='catalog-card']");
         return cards.Count;
     }
 
     public async Task<string?> GetPlayerCardNameAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='catalog-card']");
         if (index >= 0 && index < cards.Count)
         {
             return await cards[index].TextContentAsync();
@@ -78,10 +66,10 @@ public class CatalogPage : BasePage
 
     public async Task<bool> IsCollectedBadgeVisibleAsync(int cardIndex)
     {
-        var cards = await Page.QuerySelectorAllAsync(".card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='catalog-card']");
         if (cardIndex >= 0 && cardIndex < cards.Count)
         {
-            var badge = await cards[cardIndex].QuerySelectorAsync("text=Collected");
+            var badge = await cards[cardIndex].QuerySelectorAsync("[data-testid='collected-badge']");
             return badge != null;
         }
         return false;
@@ -90,16 +78,16 @@ public class CatalogPage : BasePage
     // State checks
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
-        return await ExistsAsync("text=No players");
+        return await ExistsAsync("[data-testid='catalog-empty']");
     }
 
     public async Task<bool> IsLoadingVisibleAsync()
     {
-        return await ExistsAsync(".spinner-border");
+        return await ExistsAsync("[data-testid='catalog-loading']");
     }
 
     public async Task<bool> IsErrorVisibleAsync()
     {
-        return await ExistsAsync(".alert-danger");
+        return await ExistsAsync("[data-testid='catalog-error']");
     }
 }

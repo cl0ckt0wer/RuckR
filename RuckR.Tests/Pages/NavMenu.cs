@@ -31,49 +31,49 @@ public class NavMenu : BasePage
     public async Task NavigateToMapAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='map']");
+        await Page.GetByTestId("nav-map").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToCatalogAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='catalog']");
+        await Page.GetByTestId("nav-catalog").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToCollectionAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='collection']");
+        await Page.GetByTestId("nav-collection").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToNearbyPlayersAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='players/nearby']");
+        await Page.GetByTestId("nav-nearby").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToBattlesAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='battle']");
+        await Page.GetByTestId("nav-battles").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToBattleHistoryAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='battles/history']");
+        await Page.GetByTestId("nav-history").ClickAsync();
         await WaitForBlazorAsync();
     }
 
     public async Task NavigateToCreatePitchAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href='pitches/create']");
+        await Page.GetByTestId("nav-create-pitch").ClickAsync();
         await WaitForBlazorAsync();
     }
 
@@ -83,26 +83,25 @@ public class NavMenu : BasePage
     /// </summary>
     public async Task<(bool isLoggedIn, string username)> GetAuthStateAsync()
     {
-        var loginLink = await Page.QuerySelectorAsync("a[href*='Login']");
+        var loginLink = await Page.QuerySelectorAsync("[data-testid='nav-login']");
         if (loginLink != null)
         {
             return (false, "");
         }
 
-        var usernameSpan = await Page.QuerySelectorAsync(".nav-link-text");
-        if (usernameSpan != null)
-        {
-            var text = await usernameSpan.TextContentAsync();
-            if (!string.IsNullOrWhiteSpace(text) && text.StartsWith("Hello,"))
-            {
-                var username = text.Replace("Hello,", "").Replace("!", "").Trim();
-                return (true, username);
-            }
-        }
-
-        var logoutLink = await Page.QuerySelectorAsync("a[href*='LogOut']");
+        var logoutLink = await Page.QuerySelectorAsync("[data-testid='nav-logout']");
         if (logoutLink != null)
         {
+            var usernameSpan = await Page.QuerySelectorAsync(".nav-link-text");
+            if (usernameSpan != null)
+            {
+                var text = await usernameSpan.TextContentAsync();
+                if (!string.IsNullOrWhiteSpace(text) && text.StartsWith("Hello,"))
+                {
+                    var username = text.Replace("Hello,", "").Replace("!", "").Trim();
+                    return (true, username);
+                }
+            }
             return (true, "");
         }
 
@@ -112,14 +111,14 @@ public class NavMenu : BasePage
     public async Task ClickLoginAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href*='Login']");
+        await Page.GetByTestId("nav-login").ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
     public async Task ClickLogoutAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.ClickAsync("a[href*='LogOut']");
+        await Page.GetByTestId("nav-logout").ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 

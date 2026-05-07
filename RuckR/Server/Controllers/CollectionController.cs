@@ -18,7 +18,9 @@ namespace RuckR.Server.Controllers
         private const int MaxCapturesPerHour = 20;
         private const double CaptureProximityMeters = 100.0;
 
-        private static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
+
+        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;

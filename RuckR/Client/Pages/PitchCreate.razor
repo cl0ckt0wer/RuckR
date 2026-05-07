@@ -13,15 +13,15 @@
 <div class="card mx-auto" style="max-width: 600px;">
     <div class="card-body">
 
-        <div class="alert alert-info">
+        <div class="alert alert-info" data-testid="rate-limit-alert">
             You can create up to 5 pitches per day.
         </div>
 
         @if (!string.IsNullOrEmpty(errorMessage))
         {
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <div class="alert alert-danger alert-dismissible fade show" role="alert" data-testid="pitch-error">
                 @errorMessage
-                <button type="button" class="btn-close" @onclick="ClearError" aria-label="Close"></button>
+                <button type="button" class="btn-close" data-testid="pitch-error-close" @onclick="ClearError" aria-label="Close"></button>
             </div>
         }
 
@@ -49,10 +49,10 @@
                 <label for="latitude" class="form-label">Latitude</label>
                 <div class="input-group">
                     <InputNumber id="latitude" @bind-Value="formModel.Latitude" class="form-control"
-                                 step="0.0001" />
+                                 step="0.0001" data-testid="pitch-latitude" />
                     @if (gpsUsed)
                     {
-                        <span class="input-group-text" title="Using your current location">
+                        <span class="input-group-text" data-testid="gps-indicator" title="Using your current location">
                             📍 Using your current location
                         </span>
                     }
@@ -64,10 +64,10 @@
                 <label for="longitude" class="form-label">Longitude</label>
                 <div class="input-group">
                     <InputNumber id="longitude" @bind-Value="formModel.Longitude" class="form-control"
-                                 step="0.0001" />
+                                 step="0.0001" data-testid="pitch-longitude" />
                     @if (gpsUsed)
                     {
-                        <span class="input-group-text" title="Using your current location">
+                        <span class="input-group-text" data-testid="gps-indicator" title="Using your current location">
                             📍 Using your current location
                         </span>
                     }
@@ -87,7 +87,7 @@
                         <span>Create Pitch</span>
                     }
                 </button>
-                <button type="button" class="btn btn-secondary" @onclick="Cancel" disabled="@isSubmitting">
+                <button type="button" class="btn btn-secondary" data-testid="pitch-cancel" @onclick="Cancel" disabled="@isSubmitting">
                     Cancel
                 </button>
             </div>

@@ -20,8 +20,7 @@ public class ConnectionStatus : BasePage
     /// </summary>
     public async Task<string> GetConnectionStateAsync()
     {
-        // Prefer the explicit status text
-        var textEl = await Page.QuerySelectorAsync(".connection-status .status-text");
+        var textEl = await Page.QuerySelectorAsync("[data-testid='status-text']");
         if (textEl is not null)
         {
             var text = await textEl.TextContentAsync();
@@ -29,8 +28,7 @@ public class ConnectionStatus : BasePage
                 return text.Trim();
         }
 
-        // Fall back to CSS class on the dot
-        var dot = await Page.QuerySelectorAsync(".connection-status .status-dot");
+        var dot = await Page.QuerySelectorAsync("[data-testid='status-dot']");
         if (dot is not null)
         {
             var classList = await dot.GetAttributeAsync("class");
@@ -87,7 +85,7 @@ public class ConnectionStatus : BasePage
     /// </summary>
     public async Task ClickReconnectAsync()
     {
-        var reconnectBtn = Page.Locator(".connection-status button", new() { HasText = "Reconnect" });
+        var reconnectBtn = Page.GetByTestId("reconnect-btn");
         if (await reconnectBtn.IsVisibleAsync())
         {
             await reconnectBtn.ClickAsync();

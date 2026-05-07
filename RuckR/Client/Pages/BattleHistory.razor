@@ -18,7 +18,7 @@
 @* --- LOADING --- *@
 @if (_isLoading)
 {
-    <div class="d-flex justify-content-center py-5">
+    <div class="d-flex justify-content-center py-5" data-testid="history-loading">
         <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -30,9 +30,9 @@
 @* --- ERROR --- *@
 @if (!string.IsNullOrEmpty(_errorMessage))
 {
-    <div class="alert alert-danger d-flex align-items-center" role="alert">
+    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="history-error">
         <span>@_errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" @onclick="LoadHistoryAsync">Retry</button>
+        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="history-retry-btn" @onclick="LoadHistoryAsync">Retry</button>
     </div>
     return;
 }
@@ -40,7 +40,7 @@
 @* --- EMPTY STATE --- *@
 @if (_battles is null || _battles.Count == 0)
 {
-    <div class="text-center py-5">
+    <div class="text-center py-5" data-testid="history-empty">
         <div style="font-size: 4rem;">⚔️</div>
         <h4 class="mt-3">No battles yet!</h4>
         <p class="text-muted">
@@ -69,14 +69,14 @@
         var result = GetBattleResult(battle);
 
         <div class="list-group-item list-group-item-action p-0 border-0 mb-3">
-            <div class="card @(isExpanded ? "border-primary border-2" : "")">
+            <div class="card @(isExpanded ? "border-primary border-2" : "")" data-testid="history-item">
                 @* --- CARD BODY (always visible) --- *@
                 <div class="card-body" role="button" @onclick="() => ToggleExpand(battle.Id)">
                     <div class="d-flex justify-content-between align-items-start">
                         <div class="flex-grow-1">
                             @* --- Result Badge + Opponent --- *@
                             <div class="mb-2">
-                                <span class="badge @ResultBadgeClass(result) fs-6 me-2">@ResultLabel(result)</span>
+                                <span class="badge @ResultBadgeClass(result) fs-6 me-2" data-testid="result-badge">@ResultLabel(result)</span>
                                 <strong>vs</strong> <span class="text-body">@opponentDisplay</span>
                             </div>
 
@@ -103,7 +103,7 @@
 
                         @* --- Expand/Collapse indicator --- *@
                         <div class="ms-2">
-                            <span class="text-muted">@(isExpanded ? "▲" : "▼")</span>
+                            <span class="text-muted" data-testid="expand-indicator">@(isExpanded ? "▲" : "▼")</span>
                         </div>
                     </div>
                 </div>
@@ -111,7 +111,7 @@
                 @* --- EXPANDED DETAIL --- *@
                 @if (isExpanded)
                 {
-                    <div class="card-footer bg-light">
+                    <div class="card-footer bg-light" data-testid="battle-detail">
                         <div class="row">
                             <div class="col-md-6">
                                 <h6>Your Side</h6>

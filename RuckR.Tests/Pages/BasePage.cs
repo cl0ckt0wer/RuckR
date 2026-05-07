@@ -102,11 +102,11 @@ public abstract class BasePage
     public async Task<string> GetTitleAsync() => await Page.TitleAsync() ?? string.Empty;
 
     /// <summary>
-    /// Wait for an element matching the selector to become visible.
+    /// Wait for an element with the given data-testid to become visible.
     /// </summary>
-    protected async Task<IElementHandle?> WaitForVisibleAsync(string selector, int timeoutMs = 10000)
+    protected async Task<IElementHandle?> WaitForTestIdAsync(string testId, int timeoutMs = 10000)
     {
-        return await Page.WaitForSelectorAsync(selector, new PageWaitForSelectorOptions
+        return await Page.WaitForSelectorAsync($"[data-testid='{testId}']", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = timeoutMs
@@ -120,6 +120,15 @@ public abstract class BasePage
     public async Task WaitForBlazorReadyAsync(int timeoutMs = 30000)
     {
         await WaitForBlazorAsync(timeoutMs);
+    }
+
+    /// <summary>
+    /// Check whether an element matching the data-testid exists in the DOM.
+    /// </summary>
+    protected async Task<bool> ExistsByTestIdAsync(string testId)
+    {
+        var element = await Page.QuerySelectorAsync($"[data-testid='{testId}']");
+        return element != null;
     }
 
     /// <summary>
