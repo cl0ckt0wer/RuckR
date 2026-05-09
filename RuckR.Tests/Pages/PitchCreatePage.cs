@@ -32,13 +32,6 @@ public class PitchCreatePage : BasePage
         await Page.GetByTestId("pitch-type").SelectOptionAsync(type);
     }
 
-    /// <summary>Fill the latitude and longitude coordinate inputs.</summary>
-    public async Task FillCoordinatesAsync(double lat, double lng)
-    {
-        await Page.GetByTestId("pitch-latitude").FillAsync(lat.ToString("F6"));
-        await Page.GetByTestId("pitch-longitude").FillAsync(lng.ToString("F6"));
-    }
-
     /// <summary>Click the Create Pitch submit button and wait for result.</summary>
     public async Task SubmitAsync()
     {
@@ -76,7 +69,7 @@ public class PitchCreatePage : BasePage
     public async Task<bool> IsRateLimitedAsync()
     {
         return await ExistsAsync("[data-testid='pitch-error']")
-            && (await Page.GetByText("5 pitches per day", new() { Exact = false }).IsVisibleAsync());
+            && (await Page.GetByText("5 pitches per 24 hours", new() { Exact = false }).IsVisibleAsync());
     }
 
     /// <summary>Check whether a 409 duplicate pitch error is displayed.</summary>

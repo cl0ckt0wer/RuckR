@@ -51,6 +51,66 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CreatePitch_Unauthenticated_ReturnsUnauthorized()
+    {
+        using var anonymousClient = _factory.CreateClient();
+        var request = new CreatePitchRequest($"AnonPitch_{Guid.NewGuid():N}", 51.5074, -0.1278, "Training");
+
+        var response = await anonymousClient.PostAsJsonAsync("/api/pitches", request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData(91, -0.1278, "Standard", "Latitude")]
+    [InlineData(-91, -0.1278, "Standard", "Latitude")]
+    [InlineData(51.5074, 181, "Standard", "Longitude")]
+    [InlineData(51.5074, -181, "Standard", "Longitude")]
+    [InlineData(51.5074, -0.1278, "InvalidType", "Invalid pitch type")]
+    public async Task CreatePitch_InvalidRequest_ReturnsBadRequest(
+        double latitude,
+        double longitude,
+        string type,
+        string expectedMessage)
+    {
+        var request = new CreatePitchRequest($"InvalidPitch_{Guid.NewGuid():N}", latitude, longitude, type);
+
+        var response = await _client.PostAsJsonAsync("/api/pitches", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains(expectedMessage, body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreatePitch_Authenticated_PersistsLocationAndMetadata()
+    {
+        var pitchName = $"PersistPitch_{Guid.NewGuid():N}";
+        var latitude = 51.4564;
+        var longitude = -0.3416;
+        var request = new CreatePitchRequest(pitchName, latitude, longitude, "Stadium");
+
+        var response = await _client.PostAsJsonAsync("/api/pitches", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<PitchModel>();
+        Assert.NotNull(created);
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var stored = await db.Pitches.FindAsync(created.Id);
+            Assert.NotNull(stored);
+            Assert.Equal(pitchName, stored.Name);
+            Assert.Equal(_userId, stored.CreatorUserId);
+            Assert.Equal(PitchType.Stadium, stored.Type);
+            Assert.Equal(4326, stored.Location.SRID);
+            Assert.Equal(longitude, stored.Location.X, precision: 4);
+            Assert.Equal(latitude, stored.Location.Y, precision: 4);
+            Assert.True(stored.CreatedAt <= DateTime.UtcNow);
+        });
+    }
+
+    [Fact]
     public async Task GetPitchesNearby_ReturnsPitches()
     {
         var response = await _client.GetAsync("/api/pitches/nearby?lat=51.5074&lng=-0.1278&radius=5000");
@@ -61,7 +121,7 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CreatePitch_DuplicateNameWithin100m_Returns409()
+    public async Task CreatePitch_DuplicateNameAnywhere_Returns409()
     {
         var pitchName = $"DupPitch_{Guid.NewGuid():N}";
 
@@ -71,8 +131,8 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.True(response1.StatusCode is HttpStatusCode.Created or HttpStatusCode.OK,
             $"First pitch creation should succeed but got {(int)response1.StatusCode}");
 
-        // Second pitch with same name ~20m away (well within 100m radius)
-        var request2 = new CreatePitchRequest(pitchName, 51.5075, -0.1277, "Standard");
+        // Same name should be rejected even at a distant location.
+        var request2 = new CreatePitchRequest(pitchName, -33.8688, 151.2093, "Standard");
         var response2 = await _client.PostAsJsonAsync("/api/pitches", request2);
         Assert.Equal(HttpStatusCode.Conflict, response2.StatusCode);
     }

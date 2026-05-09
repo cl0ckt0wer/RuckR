@@ -18,6 +18,8 @@ builder.Logging.SetMinimumLevel(builder.HostEnvironment.IsDevelopment()
     : LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Components", LogLevel.Information);
 builder.Logging.AddFilter("Microsoft.AspNetCore.SignalR", LogLevel.Information);
+builder.Logging.AddFilter("RuckR.Client.Services.GeolocationService", LogLevel.Debug);
+builder.Logging.AddFilter("RuckR.Client.Pages.PitchCreate", LogLevel.Debug);
 
 // Telemetry bridge — ships Warning+ client logs to server (WASM-safe)
 builder.Services.AddSingleton(sp =>
@@ -42,17 +44,33 @@ builder.Services.AddFluxor(o => o.ScanAssemblies(typeof(Program).Assembly).UseRe
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<ApiClientService>();
+builder.Services.AddGeolocationServices();
 builder.Services.AddScoped<IGeolocationService, GeolocationService>();
 builder.Services.AddScoped<IMapService, MapService>();
 builder.Services.AddScoped<SignalRClientService>();
+builder.Services.AddSingleton<BrowserErrorLogger>();
 
 var host = builder.Build();
 
 // Global unhandled-exception tracer — logs the actual exception type and
 // message before the Blazor runtime wraps it in AggregateException, whose
 // resource-string formatting fails on browser-wasm (dotnet/runtime#60964).
-host.Services.GetRequiredService<ILogger<Program>>().LogInformation(
-    "RuckR client starting ({Runtime})", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription);
+string buildStamp;
+try
+{
+    var attr = typeof(Program).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
+        .Cast<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(a => a.Key == "BuildTimestamp");
+    buildStamp = attr?.Value ?? "dev";
+}
+catch { buildStamp = "dev"; }
+
+host.Services.GetRequiredService<ILogger<Program>>().LogWarning(
+    "RuckR client starting ({Runtime}) build={Build}",
+    System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+    buildStamp);
+await host.Services.GetRequiredService<BrowserErrorLogger>().InitializeAsync();
 
 try
 {

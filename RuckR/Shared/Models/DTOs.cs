@@ -39,4 +39,33 @@ namespace RuckR.Shared.Models
     public sealed record CapturePlayerRequest(
         [Required] int PlayerId,
         [Required] int PitchId);
+
+    public sealed record CaptureEligibilityDto(
+        bool CanCapture,
+        string Reason,
+        string DistanceBucket,
+        double? AccuracyMeters,
+        int AvailablePlayerCount);
+
+    public sealed record PlayerEncounterDto(
+        Guid EncounterId,
+        int PlayerId,
+        string Name,
+        string Position,
+        string Rarity,
+        int Level,
+        double Latitude,
+        double Longitude,
+        DateTime ExpiresAtUtc,
+        int SuccessChancePercent);
+
+    public sealed record RecruitmentAttemptRequest(
+        [Required] Guid EncounterId,
+        [Required] int PlayerId);
+
+    public sealed record RecruitmentAttemptResultDto(
+        bool Success,
+        int SuccessChancePercent,
+        string Message,
+        CollectionModel? Collection);
 }

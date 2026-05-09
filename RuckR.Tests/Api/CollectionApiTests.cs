@@ -185,4 +185,48 @@ public class CollectionApiTests : IAsyncLifetime
         var updated2 = collections2!.First(c => c.Id == collection.Id);
         Assert.False(updated2.IsFavorite);
     }
+
+    [Fact]
+    public async Task CaptureEligibility_WithoutGps_ReturnsGpsRequired()
+    {
+        var (_, pitchId, _, _) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.ClearPosition(_userId);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.False(eligibility.CanCapture);
+        Assert.Equal("GPS_REQUIRED", eligibility.Reason);
+    }
+
+    [Fact]
+    public async Task CaptureEligibility_WhenFarAway_ReturnsTooFar()
+    {
+        var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat + 1.0, pitchLng + 1.0);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.False(eligibility.CanCapture);
+        Assert.Equal("TOO_FAR", eligibility.Reason);
+    }
+
+    [Fact]
+    public async Task CaptureEligibility_WhenNearbyAndAccurate_ReturnsEligibleOrNoPlayers()
+    {
+        var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat, pitchLng);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.Contains(eligibility.Reason, new[] { "ELIGIBLE", "NO_PLAYERS" });
+    }
 }

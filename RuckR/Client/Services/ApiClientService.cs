@@ -104,6 +104,19 @@ public class ApiClientService
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<CaptureEligibilityDto?> GetCaptureEligibilityAsync(int pitchId)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<CaptureEligibilityDto>($"api/collection/capture-eligibility/{pitchId}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch capture eligibility for pitch {PitchId}", pitchId);
+            return null;
+        }
+    }
+
     // Battles
     public async Task<BattleModel?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {

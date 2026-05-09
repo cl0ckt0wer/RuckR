@@ -1,0 +1,296 @@
+.pitch-create-shell {
+    color: #102118;
+}
+
+.pitch-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 18rem;
+    gap: 1.5rem;
+    align-items: stretch;
+    margin-bottom: 1.5rem;
+    padding: 1.75rem;
+    border-radius: 1.5rem;
+    background: linear-gradient(135deg, #092317 0%, #17472d 58%, #d7b45a 100%);
+    color: #fff;
+    box-shadow: 0 1.25rem 2.5rem rgba(9, 35, 23, 0.2);
+}
+
+.eyebrow {
+    margin-bottom: 0.5rem;
+    color: #ffe28a;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.pitch-hero h1 {
+    max-width: 44rem;
+    margin: 0;
+    font-size: clamp(2rem, 4vw, 3.75rem);
+    font-weight: 900;
+    line-height: 0.95;
+}
+
+.hero-copy {
+    max-width: 40rem;
+    margin: 1rem 0 0;
+    color: rgba(255, 255, 255, 0.84);
+    font-size: 1.05rem;
+}
+
+.hero-rules {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25rem;
+    padding: 1.25rem;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+}
+
+.rule-kicker {
+    color: #ffe28a;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+.pitch-create-grid {
+    display: grid;
+    grid-template-columns: minmax(15rem, 0.42fr) minmax(0, 1fr);
+    gap: 1.5rem;
+}
+
+.pitch-guide-card,
+.pitch-form-card {
+    border: 1px solid #dce8de;
+    border-radius: 1.25rem;
+    background: #fff;
+    box-shadow: 0 1rem 2rem rgba(16, 33, 24, 0.08);
+}
+
+.pitch-guide-card {
+    align-self: start;
+    padding: 1.25rem;
+}
+
+.pitch-form-card {
+    padding: 1.5rem;
+}
+
+.guide-step {
+    display: grid;
+    grid-template-columns: 2.25rem 1fr;
+    gap: 0.85rem;
+    padding: 0.85rem 0;
+    color: #5a685f;
+}
+
+.guide-step + .guide-step {
+    border-top: 1px solid #eef3ef;
+}
+
+.guide-step strong {
+    display: block;
+    color: #102118;
+}
+
+.guide-step p {
+    margin: 0.2rem 0 0;
+    font-size: 0.9rem;
+}
+
+.step-number {
+    display: grid;
+    width: 2.25rem;
+    height: 2.25rem;
+    place-items: center;
+    border-radius: 999px;
+    background: #edf5ef;
+    color: #17472d;
+    font-weight: 800;
+}
+
+.guide-step.active .step-number {
+    background: #17472d;
+    color: #fff;
+}
+
+.rules-list {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 1rem;
+    padding: 0.85rem;
+    border: 1px solid #e0e9e2;
+    border-radius: 0.9rem;
+    background: #fbfdfb;
+    color: #4b5d52;
+    font-size: 0.88rem;
+}
+
+.rules-list span::before {
+    content: "";
+    display: inline-block;
+    width: 0.45rem;
+    height: 0.45rem;
+    margin-right: 0.5rem;
+    border-radius: 999px;
+    background: #d7b45a;
+    vertical-align: middle;
+}
+
+.location-status {
+    display: flex;
+    gap: 0.8rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    background: #f4f7f5;
+    color: #5a685f;
+}
+
+.location-status strong,
+.location-status span:last-child {
+    display: block;
+}
+
+.location-status-live {
+    background: #e8f7ed;
+    color: #17472d;
+}
+
+.form-section {
+    margin-bottom: 1.25rem;
+}
+
+.field-hint,
+.coordinate-panel-header p,
+.type-preview {
+    color: #64746a;
+    font-size: 0.9rem;
+}
+
+.field-hint {
+    margin-top: 0.35rem;
+}
+
+.type-preview {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border-radius: 0.85rem;
+    background: #f5f8f5;
+}
+
+.type-pill,
+.gps-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.type-pill {
+    padding: 0.25rem 0.55rem;
+    background: #17472d;
+    color: #fff;
+}
+
+.coordinate-panel {
+    margin-bottom: 1.35rem;
+    padding: 1rem;
+    border: 1px solid #e0e9e2;
+    border-radius: 1rem;
+    background: #fbfdfb;
+}
+
+.coordinate-panel-header {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.coordinate-panel-header p {
+    margin: 0.15rem 0 0;
+}
+
+.gps-chip {
+    padding: 0.35rem 0.7rem;
+    background: #dff4e6;
+    color: #17472d;
+}
+
+.coordinate-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.gps-coordinate-readout {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.gps-coordinate-readout span,
+.gps-required-panel {
+    padding: 0.7rem 0.85rem;
+    border-radius: 0.8rem;
+    background: #eef7f1;
+    color: #17472d;
+    font-weight: 700;
+}
+
+.gps-required-panel {
+    background: #f4f4f4;
+    color: #5d6460;
+}
+
+.btn-primary:disabled {
+    background-color: #9aa19d;
+    border-color: #9aa19d;
+    color: #f7f7f7;
+    opacity: 1;
+}
+
+.small-label {
+    font-size: 0.85rem;
+}
+
+.form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+    .pitch-hero,
+    .pitch-create-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .pitch-hero,
+    .pitch-form-card,
+    .pitch-guide-card {
+        padding: 1rem;
+        border-radius: 1rem;
+    }
+
+    .coordinate-grid {
+        grid-template-columns: 1fr;
+    }
+}

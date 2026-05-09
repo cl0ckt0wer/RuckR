@@ -116,6 +116,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         builder.Services.AddSingleton<ILocationTracker>(_locationTracker);
 
         builder.Services.AddScoped<IBattleResolver, BattleResolver>();
+        builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
 
         // Replace DbContext with test container
         builder.Services.AddDbContext<RuckRDbContext>(options =>

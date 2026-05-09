@@ -13,7 +13,6 @@ namespace RuckR.Server.Controllers
     public class PitchesController : ControllerBase
     {
         private const int MaxPitchesPerUserPerDay = 5;
-        private const double NameUniquenessRadiusMeters = 100.0;
 
         internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
 
@@ -91,7 +90,7 @@ namespace RuckR.Server.Controllers
         /// <summary>
         /// POST /pitches — creates a new pitch. Requires authentication.
         /// Rate-limited to 5 pitches per user per day.
-        /// Name uniqueness enforced within 100m radius.
+        /// Pitch names must be globally unique.
         /// </summary>
         [HttpPost]
         [Authorize]
@@ -114,17 +113,15 @@ namespace RuckR.Server.Controllers
 
             // --- Rate limiting ---
             if (!CheckRateLimit(userId))
-                return StatusCode(429, "Rate limit exceeded. You can create up to 5 pitches per day.");
+                return StatusCode(429, "Rate limit exceeded. You can create up to 5 pitches per 24 hours.");
 
-            // --- Name uniqueness check within 100m ---
             var requestPoint = _geometryFactory.CreatePoint(new Coordinate(request.Longitude, request.Latitude));
 
-            var duplicateExists = await _db.Pitches
-                .Where(p => p.Name == request.Name)
-                .AnyAsync(p => p.Location.IsWithinDistance(requestPoint, NameUniquenessRadiusMeters));
+            // --- Global name uniqueness check ---
+            var duplicateExists = await _db.Pitches.AnyAsync(p => p.Name == request.Name);
 
             if (duplicateExists)
-                return Conflict($"A pitch named '{request.Name}' already exists within {NameUniquenessRadiusMeters}m of this location.");
+                return Conflict($"A pitch named '{request.Name}' already exists.");
 
             // --- Create and save ---
             var pitch = new PitchModel

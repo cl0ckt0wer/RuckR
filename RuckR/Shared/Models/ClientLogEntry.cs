@@ -7,6 +7,8 @@ namespace RuckR.Shared.Models
         public string Category { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
         public string? Exception { get; set; }
+        public string? Url { get; set; }
+        public string? UserAgent { get; set; }
     }
 
     public class ClientLogBatch

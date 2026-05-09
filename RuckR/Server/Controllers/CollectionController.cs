@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using NetTopologySuite.Geometries;
 using RuckR.Server.Data;
 using RuckR.Server.Services;
 using RuckR.Shared.Models;
@@ -17,6 +16,7 @@ namespace RuckR.Server.Controllers
     {
         private const int MaxCapturesPerHour = 20;
         private const double CaptureProximityMeters = 100.0;
+        private const double MaxCaptureAccuracyMeters = 50.0;
 
         internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
 
@@ -94,9 +94,14 @@ namespace RuckR.Server.Controllers
             var userPosition = positionResult.Value.Position;
 
             // 4. Proximity check: user must be within 100m of the pitch
-            var userPoint = new Point(userPosition.Longitude, userPosition.Latitude) { SRID = 4326 };
+            var pitchPosition = new GeoPosition
+            {
+                Latitude = pitch.Location.Y,
+                Longitude = pitch.Location.X
+            };
 
-            if (!pitch.Location.IsWithinDistance(userPoint, CaptureProximityMeters))
+            var captureDistanceMeters = GeoPosition.HaversineDistance(userPosition, pitchPosition);
+            if (captureDistanceMeters > CaptureProximityMeters)
                 return BadRequest("You must be within 100m of the pitch.");
 
             // 5. Duplicate check: user cannot capture the same player twice
@@ -136,6 +141,83 @@ namespace RuckR.Server.Controllers
             collection.Player = null;
 
             return CreatedAtAction(nameof(GetCollections), new { id = collection.Id }, collection);
+        }
+
+        /// <summary>
+        /// GET /collection/capture-eligibility/{pitchId} — checks whether the current user
+        /// can capture players from a pitch based on recent GPS, accuracy, proximity, and
+        /// available uncaptured players.
+        /// </summary>
+        [HttpGet("capture-eligibility/{pitchId:int}")]
+        public async Task<ActionResult<CaptureEligibilityDto>> GetCaptureEligibility(int pitchId)
+        {
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized("User identity not found.");
+
+            var pitch = await _db.Pitches.AsNoTracking().FirstOrDefaultAsync(p => p.Id == pitchId);
+            if (pitch is null)
+                return NotFound($"Pitch with id {pitchId} not found.");
+
+            var availablePlayerCount = await CountAvailablePlayersAtPitchAsync(userId, pitch);
+
+            var positionResult = _locationTracker.TryGetPosition(userId, TimeSpan.FromSeconds(60));
+            if (positionResult is null)
+            {
+                return Ok(new CaptureEligibilityDto(
+                    CanCapture: false,
+                    Reason: "GPS_REQUIRED",
+                    DistanceBucket: nameof(DistanceBucket.Beyond),
+                    AccuracyMeters: null,
+                    AvailablePlayerCount: availablePlayerCount));
+            }
+
+            var userPosition = positionResult.Value.Position;
+            var pitchPosition = new GeoPosition
+            {
+                Latitude = pitch.Location.Y,
+                Longitude = pitch.Location.X
+            };
+
+            var distanceMeters = GeoPosition.HaversineDistance(userPosition, pitchPosition);
+            var distanceBucket = GeoPosition.GetDistanceBucket(distanceMeters).ToString();
+
+            if (userPosition.Accuracy.HasValue && userPosition.Accuracy.Value > MaxCaptureAccuracyMeters)
+            {
+                return Ok(new CaptureEligibilityDto(
+                    CanCapture: false,
+                    Reason: "GPS_INACCURATE",
+                    DistanceBucket: distanceBucket,
+                    AccuracyMeters: userPosition.Accuracy,
+                    AvailablePlayerCount: availablePlayerCount));
+            }
+
+            if (distanceMeters > CaptureProximityMeters)
+            {
+                return Ok(new CaptureEligibilityDto(
+                    CanCapture: false,
+                    Reason: "TOO_FAR",
+                    DistanceBucket: distanceBucket,
+                    AccuracyMeters: userPosition.Accuracy,
+                    AvailablePlayerCount: availablePlayerCount));
+            }
+
+            if (availablePlayerCount <= 0)
+            {
+                return Ok(new CaptureEligibilityDto(
+                    CanCapture: false,
+                    Reason: "NO_PLAYERS",
+                    DistanceBucket: distanceBucket,
+                    AccuracyMeters: userPosition.Accuracy,
+                    AvailablePlayerCount: 0));
+            }
+
+            return Ok(new CaptureEligibilityDto(
+                CanCapture: true,
+                Reason: "ELIGIBLE",
+                DistanceBucket: distanceBucket,
+                AccuracyMeters: userPosition.Accuracy,
+                AvailablePlayerCount: availablePlayerCount));
         }
 
         /// <summary>
@@ -202,6 +284,15 @@ namespace RuckR.Server.Controllers
         {
             return ex.InnerException is Microsoft.Data.SqlClient.SqlException sqlEx
                 && (sqlEx.Number == 2601 || sqlEx.Number == 2627);
+        }
+
+        private async Task<int> CountAvailablePlayersAtPitchAsync(string userId, PitchModel pitch)
+        {
+            return await _db.Players
+                .Where(p => p.SpawnLocation != null)
+                .Where(p => p.SpawnLocation!.IsWithinDistance(pitch.Location, CaptureProximityMeters))
+                .Where(p => !_db.Collections.Any(c => c.UserId == userId && c.PlayerId == p.Id))
+                .CountAsync();
         }
     }
 }

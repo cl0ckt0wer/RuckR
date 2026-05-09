@@ -3,9 +3,9 @@
     Publishes RuckR Server to the exe.dev production VM.
 .DESCRIPTION
     1. Publishes framework-dependent linux-x64 build
-    2. Compresses to tar.gz and SCPs to ruckr.exe.xyz:~/ruckr/
-    3. Ensures .NET 10 runtime and Docker SQL Server on the VM
-    4. Restarts the server and verifies the health endpoint
+    2. Compresses to tar.gz and SCPs to ruckr.exe.xyz:~/ruckr/releases/<timestamp>/
+    3. Ensures .NET 10 runtime, Docker SQL Server, Jaeger, and a systemd service on the VM
+    4. Atomically switches the current release, restarts systemd, and verifies the health endpoint
 .EXAMPLE
     .\scripts\publish-exe-dev.ps1
     .\scripts\publish-exe-dev.ps1 -SkipBuild
@@ -22,15 +22,52 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 $sshHost = "ruckr.exe.xyz"
 $deployDir = "~/ruckr"
+$absoluteDeployDir = "/home/exedev/ruckr"
 $publishDir = Join-Path $repoRoot "publish"
 $archiveFile = Join-Path $repoRoot "publish.tar.gz"
 $serverProject = "RuckR/Server/RuckR.Server.csproj"
+$releaseId = Get-Date -Format "yyyyMMddHHmmss"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 
 function Escape-BashSingleQuotedValue {
     param([string]$Value)
     return "'" + $Value.Replace("'", "'\''") + "'"
+}
+
+function Get-UserSecretValue {
+    param(
+        [string]$Key,
+        [string]$Project
+    )
+
+    $secrets = dotnet user-secrets list --project $Project 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $secrets) {
+        return $null
+    }
+
+    $prefix = "$Key = "
+    foreach ($line in $secrets) {
+        if ($line.StartsWith($prefix, [StringComparison]::Ordinal)) {
+            return $line.Substring($prefix.Length)
+        }
+    }
+
+    return $null
+}
+
+function Get-PasswordFromConnectionString {
+    param([string]$ConnectionString)
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+        return $null
+    }
+
+    if ($ConnectionString -match '(?i)(?:^|;)\s*(?:Password|Pwd)\s*=\s*([^;]*)') {
+        return $Matches[1]
+    }
+
+    return $null
 }
 
 # ── Step 1: Publish ──
@@ -101,12 +138,7 @@ $archiveSize = (Get-Item $archiveFile).Length / 1MB
 Write-Host "  Compressed: $([math]::Round($archiveSize, 1)) MB" -ForegroundColor Green
 Pop-Location
 
-# ── Step 4: Stop the running server on the VM ──
-Write-Step "Stopping existing server on $sshHost"
-ssh $sshHost 'for pid in $(pgrep -f "[R]uckR.Server.dll|[R]uckR\.Server" 2>/dev/null); do sudo kill "$pid"; done; echo "done"'
-Start-Sleep -Seconds 2
-
-# ── Step 5: Ensure .NET 10 runtime on VM ──
+# ── Step 4: Ensure .NET 10 runtime on VM ──
 Write-Step "Checking .NET 10 runtime on $sshHost"
 $dotnetInstalled = ssh $sshHost '/usr/share/dotnet/dotnet --list-runtimes 2>/dev/null | grep -q "ASP.NETCore 10\.0" && echo yes || echo no'
 if ($dotnetInstalled -eq "no") {
@@ -117,9 +149,19 @@ if ($dotnetInstalled -eq "no") {
     Write-Host "  .NET 10 runtime found" -ForegroundColor Green
 }
 
-# ── Step 6: Write secrets to remote VM ──
+# ── Step 5: Write secrets to remote VM ──
 Write-Step "Deploying database secrets to $sshHost"
-$saPassword = if ($env:RUCKR_DB_PASSWORD) { $env:RUCKR_DB_PASSWORD } else { throw "RUCKR_DB_PASSWORD environment variable must be set" }
+$saPassword = $env:RUCKR_DB_PASSWORD
+if (-not $saPassword) {
+    $saPassword = Get-UserSecretValue -Key "RUCKR_DB_PASSWORD" -Project $serverProject
+}
+if (-not $saPassword) {
+    $devConnectionString = Get-UserSecretValue -Key "ConnectionStrings:RuckRDbContext" -Project $serverProject
+    $saPassword = Get-PasswordFromConnectionString -ConnectionString $devConnectionString
+}
+if (-not $saPassword) {
+    throw "RUCKR_DB_PASSWORD env var or user-secret must be set. Fallback also accepts user-secret ConnectionStrings:RuckRDbContext with Password=."
+}
 
 $connectionString = "Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=$saPassword;TrustServerCertificate=True;"
 $secretsContent = @"
@@ -130,14 +172,15 @@ $secretsContent | ssh $sshHost "cat > ~/ruckr/secrets.env && chmod 600 ~/ruckr/s
 Write-Host "  secrets.env deployed to ~/ruckr/secrets.env (chmod 600)" -ForegroundColor Green
 
 $appEnvContent = @"
-export RUCKR_DB_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
-export MSSQL_SA_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
-export ConnectionStrings__RuckRDbContext=$(Escape-BashSingleQuotedValue $connectionString)
+RUCKR_DB_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
+MSSQL_SA_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
+ConnectionStrings__RuckRDbContext=$(Escape-BashSingleQuotedValue $connectionString)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 "@
 $appEnvContent | ssh $sshHost "cat > ~/ruckr/app.env && chmod 600 ~/ruckr/app.env"
 Write-Host "  app.env deployed to ~/ruckr/app.env (chmod 600)" -ForegroundColor Green
 
-# ── Step 6.5: Ensure Docker SQL Server on VM ──
+# ── Step 6: Ensure Docker SQL Server on VM ──
 Write-Step "Checking Docker SQL Server on $sshHost"
 $sqlRunning = ssh $sshHost 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null'
 if (-not $sqlRunning) {
@@ -154,11 +197,50 @@ if (-not $sqlRunning) {
     Write-Host "  SQL Server container already running" -ForegroundColor Green
 }
 
-# ── Step 7: Deploy files to VM ──
-Write-Step "Deploying files to ${sshHost}:$deployDir"
+# ── Step 7: Ensure Jaeger on VM ──
+Write-Step "Checking Jaeger on $sshHost"
+$jaegerRunning = ssh $sshHost 'docker ps --filter "name=ruckr-jaeger" --format "{{.Names}}" 2>/dev/null'
+if (-not $jaegerRunning) {
+    Write-Host "  Starting Jaeger all-in-one container..." -ForegroundColor Yellow
+    ssh $sshHost "docker rm -f ruckr-jaeger 2>/dev/null; docker run -d --name ruckr-jaeger --restart unless-stopped -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 --memory 256m -e QUERY_BASE_PATH=/jaeger jaegertracing/all-in-one:latest"
+    Write-Host "  Jaeger container started (OTLP:4317, UI:/jaeger)" -ForegroundColor Green
+} else {
+    Write-Host "  Jaeger container already running" -ForegroundColor Green
+}
 
-# Create deploy directory and clean old files while preserving secrets.env.
-ssh $sshHost "mkdir -p $deployDir && find $deployDir -mindepth 1 ! -name secrets.env ! -name app.env -exec rm -rf {} +"
+# ── Step 8: Install systemd service ──
+Write-Step "Installing systemd service on $sshHost"
+$unitContent = @"
+[Unit]
+Description=RuckR Server
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=exedev
+WorkingDirectory=$absoluteDeployDir/current
+EnvironmentFile=$absoluteDeployDir/app.env
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=DOTNET_ROOT=/usr/share/dotnet
+ExecStart=$absoluteDeployDir/current/RuckR.Server
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+SyslogIdentifier=ruckr
+
+[Install]
+WantedBy=multi-user.target
+"@
+$unitContent | ssh $sshHost "sudo tee /etc/systemd/system/ruckr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ruckr.service > /dev/null"
+Write-Host "  ruckr.service installed" -ForegroundColor Green
+
+# ── Step 9: Deploy files to an immutable release directory ──
+Write-Step "Deploying release $releaseId to ${sshHost}:$deployDir/releases/$releaseId"
+
+ssh $sshHost "mkdir -p $deployDir/releases/$releaseId"
 
 # SCP compressed archive (single-file transfer, ~30 MB vs 75 individual files)
 scp $archiveFile "${sshHost}:/tmp/publish.tar.gz"
@@ -168,23 +250,21 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Extract on the VM
-ssh $sshHost "cd $deployDir && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && echo extracted"
-Write-Host "  Deployed and extracted" -ForegroundColor Green
+# Extract on the VM, then atomically switch the current symlink.
+ssh $sshHost "cd $deployDir/releases/$releaseId && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && chmod +x RuckR.Server && ln -sfn $absoluteDeployDir/releases/$releaseId $absoluteDeployDir/current && echo extracted"
+Write-Host "  Deployed and linked current -> releases/$releaseId" -ForegroundColor Green
 
 # Clean up local archive
 Remove-Item -Force $archiveFile -ErrorAction SilentlyContinue
 
-# ── Step 8: Restart server ──
+# ── Step 10: Restart server ──
 if (-not $SkipRestart) {
-    Write-Step "Starting server on $sshHost"
-    # Launch the server via a detached nohup job that survives SSH exit.
-    # The outer nohup redirects stdio; the inner exec replaces the bash process.
-    ssh $sshHost "nohup bash -c '. ~/ruckr/app.env && cd $deployDir && exec env DOTNET_ROOT=/usr/share/dotnet ASPNETCORE_URLS=''http://127.0.0.1:5000'' ASPNETCORE_ENVIRONMENT=Production ./RuckR.Server' >/tmp/ruckr.log 2>&1 & disown; echo started"
+    Write-Step "Restarting ruckr.service on $sshHost"
+    ssh $sshHost 'for pid in $(pgrep -f "[R]uckR.Server.dll|[R]uckR\.Server" 2>/dev/null); do sudo kill "$pid"; done; sudo systemctl restart ruckr.service && sudo systemctl --no-pager --full status ruckr.service | head -30'
 
-    Write-Host "  Server started on port 5000 behind nginx (migrations apply on startup)" -ForegroundColor Green
+    Write-Host "  Server managed by systemd on port 5000 behind exe.dev proxy" -ForegroundColor Green
 
-    # ── Step 9: Verify ──
+    # ── Step 11: Verify ──
     Write-Step "Verifying server is reachable..."
     $verifyOk = $false
     for ($i = 0; $i -lt 15; $i++) {
@@ -196,7 +276,7 @@ if (-not $SkipRestart) {
                 Write-Host "  Server is healthy!" -ForegroundColor Green
 
                 # Quick check if migrations succeeded
-                $seeded = ssh $sshHost "grep -c 'Seeded' /tmp/ruckr.log 2>/dev/null || echo 0"
+                $seeded = ssh $sshHost "journalctl -u ruckr.service -n 200 --no-pager | grep -c 'Seeded' || true"
                 if ($seeded -gt 0) {
                     Write-Host "  DB migrations applied, seed data generated" -ForegroundColor Green
                 } else {
@@ -210,11 +290,15 @@ if (-not $SkipRestart) {
     }
 
     if (-not $verifyOk) {
-        Write-Host "  WARNING: Server not responding after 30s — check /tmp/ruckr.log on $sshHost" -ForegroundColor Yellow
-        $tailLog = ssh $sshHost "tail -20 /tmp/ruckr.log"
+        Write-Host "  WARNING: Server not responding after 30s — check journalctl on $sshHost" -ForegroundColor Yellow
+        $tailLog = ssh $sshHost "journalctl -u ruckr.service -n 40 --no-pager"
         Write-Host "  Last 20 log lines:" -ForegroundColor Yellow
         Write-Host $tailLog
     }
+
+    Write-Step "Configuring exe.dev proxy"
+    ssh exe.dev share port ruckr 5000
+    ssh exe.dev share set-public ruckr
 }
 
 # ── Summary ──
@@ -223,7 +307,7 @@ Write-Host "━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host "  Published to exe.dev" -ForegroundColor Magenta
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
 Write-Host "  App:  https://ruckr.exe.xyz" -ForegroundColor Green
-Write-Host "  Log:  ssh $sshHost 'tail /tmp/ruckr.log'" -ForegroundColor Green
+Write-Host "  Log:  ssh $sshHost 'journalctl -u ruckr.service -f'" -ForegroundColor Green
 Write-Host "  SQL:  ssh $sshHost 'docker exec ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ... -C'" -ForegroundColor Green
 Write-Host "  Publish dir: $publishDir" -ForegroundColor Green
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta

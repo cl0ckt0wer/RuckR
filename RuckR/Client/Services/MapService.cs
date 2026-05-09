@@ -25,6 +25,12 @@ public class MapService : IMapService
     public async Task InitMapAsync(string containerId, double lat, double lng, int zoom = 15)
     {
         _logger.LogDebug("Map init for container {ContainerId}", containerId);
+
+        if (_module is not null)
+        {
+            await DisposeMapModuleAsync();
+        }
+
         _module = await _jsRuntime.InvokeAsync<IJSObjectReference>(
             "import", "./js/leaflet-map.module.js");
         await _module.InvokeVoidAsync("initMap", containerId, lat, lng, zoom);
@@ -32,7 +38,7 @@ public class MapService : IMapService
         _logger.LogDebug("Map init complete for container {ContainerId}", containerId);
     }
 
-    public async Task AddPitchMarkersAsync(IEnumerable<PitchModel> pitches)
+    public async Task AddPitchMarkersAsync(IEnumerable<PitchModel> pitches, GeoPosition? userPosition = null)
     {
         if (_module is null)
             return;
@@ -45,7 +51,9 @@ public class MapService : IMapService
                 latitude = p.Location.Y,
                 longitude = p.Location.X,
                 name = p.Name,
-                type = p.Type.ToString()
+                type = p.Type.ToString(),
+                distanceBucket = GetDistanceBucketName(p, userPosition),
+                isDiscoverable = IsDiscoverable(p, userPosition)
             }).ToList();
 
             var markersJson = JsonSerializer.Serialize(pitchDtos);
@@ -109,22 +117,61 @@ public class MapService : IMapService
         _dispatcher.Dispatch(new SelectPitchAction(pitchId));
     }
 
+    private static bool IsDiscoverable(PitchModel pitch, GeoPosition? userPosition)
+    {
+        if (userPosition is null)
+            return false;
+
+        var pitchPos = new GeoPosition
+        {
+            Latitude = pitch.Location.Y,
+            Longitude = pitch.Location.X
+        };
+
+        var distMeters = GeoPosition.HaversineDistance(userPosition, pitchPos);
+        return distMeters <= 100.0;
+    }
+
+    private static string GetDistanceBucketName(PitchModel pitch, GeoPosition? userPosition)
+    {
+        if (userPosition is null)
+            return nameof(DistanceBucket.Beyond);
+
+        var pitchPos = new GeoPosition
+        {
+            Latitude = pitch.Location.Y,
+            Longitude = pitch.Location.X
+        };
+
+        var distMeters = GeoPosition.HaversineDistance(userPosition, pitchPos);
+        return GeoPosition.GetDistanceBucket(distMeters).ToString();
+    }
+
+    private async Task DisposeMapModuleAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("dispose");
+        }
+        catch (JSDisconnectedException ex)
+        {
+            _logger.LogDebug(ex, "JS disconnected during map disposal");
+        }
+        finally
+        {
+            await _module.DisposeAsync();
+            _module = null;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        if (_module is not null)
-        {
-            try
-            {
-                await _module.InvokeVoidAsync("dispose");
-            }
-            catch (JSDisconnectedException ex)
-            {
-                _logger.LogDebug(ex, "JS disconnected during map disposal");
-            }
-
-            await _module.DisposeAsync();
-        }
+        await DisposeMapModuleAsync();
 
         _dotNetRef?.Dispose();
+        _dotNetRef = null;
     }
 }

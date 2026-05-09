@@ -11,6 +11,7 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     private readonly ConcurrentQueue<ClientLogEntry> _queue = new();
     private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _flushLock = new(1, 1);
     private Task? _flushLoop;
 
     public TelemetryLoggerProvider(HttpClient httpClient)
@@ -26,6 +27,12 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
         if (_queue.Count < 1000)
             _queue.Enqueue(entry);
         _flushLoop ??= FlushLoopAsync(_cts.Token);
+
+        if (string.Equals(entry.LogLevel, nameof(LogLevel.Error), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(entry.LogLevel, nameof(LogLevel.Critical), StringComparison.OrdinalIgnoreCase))
+        {
+            _ = FlushAsync();
+        }
     }
 
     private async Task FlushLoopAsync(CancellationToken ct)
@@ -46,17 +53,29 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     {
         if (_queue.IsEmpty) return;
 
-        var batch = new ClientLogBatch { SessionId = _sessionId };
-        while (batch.Entries.Count < 50 && _queue.TryDequeue(out var entry))
-            batch.Entries.Add(entry);
-
-        if (batch.Entries.Count == 0) return;
+        if (!await _flushLock.WaitAsync(0)) return;
 
         try
         {
-            await _httpClient.PostAsJsonAsync("api/telemetry", batch);
+            var batch = new ClientLogBatch { SessionId = _sessionId };
+            while (batch.Entries.Count < 50 && _queue.TryDequeue(out var entry))
+                batch.Entries.Add(entry);
+
+            if (batch.Entries.Count == 0) return;
+
+            using var response = await _httpClient.PostAsJsonAsync("api/telemetry", batch);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                foreach (var entry in batch.Entries)
+                    _queue.Enqueue(entry);
+            }
         }
-        catch { /* network down — drop batch */ }
+        catch { /* network down — bridge failures must not crash app */ }
+        finally
+        {
+            _flushLock.Release();
+        }
     }
 
     void IDisposable.Dispose()

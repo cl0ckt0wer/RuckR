@@ -1,97 +1,152 @@
 @page "/pitches/create"
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.Extensions.Logging
 @using RuckR.Shared.Models
 @using System.Net
 @attribute [Authorize]
 @inject ApiClientService ApiClient
-@inject IGeolocationService GeolocationService
+@inject RuckR.Client.Services.IGeolocationService GeolocationService
+@inject ILogger<PitchCreate> Logger
 @inject NavigationManager Navigation
 
-<h3>Create Pitch</h3>
-
-<div class="card mx-auto" style="max-width: 600px;">
-    <div class="card-body">
-
-        <div class="alert alert-info" data-testid="rate-limit-alert">
-            You can create up to 5 pitches per day.
+<div class="pitch-create-shell">
+    <section class="pitch-hero">
+        <div>
+            <p class="eyebrow">Pitch network</p>
+            <h1>Claim a real-world rugby pitch</h1>
+            <p class="hero-copy">
+                Mark training grounds, standard pitches, and stadiums on the map so players can discover battles and captures nearby.
+            </p>
         </div>
+        <div class="hero-rules" data-testid="rate-limit-alert">
+            <span class="rule-kicker">Creation rules</span>
+            <strong>5 pitches per 24 hours</strong>
+            <span>Pitch names must be unique across the whole map.</span>
+        </div>
+    </section>
 
-        @if (!string.IsNullOrEmpty(errorMessage))
-        {
-            <div class="alert alert-danger alert-dismissible fade show" role="alert" data-testid="pitch-error">
-                @errorMessage
-                <button type="button" class="btn-close" data-testid="pitch-error-close" @onclick="ClearError" aria-label="Close"></button>
+    <div class="pitch-create-grid">
+        <aside class="pitch-guide-card" aria-label="Pitch type guide">
+            <div class="guide-step active">
+                <span class="step-number">1</span>
+                <div>
+                    <strong>Name the landmark</strong>
+                    <p>Use a name nobody else has claimed. Duplicates are rejected everywhere.</p>
+                </div>
             </div>
-        }
-
-        <EditForm Model="formModel" OnValidSubmit="HandleSubmit">
-            <DataAnnotationsValidator />
-
-            <div class="mb-3">
-                <label for="name" class="form-label">Pitch Name</label>
-                <InputText id="name" @bind-Value="formModel.Name" class="form-control"
-                           placeholder="e.g., Twickenham Training Ground" data-testid="pitch-name" />
-                <ValidationMessage For="() => formModel.Name" />
+            <div class="guide-step active">
+                <span class="step-number">2</span>
+                <div>
+                    <strong>Choose one allowed type</strong>
+                    <p>The server accepts Standard, Training, or Stadium.</p>
+                </div>
+            </div>
+            <div class="guide-step">
+                <span class="step-number">3</span>
+                <div>
+                    <strong>Enable GPS</strong>
+                    <p>Pitches can only be created from your current GPS location.</p>
+                </div>
             </div>
 
-            <div class="mb-3">
-                <label for="type" class="form-label">Pitch Type</label>
-                <InputSelect id="type" @bind-Value="formModel.Type" class="form-select" data-testid="pitch-type">
-                    <option value="Standard">Standard</option>
-                    <option value="Training">Training</option>
-                    <option value="Stadium">Stadium</option>
-                </InputSelect>
-                <ValidationMessage For="() => formModel.Type" />
+            <div class="rules-list" aria-label="Server enforced rules">
+                <span>Signed-in users only</span>
+                <span>5 creations per rolling 24 hours</span>
+                <span>No duplicate pitch names anywhere</span>
+                <span>GPS must be enabled</span>
             </div>
 
-            <div class="mb-3">
-                <label for="latitude" class="form-label">Latitude</label>
-                <div class="input-group">
-                    <InputNumber id="latitude" @bind-Value="formModel.Latitude" class="form-control"
-                                 step="0.0001" data-testid="pitch-latitude" />
+            <div class="location-status @(gpsUsed ? "location-status-live" : "")">
+                <span class="oi oi-map-marker" aria-hidden="true"></span>
+                <div>
+                    <strong>@(gpsUsed ? "GPS locked" : "GPS required")</strong>
+                    <span>@(gpsUsed ? LocationSummary : GpsRequiredMessage)</span>
+                </div>
+            </div>
+        </aside>
+
+        <section class="pitch-form-card">
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert" data-testid="pitch-error">
+                    @errorMessage
+                    <button type="button" class="btn-close" data-testid="pitch-error-close" @onclick="ClearError" aria-label="Close"></button>
+                </div>
+            }
+
+            <EditForm Model="formModel" OnValidSubmit="HandleSubmit">
+                <DataAnnotationsValidator />
+
+                <div class="form-section">
+                    <label for="name" class="form-label">Pitch name</label>
+                    <InputText id="name" @bind-Value="formModel.Name" class="form-control form-control-lg"
+                               placeholder="e.g., Twickenham Training Ground" data-testid="pitch-name" />
+                    <div class="field-hint">This name must not already exist anywhere on the map.</div>
+                    <ValidationMessage For="() => formModel.Name" />
+                </div>
+
+                <div class="form-section">
+                    <label for="type" class="form-label">Pitch type</label>
+                    <InputSelect id="type" @bind-Value="formModel.Type" class="form-select form-select-lg" data-testid="pitch-type">
+                        <option value="Standard">Standard pitch</option>
+                        <option value="Training">Training ground</option>
+                        <option value="Stadium">Stadium</option>
+                    </InputSelect>
+                    <div class="type-preview">
+                        <span class="type-pill">@SelectedTypeLabel</span>
+                        <span>@SelectedTypeDescription</span>
+                    </div>
+                    <ValidationMessage For="() => formModel.Type" />
+                </div>
+
+                <div class="coordinate-panel">
+                    <div class="coordinate-panel-header">
+                        <div>
+                            <label class="form-label">Map coordinates</label>
+                            <p>Your browser GPS supplies the pitch location. Manual coordinates are not accepted.</p>
+                        </div>
+                        @if (gpsUsed)
+                        {
+                            <span class="gps-chip" data-testid="gps-indicator" title="Using your current location">
+                                GPS active
+                            </span>
+                        }
+                    </div>
+
                     @if (gpsUsed)
                     {
-                        <span class="input-group-text" data-testid="gps-indicator" title="Using your current location">
-                            📍 Using your current location
-                        </span>
-                    }
-                </div>
-                <ValidationMessage For="() => formModel.Latitude" />
-            </div>
-
-            <div class="mb-3">
-                <label for="longitude" class="form-label">Longitude</label>
-                <div class="input-group">
-                    <InputNumber id="longitude" @bind-Value="formModel.Longitude" class="form-control"
-                                 step="0.0001" data-testid="pitch-longitude" />
-                    @if (gpsUsed)
-                    {
-                        <span class="input-group-text" data-testid="gps-indicator" title="Using your current location">
-                            📍 Using your current location
-                        </span>
-                    }
-                </div>
-                <ValidationMessage For="() => formModel.Longitude" />
-            </div>
-
-            <div class="d-flex gap-2">
-                <button type="submit" class="btn btn-primary" disabled="@isSubmitting" data-testid="pitch-submit">
-                    @if (isSubmitting)
-                    {
-                        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                        <span>Creating...</span>
+                        <div class="gps-coordinate-readout" data-testid="gps-location-readout">
+                            <span>Latitude @formModel.Latitude.ToString("F5")</span>
+                            <span>Longitude @formModel.Longitude.ToString("F5")</span>
+                        </div>
                     }
                     else
                     {
-                        <span>Create Pitch</span>
+                        <div class="gps-required-panel" data-testid="gps-required-message">
+                            @GpsRequiredMessage
+                        </div>
                     }
-                </button>
-                <button type="button" class="btn btn-secondary" data-testid="pitch-cancel" @onclick="Cancel" disabled="@isSubmitting">
-                    Cancel
-                </button>
-            </div>
-        </EditForm>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary btn-lg" disabled="@(isSubmitting || !gpsUsed)" data-testid="pitch-submit">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                            <span>Creating pitch...</span>
+                        }
+                        else
+                        {
+                            <span>Create pitch</span>
+                        }
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-lg" data-testid="pitch-cancel" @onclick="Cancel" disabled="@isSubmitting">
+                        Cancel
+                    </button>
+                </div>
+            </EditForm>
+        </section>
     </div>
 </div>
 
@@ -100,6 +155,23 @@
     private bool isSubmitting;
     private bool gpsUsed;
     private string errorMessage = string.Empty;
+    private const string GpsRequiredMessage = "Only GPS-enabled users can create pitches. Enable location access and reload this page.";
+
+    private string LocationSummary => $"Using your current position ({formModel.Latitude:F5}, {formModel.Longitude:F5}).";
+
+    private string SelectedTypeLabel => formModel.Type switch
+    {
+        "Training" => "Training",
+        "Stadium" => "Stadium",
+        _ => "Standard"
+    };
+
+    private string SelectedTypeDescription => formModel.Type switch
+    {
+        "Training" => "Best for drills, practice sessions, and small local meetups.",
+        "Stadium" => "Use for major venues that anchor a wider rugby area.",
+        _ => "Use for normal playable pitches and regular club fields."
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -110,23 +182,42 @@
     {
         try
         {
+            Logger.LogWarning("PitchCreate.TryAutoFillLocation: calling GeolocationService.GetCurrentPositionAsync");
             var pos = await GeolocationService.GetCurrentPositionAsync();
+            Logger.LogWarning("PitchCreate.TryAutoFillLocation: result isNull={IsNull}", pos is null);
             if (pos is not null)
             {
+                Logger.LogWarning("PitchCreate.TryAutoFillLocation: GPS success lat={Lat} lng={Lng}", pos.Latitude, pos.Longitude);
                 formModel.Latitude = pos.Latitude;
                 formModel.Longitude = pos.Longitude;
                 gpsUsed = true;
+                errorMessage = string.Empty;
+            }
+            else
+            {
+                Logger.LogWarning("PitchCreate.TryAutoFillLocation: GPS returned null — showing GPS required message");
+                gpsUsed = false;
+                errorMessage = GpsRequiredMessage;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // GPS unavailable; user can enter coordinates manually.
+            Logger.LogWarning(ex, "PitchCreate.TryAutoFillLocation: exception type='{Type}' msg='{Msg}'", ex.GetType().Name, ex.Message);
+            gpsUsed = false;
+            errorMessage = GpsRequiredMessage;
         }
     }
 
     private async Task HandleSubmit()
     {
         errorMessage = string.Empty;
+
+        if (!gpsUsed)
+        {
+            errorMessage = GpsRequiredMessage;
+            return;
+        }
+
         isSubmitting = true;
 
         try
@@ -144,7 +235,7 @@
             errorMessage = ex.StatusCode switch
             {
                 HttpStatusCode.Conflict => "A pitch with this name already exists nearby. Please choose a different name.",
-                HttpStatusCode.TooManyRequests => "You've reached the limit of 5 pitches per day. Try again tomorrow.",
+                HttpStatusCode.TooManyRequests => "You've reached the limit of 5 pitches per 24 hours. Try again later.",
                 HttpStatusCode.BadRequest => "Please fix the validation errors and try again.",
                 _ => $"An unexpected error occurred ({(int?)ex.StatusCode}). Please try again."
             };

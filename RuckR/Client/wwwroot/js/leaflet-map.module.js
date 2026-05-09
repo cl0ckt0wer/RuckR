@@ -31,12 +31,13 @@ export function addPitchMarkers(markersJson, dotNetRef) {
     const markers = JSON.parse(markersJson);
     
     markers.forEach(m => {
+        const markerClass = getPitchMarkerClass(m);
         const marker = L.marker([m.latitude, m.longitude], {
             icon: L.divIcon({
-                className: 'pitch-marker',
-                html: '🏉',
-                iconSize: [30, 30],
-                iconAnchor: [15, 15]
+                className: markerClass,
+                html: getPitchMarkerHtml(m),
+                iconSize: [34, 34],
+                iconAnchor: [17, 17]
             })
         }).addTo(map);
         
@@ -50,6 +51,20 @@ export function addPitchMarkers(markersJson, dotNetRef) {
         
         pitchMarkers.push(marker);
     });
+}
+
+function getPitchMarkerClass(marker) {
+    const typeClass = marker.type ? `pitch-marker-${String(marker.type).toLowerCase()}` : 'pitch-marker-standard';
+    const discoverableClass = marker.isDiscoverable ? 'pitch-marker-discoverable' : '';
+    return `pitch-marker ${typeClass} ${discoverableClass}`.trim();
+}
+
+function getPitchMarkerHtml(marker) {
+    if (marker.isDiscoverable) {
+        return '<span class="pitch-marker-core" aria-label="Discoverable pitch">R</span>';
+    }
+
+    return '<span class="pitch-marker-core" aria-label="Pitch">R</span>';
 }
 
 export function addUserMarker(lat, lng) {

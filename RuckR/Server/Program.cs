@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.ResponseCompression;
@@ -13,6 +14,18 @@ using RuckR.Server.Hubs;
 using RuckR.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedHost
+        | ForwardedHeaders.XForwardedProto;
+
+    // exe.dev terminates TLS and forwards to the local Kestrel process. The
+    // proxy source can change, so trust forwarded headers at this boundary.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -91,26 +104,32 @@ builder.Services.AddHttpLogging(options =>
 IOpenTelemetryBuilder otel = builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource
         .AddService(serviceName: "RuckR.Server", serviceVersion: "1.0.0"))
-    .WithTracing(tracing => tracing
-        .AddAspNetCoreInstrumentation(options =>
-        {
-            options.Filter = httpContext =>
-                !httpContext.Request.Path.StartsWithSegments("/healthz") &&
-                !httpContext.Request.Path.StartsWithSegments("/_framework");
+        .WithTracing(tracing => {
+        tracing
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.Filter = httpContext =>
+                    !httpContext.Request.Path.StartsWithSegments("/healthz") &&
+                    !httpContext.Request.Path.StartsWithSegments("/_framework");
+            })
+            .AddHttpClientInstrumentation(options =>
+            {
+                options.RecordException = true;
+            })
+            .AddEntityFrameworkCoreInstrumentation()
+            .AddSource("RuckR.Server");
+        if (builder.Environment.IsDevelopment())
+            tracing.AddConsoleExporter();
         })
-        .AddHttpClientInstrumentation(options =>
-        {
-            options.RecordException = true;
+    .WithMetrics(metrics => {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddMeter("RuckR.Server.Metrics");
+        if (builder.Environment.IsDevelopment())
+            metrics.AddConsoleExporter();
         })
-        .AddEntityFrameworkCoreInstrumentation()
-        .AddSource("RuckR.Server")
-        .AddConsoleExporter())  // always on for dev visibility
-    .WithMetrics(metrics => metrics
-        .AddAspNetCoreInstrumentation()
-        .AddHttpClientInstrumentation()
-        .AddRuntimeInstrumentation()
-        .AddMeter("RuckR.Server.Metrics")
-        .AddConsoleExporter())  // always on for dev visibility
     .WithLogging();
 otel.UseOtlpExporter();     // reads OTEL_EXPORTER_OTLP_ENDPOINT env var
 
@@ -133,10 +152,13 @@ if (Directory.Exists(clientWwwroot))
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseWebAssemblyDebugging();
+    app.UseHttpsRedirection();
 }
 else
 {
@@ -144,8 +166,6 @@ else
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
-
-app.UseHttpsRedirection();
 
 app.UseHttpLogging();
 

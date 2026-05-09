@@ -102,15 +102,28 @@ else
     log "All Chromium system dependencies present"
 fi
 
-# ── 6. Install Playwright Chromium browser ────────────────
+# ── 6. Resolve gstack path (OpenCode-first, Claude fallback) ──
 echo ""
-GSTACK_DIR="$HOME/.claude/skills/gstack"
+GSTACK_DIR=""
+if [ -d "$HOME/.config/opencode/skills/gstack" ]; then
+    GSTACK_DIR="$HOME/.config/opencode/skills/gstack"
+elif [ -d "$HOME/.claude/skills/gstack" ]; then
+    GSTACK_DIR="$HOME/.claude/skills/gstack"
+fi
+
 BUN_EXE="$HOME/.bun/bin/bun"
 
-if [ ! -d "$GSTACK_DIR" ]; then
-    err "gstack not found at $GSTACK_DIR"
+if [ -z "$GSTACK_DIR" ]; then
+    err "gstack not found at either:"
+    err "  $HOME/.config/opencode/skills/gstack"
+    err "  $HOME/.claude/skills/gstack"
     exit 1
 fi
+
+log "Using gstack at: $GSTACK_DIR"
+
+# ── 7. Install Playwright Chromium browser ────────────────
+echo ""
 
 echo "Installing Playwright Chromium (~290 MB download)..."
 cd "$GSTACK_DIR"
@@ -125,7 +138,7 @@ else
     log "Playwright Chromium installed via npx"
 fi
 
-# ── 7. Verify Playwright works (headless, then headed) ────
+# ── 8. Verify Playwright works (headless, then headed) ────
 echo ""
 echo "Verifying Playwright headless launch..."
 HEADLESS_OUTPUT=$(node -e '
@@ -171,7 +184,7 @@ fi
 echo ""
 log "Playwright verification complete"
 
-# ── 8. Verify gstack browse binary ────────────────────────
+# ── 9. Verify gstack browse binary ────────────────────────
 echo ""
 BROWSE_BIN="$GSTACK_DIR/browse/dist/browse"
 if [ -x "$BROWSE_BIN" ]; then
@@ -181,7 +194,7 @@ else
     warn "Run: cd $GSTACK_DIR && PATH=\"$HOME/.bun/bin:\$PATH\" ./setup --host opencode"
 fi
 
-# ── 9. Summary ───────────────────────────────────────────
+# ── 10. Summary ───────────────────────────────────────────
 echo ""
 echo "============================================"
 echo " Setup complete."
@@ -194,6 +207,7 @@ echo "   display:     ${DISPLAY:-none}"
 echo ""
 echo " To use gstack browser skills:"
 echo "   1. Restart shell: exec \$SHELL"
-echo "   2. Test browse:   ~/.claude/skills/gstack/browse/dist/browse status"
+echo "   2. Test browse:   ~/.config/opencode/skills/gstack/browse/dist/browse status"
+echo "      (fallback):    ~/.claude/skills/gstack/browse/dist/browse status"
 echo "   3. First QA test: invoke /qa https://localhost:7161 in OpenCode"
 echo "============================================"
