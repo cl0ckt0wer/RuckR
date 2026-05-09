@@ -59,6 +59,7 @@ builder.Services.AddScoped<SeedService>();
 builder.Services.AddSingleton<ILocationTracker, LocationTracker>();
 builder.Services.AddScoped<IBattleResolver, BattleResolver>();
 builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
+builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
 
 builder.Services.AddDbContext<RuckRDbContext>(options =>
     options.UseSqlServer(

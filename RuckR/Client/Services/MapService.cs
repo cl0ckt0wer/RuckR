@@ -69,6 +69,38 @@ public class MapService : IMapService
         }
     }
 
+    public async Task AddEncounterMarkersAsync(IEnumerable<PlayerEncounterDto> encounters)
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            var encounterDtos = encounters.Select(e => new
+            {
+                encounterId = e.EncounterId,
+                playerId = e.PlayerId,
+                name = e.Name,
+                rarity = e.Rarity,
+                level = e.Level,
+                latitude = e.Latitude,
+                longitude = e.Longitude,
+                successChancePercent = e.SuccessChancePercent
+            }).ToList();
+
+            var markersJson = JsonSerializer.Serialize(encounterDtos);
+
+            _dotNetRef?.Dispose();
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+            await _module.InvokeVoidAsync("addEncounterMarkers", markersJson, _dotNetRef);
+        }
+        catch (JSException ex)
+        {
+            _logger.LogWarning(ex, "Failed to add encounter markers to map");
+        }
+    }
+
     public async Task AddUserMarkerAsync(double lat, double lng)
     {
         if (_module is null)
@@ -115,6 +147,15 @@ public class MapService : IMapService
     public void OnPitchClicked(int pitchId)
     {
         _dispatcher.Dispatch(new SelectPitchAction(pitchId));
+    }
+
+    [JSInvokable]
+    public void OnEncounterClicked(string encounterId)
+    {
+        if (Guid.TryParse(encounterId, out var parsed))
+        {
+            _dispatcher.Dispatch(new SelectEncounterAction(parsed));
+        }
     }
 
     private static bool IsDiscoverable(PitchModel pitch, GeoPosition? userPosition)

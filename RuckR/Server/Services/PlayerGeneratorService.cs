@@ -75,6 +75,7 @@ namespace RuckR.Server.Services
             };
 
             AssignStats(player, rarity);
+            player.Level = CalculateLevel(player, rarity);
             player.Bio = GenerateBio(player);
 
             return player;
@@ -211,6 +212,23 @@ namespace RuckR.Server.Services
             }
 
             return best.name;
+        }
+
+        private static int CalculateLevel(PlayerModel player, PlayerRarity rarity)
+        {
+            var averageStat = (player.Speed + player.Strength + player.Agility + player.Kicking) / 4;
+            var rarityBonus = rarity switch
+            {
+                PlayerRarity.Common => 0,
+                PlayerRarity.Uncommon => 4,
+                PlayerRarity.Rare => 8,
+                PlayerRarity.Epic => 12,
+                PlayerRarity.Legendary => 16,
+                _ => 0
+            };
+
+            var level = (averageStat / 2) + rarityBonus;
+            return Math.Clamp(level, 1, 100);
         }
     }
 }

@@ -1,6 +1,7 @@
 // ES module for Leaflet map integration
 let map = null;
 let pitchMarkers = [];
+let encounterMarkers = [];
 let userMarker = null;
 
 export function initMap(containerId, centerLat, centerLng, zoom) {
@@ -60,11 +61,18 @@ function getPitchMarkerClass(marker) {
 }
 
 function getPitchMarkerHtml(marker) {
+    const iconByType = {
+        standard: 'R',
+        training: 'T',
+        stadium: 'S'
+    };
+    const label = iconByType[String(marker.type || '').toLowerCase()] || 'R';
+
     if (marker.isDiscoverable) {
-        return '<span class="pitch-marker-core" aria-label="Discoverable pitch">R</span>';
+        return `<span class="pitch-marker-core" aria-label="Discoverable pitch">${label}</span>`;
     }
 
-    return '<span class="pitch-marker-core" aria-label="Pitch">R</span>';
+    return `<span class="pitch-marker-core" aria-label="Pitch">${label}</span>`;
 }
 
 export function addUserMarker(lat, lng) {
@@ -87,6 +95,33 @@ export function addUserMarker(lat, lng) {
     }
 }
 
+export function addEncounterMarkers(markersJson, dotNetRef) {
+    if (!map || !window.L) { return; }
+
+    clearEncounterMarkers();
+    const markers = JSON.parse(markersJson);
+
+    markers.forEach(m => {
+        const marker = L.marker([m.latitude, m.longitude], {
+            icon: L.divIcon({
+                className: `player-encounter-marker player-encounter-${String(m.rarity).toLowerCase()}`,
+                html: '<span class="player-encounter-core" aria-label="Recruitable player">P</span>',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15]
+            })
+        }).addTo(map);
+
+        marker.bindPopup(`<b>${m.name}</b><br/>Lv ${m.level} · ${m.rarity}<br/>Success ${m.successChancePercent}%`);
+        marker.on('click', () => {
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('OnEncounterClicked', String(m.encounterId));
+            }
+        });
+
+        encounterMarkers.push(marker);
+    });
+}
+
 export function centerOn(lat, lng) {
     if (map) {
         map.setView([lat, lng], map.getZoom());
@@ -100,11 +135,19 @@ export function clearPitchMarkers() {
     pitchMarkers = [];
 }
 
+export function clearEncounterMarkers() {
+    if (!map) { return; }
+
+    encounterMarkers.forEach(m => map.removeLayer(m));
+    encounterMarkers = [];
+}
+
 export function dispose() {
     if (map) {
         map.remove();
         map = null;
     }
     pitchMarkers = [];
+    encounterMarkers = [];
     userMarker = null;
 }

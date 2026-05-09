@@ -167,6 +167,46 @@ a, .btn-link {
     animation: discoverable-pulse 1.5s infinite;
 }
 
+.player-encounter-marker {
+    background: transparent;
+    border: none;
+}
+
+.player-encounter-core {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.72rem;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+    animation: discoverable-pulse 1.5s infinite;
+}
+
+.player-encounter-common .player-encounter-core {
+    background: #6b7280;
+}
+
+.player-encounter-uncommon .player-encounter-core {
+    background: #2f855a;
+}
+
+.player-encounter-rare .player-encounter-core {
+    background: #2563eb;
+}
+
+.player-encounter-epic .player-encounter-core {
+    background: #d97706;
+}
+
+.player-encounter-legendary .player-encounter-core {
+    background: #c81e1e;
+}
+
 @keyframes pulse {
     0% {
         transform: scale(1);

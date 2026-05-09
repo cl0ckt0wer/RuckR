@@ -31,6 +31,9 @@ namespace RuckR.Shared.Models
 
         public PlayerRarity Rarity { get; set; }
 
+        [Range(1, 100)]
+        public int Level { get; set; } = 1;
+
         /// <summary>
         /// Spawn location as a geography point (SRID 4326).
         /// X = longitude, Y = latitude. Nullable — players may not have a spawn location yet.

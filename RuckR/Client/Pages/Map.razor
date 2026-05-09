@@ -112,6 +112,32 @@
     </div>
 }
 
+@if (_selectedEncounter is not null)
+{
+    <div class="map-overlay" data-testid="encounter-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
+            <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearSelection" aria-label="Close"></button>
+        </div>
+        <div class="mb-2 d-flex gap-2 flex-wrap">
+            <span class="badge bg-dark">Lv @_selectedEncounter.Level</span>
+            <span class="badge bg-info text-dark">@_selectedEncounter.Position</span>
+            <span class="badge bg-@RarityBadgeClass(_selectedEncounter.Rarity)">@_selectedEncounter.Rarity</span>
+            <span class="badge bg-secondary">@_selectedEncounter.SuccessChancePercent% success</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_recruitmentFeedback))
+        {
+            <p class="small mb-2">@_recruitmentFeedback</p>
+        }
+        <button class="btn btn-success"
+                data-testid="recruit-btn"
+                disabled="@_isRecruiting"
+                @onclick="RecruitAsync">
+            @(_isRecruiting ? "Recruiting..." : "Recruit")
+        </button>
+    </div>
+}
+
 @code {
     private bool _isLoading = true;
     private bool _hasError;
@@ -135,6 +161,10 @@
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
     private CaptureEligibilityDto? _captureEligibility;
+    private PlayerEncounterDto? _selectedEncounter;
+    private Guid? _lastSelectedEncounterId;
+    private bool _isRecruiting;
+    private string _recruitmentFeedback = string.Empty;
 
     private bool CanCaptureSelectedPitch => _captureEligibility?.CanCapture == true;
 
@@ -185,6 +215,10 @@
         _selectedPitch = null;
         _lastSelectedPitchId = -1;
         _captureEligibility = null;
+        _selectedEncounter = null;
+        _lastSelectedEncounterId = null;
+        _isRecruiting = false;
+        _recruitmentFeedback = string.Empty;
         _isLoadingEligibility = false;
         _lastKnownPosition = null;
         _lastPitchFetchPosition = null;
@@ -268,6 +302,11 @@
                 var pitches = await ApiClient.GetNearbyPitchesAsync(pos.Latitude, pos.Longitude, BrowseThresholdMeters);
                 await MapService.AddPitchMarkersAsync(pitches, pos);
                 Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
+
+                var encounters = await ApiClient.GetEncountersAsync(pos.Latitude, pos.Longitude, 300);
+                await MapService.AddEncounterMarkersAsync(encounters);
+                Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+
                 _lastPitchFetchPosition = pos;
                 _lastPitchFetchAtUtc = DateTime.UtcNow;
             }
@@ -313,6 +352,55 @@
             _nearbyPlayerCount = 0;
             _selectedPitchDistanceBucket = string.Empty;
             _captureEligibility = null;
+            await InvokeAsync(StateHasChanged);
+        }
+
+        if (state.SelectedEncounterId.HasValue && state.SelectedEncounterId.Value != _lastSelectedEncounterId)
+        {
+            _lastSelectedEncounterId = state.SelectedEncounterId.Value;
+            _selectedEncounter = state.VisibleEncounters.FirstOrDefault(e => e.EncounterId == state.SelectedEncounterId.Value);
+            _recruitmentFeedback = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+        else if (!state.SelectedEncounterId.HasValue && _selectedEncounter is not null)
+        {
+            _lastSelectedEncounterId = null;
+            _selectedEncounter = null;
+            _isRecruiting = false;
+            _recruitmentFeedback = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RecruitAsync()
+    {
+        if (_selectedEncounter is null || _isRecruiting)
+            return;
+
+        _isRecruiting = true;
+        _recruitmentFeedback = string.Empty;
+        try
+        {
+            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId);
+            if (result is null)
+            {
+                _recruitmentFeedback = "Recruitment request failed. Try again.";
+                return;
+            }
+
+            _recruitmentFeedback = result.Message;
+
+            if (result.Success && _lastKnownPosition is not null)
+            {
+                var encounters = await ApiClient.GetEncountersAsync(_lastKnownPosition.Latitude, _lastKnownPosition.Longitude, 300);
+                await MapService.AddEncounterMarkersAsync(encounters);
+                Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+                Dispatcher.Dispatch(new ClearSelectionAction());
+            }
+        }
+        finally
+        {
+            _isRecruiting = false;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -441,6 +529,16 @@
         PitchType.Training => "success",
         PitchType.Stadium => "warning",
         _ => "secondary"
+    };
+
+    private static string RarityBadgeClass(string rarity) => rarity switch
+    {
+        "Common" => "secondary",
+        "Uncommon" => "success",
+        "Rare" => "primary",
+        "Epic" => "warning text-dark",
+        "Legendary" => "danger",
+        _ => "dark"
     };
 
     private bool ShouldRefreshPitches(GeoPosition currentPosition)

@@ -117,6 +117,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         builder.Services.AddScoped<IBattleResolver, BattleResolver>();
         builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
+        builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
 
         // Replace DbContext with test container
         builder.Services.AddDbContext<RuckRDbContext>(options =>

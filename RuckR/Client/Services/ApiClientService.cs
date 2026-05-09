@@ -117,6 +117,35 @@ public class ApiClientService
         }
     }
 
+    public async Task<List<PlayerEncounterDto>> GetEncountersAsync(double lat, double lng, double radius = 300)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<List<PlayerEncounterDto>>(
+                $"api/map/encounters?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch map encounters at ({Lat}, {Lng})", lat, lng);
+            return new();
+        }
+    }
+
+    public async Task<RecruitmentAttemptResultDto?> AttemptRecruitmentAsync(Guid encounterId, int playerId)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("api/recruitment/attempt", new RecruitmentAttemptRequest(encounterId, playerId));
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Recruitment attempt failed for encounter {EncounterId}, player {PlayerId}", encounterId, playerId);
+            return null;
+        }
+    }
+
     // Battles
     public async Task<BattleModel?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {
