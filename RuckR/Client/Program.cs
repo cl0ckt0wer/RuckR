@@ -9,11 +9,10 @@ using RuckR.Client.Services;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 
-// ── Logging: browser console + configurable levels ──
-#pragma warning disable CA1416 // AddConsole is supported in Blazor WASM runtime
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();  // Maps to browser console in WASM
-#pragma warning restore CA1416
+// ── Logging ──
+// Built-in WebAssemblyConsoleLoggerProvider maps to browser console.log automatically.
+// No AddConsole() — throws PlatformNotSupportedException in .NET 10 WASM.
+// TelemetryLoggerProvider (below) ships Warning+ logs to the server.
 builder.Logging.SetMinimumLevel(builder.HostEnvironment.IsDevelopment() 
     ? LogLevel.Trace 
     : LogLevel.Warning);

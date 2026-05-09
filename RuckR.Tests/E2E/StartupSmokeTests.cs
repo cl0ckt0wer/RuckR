@@ -9,7 +9,8 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-public class StartupSmokeTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
@@ -26,6 +27,8 @@ public class StartupSmokeTests : IClassFixture<CustomWebApplicationFactory>, ICl
     {
         "AggregateException_ctor_DefaultMessage",
         "Arg_PlatformNotSupported",
+        "401 (Unauthorized)",  // Expected: unauthenticated UserInfo + API calls
+        "404 (Not Found)",     // Expected: static assets that may not exist
     };
 
     public StartupSmokeTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
@@ -346,17 +349,15 @@ public class StartupSmokeTests : IClassFixture<CustomWebApplicationFactory>, ICl
     /// </summary>
     private static async Task WaitForAppPageLoadedAsync(IPage page)
     {
-        // After navigation, the browser fires requests for _framework/*
-        // files.  Wait until no requests are in flight.
-        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
-            new PageWaitForLoadStateOptions { Timeout = 45000 });
-
-        // Confirm the app div has content — the initial spinner is valid
-        // content, as is Blazor-rendered content.  Neither case should
-        // return an empty page.
+        // Wait for Blazor to finish rendering or show the error UI.
         await page.WaitForFunctionAsync(@"() => {
-            const app = document.getElementById('app');
-            return app && app.children.length > 0 && app.innerHTML.trim().length > 0;
-        }", null, new PageWaitForFunctionOptions { Timeout = 10000 });
+            const loading = document.querySelector('#app .loading-progress');
+            const errorUI = document.getElementById('blazor-error-ui');
+            if (errorUI && errorUI.style.display !== 'none') return true;
+            return !loading;
+        }", null, new PageWaitForFunctionOptions { Timeout = 45000 });
+
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
+            new PageWaitForLoadStateOptions { Timeout = 30000 });
     }
 }

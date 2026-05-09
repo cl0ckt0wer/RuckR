@@ -25,7 +25,7 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
                 var response = await _http.GetAsync("Identity/Account/UserInfo");
                 if (response.IsSuccessStatusCode)
                 {
-                    var username = await response.Content.ReadAsStringAsync();
+                    var username = await response.Content.ReadFromJsonAsync<string>();
                     if (!string.IsNullOrEmpty(username))
                     {
                         var identity = new ClaimsIdentity(new[]

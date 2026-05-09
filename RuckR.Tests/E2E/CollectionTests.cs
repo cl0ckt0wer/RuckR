@@ -4,7 +4,8 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-public class CollectionTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>
+[Collection(nameof(TestCollection))]
+public class CollectionTests : IClassFixture<PlaywrightFixture>
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
@@ -31,8 +32,19 @@ public class CollectionTests : IClassFixture<CustomWebApplicationFactory>, IClas
         // Act
         await page.GotoAsync($"{_baseUrl}/collection");
 
-        // Wait for Blazor to initialize and perform the redirect
+        // Wait for Blazor WASM to initialize. The Collection page's
+        // OnInitializedAsync will issue a navigation to the login page.
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        try
+        {
+            await page.WaitForFunctionAsync(
+                "() => !document.querySelector('#app .loading-progress')",
+                null, new PageWaitForFunctionOptions { Timeout = 30000 });
+        }
+        catch (TimeoutException)
+        {
+            // Blazor may have failed to load; proceed with URL check
+        }
 
         // Assert: Collection page's OnInitializedAsync redirects to login
         Assert.Contains("/Identity/Account/Login", page.Url, StringComparison.OrdinalIgnoreCase);

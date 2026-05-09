@@ -22,5 +22,6 @@ public class RegisterPage : BasePage
         await Page.ClickAsync(RegisterButton);
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await WaitForBlazorAsync();
+        await DismissErrorUiAsync();
     }
 }

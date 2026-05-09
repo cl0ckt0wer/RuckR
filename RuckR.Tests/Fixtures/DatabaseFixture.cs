@@ -14,7 +14,7 @@ public class DatabaseFixture : IAsyncLifetime
     public DatabaseFixture()
     {
         _dbContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
-            .WithPassword("YourStrong!Pass123")
+            .WithPassword(TestSqlPassword.Create())
             .Build();
     }
 

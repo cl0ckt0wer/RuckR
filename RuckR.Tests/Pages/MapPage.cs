@@ -37,8 +37,9 @@ public class MapPage : BasePage
         }
     }
 
-    /// <summary>Check whether the Leaflet map container exists in the DOM.</summary>
-    public async Task<bool> IsMapRenderedAsync() => await ExistsAsync(".leaflet-container");
+    /// <summary>Check whether the map container exists in the DOM.</summary>
+    public async Task<bool> IsMapRenderedAsync()
+        => await ExistsAsync(".leaflet-container") || await ExistsAsync("[data-testid='map-container']");
 
     /// <summary>Check whether the loading spinner is currently visible.</summary>
     public async Task<bool> IsLoadingSpinnerVisibleAsync() => await ExistsAsync("[data-testid='map-loading']");

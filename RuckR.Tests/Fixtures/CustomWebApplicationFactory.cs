@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -33,7 +34,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     public CustomWebApplicationFactory()
     {
         _dbContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
-            .WithPassword("YourStrong!Pass123")
+            .WithPassword(TestSqlPassword.Create())
             .Build();
     }
 
@@ -87,6 +88,10 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         // ── Configure Kestrel with a random port ──
         builder.WebHost.UseKestrel();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.WebHost.ConfigureKestrel(options =>
+        {
+            options.Limits.MaxResponseBufferSize = 64 * 1024 * 1024;
+        });
 
         // ── Replicate all service registrations from Program.cs ──
 
@@ -124,12 +129,24 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         })
         .AddEntityFrameworkStores<RuckRDbContext>();
 
+        builder.Services.AddAuthorization();
+
         builder.Services.ConfigureApplicationCookie(options =>
         {
             options.LoginPath = "/Identity/Account/Login";
             options.AccessDeniedPath = "/Identity/Account/AccessDenied";
             options.ExpireTimeSpan = TimeSpan.FromDays(14);
             options.SlidingExpiration = true;
+            options.Events.OnRedirectToLogin = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = 401;
+                    return Task.CompletedTask;
+                }
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            };
         });
 
         builder.Services.AddSignalR();
@@ -154,11 +171,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 {
                     options.RecordException = true;
                 })
-                .AddEntityFrameworkCoreInstrumentation(options =>
-                {
-                    options.SetDbStatementForText = true;
-                    options.SetDbStatementForStoredProcedure = true;
-                })
+                .AddEntityFrameworkCoreInstrumentation()
                 .AddSource("RuckR.Server")
                 .AddConsoleExporter())
             .WithMetrics(metrics => metrics
@@ -181,15 +194,6 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             options.IncludeFormattedMessage = true;
         });
 
-        // ── Test auth handler (for API tests using X-Test-UserId header) ──
-        builder.Services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = TestAuthHandler.TestScheme;
-            options.DefaultChallengeScheme = TestAuthHandler.TestScheme;
-            options.DefaultSignInScheme = TestAuthHandler.TestScheme;
-        })
-        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.TestScheme, null);
-
         // ── Build the app ──
         _kestrelApp = builder.Build();
 
@@ -209,6 +213,14 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         _kestrelApp.MapRazorPages().WithStaticAssets();
         _kestrelApp.MapControllers().WithStaticAssets();
         _kestrelApp.MapHub<BattleHub>("/battlehub");
+        _kestrelApp.MapGet("/Identity/Account/UserInfo", async (HttpContext context) =>
+        {
+            if (context.User.Identity?.IsAuthenticated == true)
+            {
+                return Results.Ok(context.User.Identity.Name);
+            }
+            return Results.Ok(string.Empty);
+        });
         _kestrelApp.MapFallbackToFile("index.html");
 
         // ── Start Kestrel ──

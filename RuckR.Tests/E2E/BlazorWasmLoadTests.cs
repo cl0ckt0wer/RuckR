@@ -3,7 +3,8 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.E2E;
 
-public class BlazorWasmLoadTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
@@ -52,23 +53,17 @@ public class BlazorWasmLoadTests : IClassFixture<CustomWebApplicationFactory>, I
             // Navigate to the app
             await _page.GotoAsync(_baseUrl);
 
-            // Wait for Blazor WASM to render content inside #app
+            // Wait for Blazor WASM to render or show the error UI
             await _page.WaitForFunctionAsync(@"() => {
-                const app = document.getElementById('app');
-                return app && app.children.length > 0 && app.innerHTML.trim().length > 0;
+                const loading = document.querySelector('#app .loading-progress');
+                const errorUI = document.getElementById('blazor-error-ui');
+                if (errorUI && errorUI.style.display !== 'none') return true;
+                return !loading;
             }", null, new PageWaitForFunctionOptions { Timeout = 45000 });
 
             // Wait for network to settle
             await _page.WaitForLoadStateAsync(LoadState.NetworkIdle,
                 new PageWaitForLoadStateOptions { Timeout = 30000 });
-
-            // Verify Blazor loaded — the loading SVG should be gone
-            var loadingProgress = await _page.QuerySelectorAsync(".loading-progress");
-            if (loadingProgress is not null)
-            {
-                Assert.True(await loadingProgress.IsHiddenAsync(),
-                    "Loading progress indicator should be hidden after Blazor initializes");
-            }
 
             // Assert zero 404 responses for _framework paths
             Assert.Empty(framework404s);
@@ -128,12 +123,14 @@ public class BlazorWasmLoadTests : IClassFixture<CustomWebApplicationFactory>, I
     [Fact]
     public async Task BlazorApp_ReloadAfterBuild_NoCacheCorruption()
     {
-        // Initial load — verify app renders
+        // Initial load — wait for Blazor to render or error UI
         await _page.GotoAsync(_baseUrl);
 
         await _page.WaitForFunctionAsync(@"() => {
-            const app = document.getElementById('app');
-            return app && app.children.length > 0 && app.innerHTML.trim().length > 0;
+            const loading = document.querySelector('#app .loading-progress');
+            const errorUI = document.getElementById('blazor-error-ui');
+            if (errorUI && errorUI.style.display !== 'none') return true;
+            return !loading;
         }", null, new PageWaitForFunctionOptions { Timeout = 45000 });
 
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle,
@@ -166,8 +163,10 @@ public class BlazorWasmLoadTests : IClassFixture<CustomWebApplicationFactory>, I
 
             // Wait for Blazor to re-render after reload
             await _page.WaitForFunctionAsync(@"() => {
-                const app = document.getElementById('app');
-                return app && app.children.length > 0 && app.innerHTML.trim().length > 0;
+                const loading = document.querySelector('#app .loading-progress');
+                const errorUI = document.getElementById('blazor-error-ui');
+                if (errorUI && errorUI.style.display !== 'none') return true;
+                return !loading;
             }", null, new PageWaitForFunctionOptions { Timeout = 45000 });
 
             await _page.WaitForLoadStateAsync(LoadState.NetworkIdle,

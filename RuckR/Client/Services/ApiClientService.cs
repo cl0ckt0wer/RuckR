@@ -22,7 +22,7 @@ public class ApiClientService
         try
         {
             var query = BuildQueryString(new { position, rarity, name });
-            return await _http.GetFromJsonAsync<List<PlayerModel>>($"players{query}") ?? new();
+            return await _http.GetFromJsonAsync<List<PlayerModel>>($"api/players{query}") ?? new();
         }
         catch (Exception ex)
         {
@@ -33,7 +33,7 @@ public class ApiClientService
 
     public async Task<PlayerModel?> GetPlayerAsync(int id)
     {
-        return await _http.GetFromJsonAsync<PlayerModel>($"players/{id}");
+        return await _http.GetFromJsonAsync<PlayerModel>($"api/players/{id}");
     }
 
     public async Task<List<NearbyPlayerDto>> GetNearbyPlayersAsync(double lat, double lng, double radius = 10_000)
@@ -42,7 +42,7 @@ public class ApiClientService
         {
             _logger.LogDebug("Fetching nearby players at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
             return await _http.GetFromJsonAsync<List<NearbyPlayerDto>>(
-                $"players/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+                $"api/players/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
         }
         catch (Exception ex)
         {
@@ -58,7 +58,7 @@ public class ApiClientService
         {
             _logger.LogDebug("Fetching nearby pitches at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
             return await _http.GetFromJsonAsync<List<PitchModel>>(
-                $"pitches/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+                $"api/pitches/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
         }
         catch (Exception ex)
         {
@@ -70,17 +70,17 @@ public class ApiClientService
     public async Task<List<PitchModel>> GetPitchesAsync(int page = 1, int pageSize = 20)
     {
         return await _http.GetFromJsonAsync<List<PitchModel>>(
-            $"pitches?page={page}&pageSize={pageSize}") ?? new();
+            $"api/pitches?page={page}&pageSize={pageSize}") ?? new();
     }
 
     public async Task<PitchModel?> GetPitchAsync(int id)
     {
-        return await _http.GetFromJsonAsync<PitchModel>($"pitches/{id}");
+        return await _http.GetFromJsonAsync<PitchModel>($"api/pitches/{id}");
     }
 
     public async Task<PitchModel?> CreatePitchAsync(string name, double latitude, double longitude, string type)
     {
-        var response = await _http.PostAsJsonAsync("pitches", new CreatePitchRequest(name, latitude, longitude, type));
+        var response = await _http.PostAsJsonAsync("api/pitches", new CreatePitchRequest(name, latitude, longitude, type));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PitchModel>();
     }
@@ -88,51 +88,51 @@ public class ApiClientService
     // Collection
     public async Task<List<CollectionModel>> GetCollectionAsync()
     {
-        return await _http.GetFromJsonAsync<List<CollectionModel>>("collection") ?? new();
+        return await _http.GetFromJsonAsync<List<CollectionModel>>("api/collection") ?? new();
     }
 
     public async Task<CollectionModel?> CapturePlayerAsync(int playerId, int pitchId)
     {
-        var response = await _http.PostAsJsonAsync("collection/capture", new CapturePlayerRequest(playerId, pitchId));
+        var response = await _http.PostAsJsonAsync("api/collection/capture", new CapturePlayerRequest(playerId, pitchId));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<CollectionModel>();
     }
 
     public async Task ToggleFavoriteAsync(int collectionId)
     {
-        var response = await _http.PostAsync($"collection/{collectionId}/favorite", null);
+        var response = await _http.PostAsync($"api/collection/{collectionId}/favorite", null);
         response.EnsureSuccessStatusCode();
     }
 
     // Battles
     public async Task<BattleModel?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {
-        var response = await _http.PostAsJsonAsync("battles/challenge", new ChallengeRequest(opponentUsername, selectedPlayerId));
+        var response = await _http.PostAsJsonAsync("api/battles/challenge", new ChallengeRequest(opponentUsername, selectedPlayerId));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<BattleModel>();
     }
 
     public async Task<BattleModel?> AcceptChallengeAsync(int battleId, int selectedPlayerId)
     {
-        var response = await _http.PostAsJsonAsync($"battles/{battleId}/accept", new AcceptChallengeRequest(selectedPlayerId));
+        var response = await _http.PostAsJsonAsync($"api/battles/{battleId}/accept", new AcceptChallengeRequest(selectedPlayerId));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<BattleModel>();
     }
 
     public async Task DeclineChallengeAsync(int battleId)
     {
-        var response = await _http.PostAsync($"battles/{battleId}/decline", null);
+        var response = await _http.PostAsync($"api/battles/{battleId}/decline", null);
         response.EnsureSuccessStatusCode();
     }
 
     public async Task<List<BattleModel>> GetPendingBattlesAsync()
     {
-        return await _http.GetFromJsonAsync<List<BattleModel>>("battles/pending") ?? new();
+        return await _http.GetFromJsonAsync<List<BattleModel>>("api/battles/pending") ?? new();
     }
 
     public async Task<List<BattleModel>> GetBattleHistoryAsync()
     {
-        return await _http.GetFromJsonAsync<List<BattleModel>>("battles/history") ?? new();
+        return await _http.GetFromJsonAsync<List<BattleModel>>("api/battles/history") ?? new();
     }
 
     // Helper

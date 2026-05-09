@@ -14,6 +14,14 @@ using RuckR.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxResponseBufferSize = 64 * 1024 * 1024;
+    options.Limits.Http2.MaxStreamsPerConnection = 200;
+    options.Limits.Http2.InitialConnectionWindowSize = 256 * 1024;
+    options.Limits.Http2.InitialStreamWindowSize = 256 * 1024;
+});
+
 // Add services to the container.
 
 builder.Services.AddControllersWithViews()
@@ -37,6 +45,7 @@ builder.Services.AddScoped<SeedService>();
 
 builder.Services.AddSingleton<ILocationTracker, LocationTracker>();
 builder.Services.AddScoped<IBattleResolver, BattleResolver>();
+builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
 
 builder.Services.AddDbContext<RuckRDbContext>(options =>
     options.UseSqlServer(
@@ -59,6 +68,16 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.AccessDeniedPath = "/Identity/Account/AccessDenied";
     options.ExpireTimeSpan = TimeSpan.FromDays(14);
     options.SlidingExpiration = true;
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = 401;
+            return Task.CompletedTask;
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
 });
 
 builder.Services.AddSignalR();
@@ -83,11 +102,7 @@ IOpenTelemetryBuilder otel = builder.Services.AddOpenTelemetry()
         {
             options.RecordException = true;
         })
-        .AddEntityFrameworkCoreInstrumentation(options =>
-        {
-            options.SetDbStatementForText = true;
-            options.SetDbStatementForStoredProcedure = true;
-        })
+        .AddEntityFrameworkCoreInstrumentation()
         .AddSource("RuckR.Server")
         .AddConsoleExporter())  // always on for dev visibility
     .WithMetrics(metrics => metrics
@@ -151,12 +166,24 @@ app.MapGet("/Identity/Account/UserInfo", async (HttpContext context) =>
     {
         return Results.Ok(context.User.Identity.Name);
     }
-    return Results.Unauthorized();
+    return Results.Ok(string.Empty);
 });
 
 app.MapFallbackToFile("index.html");
 
-// Seed data on startup (runs after app starts; skips if Players table is not empty)
+// Apply EF Core migrations, then seed data on startup
+try
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<RuckRDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning(ex, "Database migration skipped — database may not be available yet.");
+}
+
 try
 {
     using var scope = app.Services.CreateScope();

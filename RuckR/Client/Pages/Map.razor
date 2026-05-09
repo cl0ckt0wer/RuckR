@@ -8,6 +8,7 @@
 @inject IGeolocationService GeolocationService
 @inject IMapService MapService
 @inject ApiClientService ApiClient
+@inject SignalRClientService SignalRClient
 @inject IDispatcher Dispatcher
 @inject IState<LocationState> LocationState
 @inject IState<MapState> MapState
@@ -190,6 +191,7 @@
         try
         {
             await MapService.AddUserMarkerAsync(pos.Latitude, pos.Longitude);
+            await SignalRClient.UpdateLocationAsync(pos.Latitude, pos.Longitude);
 
             var pitches = await ApiClient.GetNearbyPitchesAsync(pos.Latitude, pos.Longitude, 500);
             if (pitches.Count > 0)

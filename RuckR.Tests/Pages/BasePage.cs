@@ -20,6 +20,7 @@ public abstract class BasePage
     {
         await Page.GotoAsync($"{BaseUrl}{relativePath}");
         await DismissReconnectionModalAsync();
+        await DismissErrorUiAsync();
         await WaitForBlazorAsync();
     }
 
@@ -30,22 +31,15 @@ public abstract class BasePage
     /// </summary>
     protected async Task WaitForBlazorAsync(int timeoutMs = 30000)
     {
-        try
-        {
-            await Page.WaitForSelectorAsync("h1, h3, #ruckr-map, .page", new PageWaitForSelectorOptions
-            {
-                Timeout = timeoutMs,
-                State = WaitForSelectorState.Visible
-            });
-        }
-        catch (TimeoutException)
-        {
-            // Fallback: wait for #app to have non-empty inner HTML
-            await Page.WaitForFunctionAsync(@"() => {
-                const app = document.getElementById('app');
-                return app && app.children.length > 0 && app.innerHTML.trim().length > 0;
-            }", null, new PageWaitForFunctionOptions { Timeout = 5000 });
-        }
+        // Wait for Blazor to complete rendering — either the loading SVG is
+        // removed, or the error UI appears (indicating a startup failure).
+        await Page.WaitForFunctionAsync(@"() => {
+            const loading = document.querySelector('#app .loading-progress');
+            const errorUI = document.getElementById('blazor-error-ui');
+            // Blazor is done if loading spinner is gone OR error UI is shown
+            if (errorUI && errorUI.style.display !== 'none') return true;
+            return !loading;
+        }", null, new PageWaitForFunctionOptions { Timeout = timeoutMs });
     }
 
     /// <summary>
@@ -80,6 +74,22 @@ public abstract class BasePage
         catch
         {
             // Modal may not exist
+        }
+    }
+
+    /// <summary>
+    /// Dismiss the Blazor error UI banner if it is visible. The error UI
+    /// blocks interactions with nav elements and other page content.
+    /// </summary>
+    protected async Task DismissErrorUiAsync()
+    {
+        try
+        {
+            await Page.EvaluateAsync("() => { const e = document.getElementById('blazor-error-ui'); if (e) e.remove(); }");
+        }
+        catch
+        {
+            // Error UI may not be present
         }
     }
 

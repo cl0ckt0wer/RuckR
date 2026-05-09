@@ -5,7 +5,8 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-public class TelemetryApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class TelemetryApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;

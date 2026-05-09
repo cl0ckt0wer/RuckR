@@ -10,7 +10,8 @@ namespace RuckR.Tests.Infrastructure;
 /// <see cref="CustomWebApplicationFactory"/> to ensure all
 /// critical services resolve with correct lifetimes.
 /// </summary>
-public class ServerDiValidationTests : IClassFixture<CustomWebApplicationFactory>
+[Collection(nameof(TestCollection))]
+public class ServerDiValidationTests
 {
     private readonly CustomWebApplicationFactory _factory;
 

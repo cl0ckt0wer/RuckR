@@ -1,7 +1,17 @@
 ﻿@using Microsoft.Extensions.Logging
 @inject ILogger<App> Logger
 
-<Fluxor.Blazor.Web.StoreInitializer />
+<ErrorBoundary>
+    <ChildContent>
+        <Fluxor.Blazor.Web.StoreInitializer />
+    </ChildContent>
+    <ErrorContent Context="ex">
+        <div class="alert alert-danger m-3">
+            <h3>Store Init Error</h3>
+            <pre style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">@FormatException(ex)</pre>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
 
 <ErrorBoundary>
     <ChildContent>

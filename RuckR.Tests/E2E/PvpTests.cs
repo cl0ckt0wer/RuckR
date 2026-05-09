@@ -4,7 +4,8 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-public class PvpTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class PvpTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;

@@ -6,7 +6,8 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class PlayersApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -32,7 +33,7 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     [Fact]
     public async Task GetPlayers_ReturnsPlayers()
     {
-        var response = await _client.GetAsync("/players");
+        var response = await _client.GetAsync("/api/players");
         Assert.True(response.IsSuccessStatusCode,
             $"GET /players returned {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
 
@@ -46,7 +47,7 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     [Fact]
     public async Task GetPlayers_WithPositionFilter_ReturnsFilteredPlayers()
     {
-        var response = await _client.GetAsync("/players?position=FlyHalf");
+        var response = await _client.GetAsync("/api/players?position=FlyHalf");
         Assert.True(response.IsSuccessStatusCode,
             $"GET /players?position=FlyHalf returned {(int)response.StatusCode}");
 
@@ -58,7 +59,7 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     [Fact]
     public async Task GetPlayers_WithRarityFilter_ReturnsFilteredPlayers()
     {
-        var response = await _client.GetAsync("/players?rarity=Legendary");
+        var response = await _client.GetAsync("/api/players?rarity=Legendary");
         Assert.True(response.IsSuccessStatusCode,
             $"GET /players?rarity=Legendary returned {(int)response.StatusCode}");
 
@@ -70,14 +71,14 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task GetPlayer_ById_ReturnsPlayer()
     {
         // Get a valid player ID from the nearby endpoint (which returns DTOs)
-        var nearbyResponse = await _client.GetAsync("/players/nearby?lat=51.5074&lng=-0.1278&radius=50000");
+        var nearbyResponse = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=-0.1278&radius=50000");
         Assert.True(nearbyResponse.IsSuccessStatusCode);
         var nearbyPlayers = await nearbyResponse.Content.ReadFromJsonAsync<List<NearbyPlayerDto>>();
         Assert.NotNull(nearbyPlayers);
         Assert.NotEmpty(nearbyPlayers);
 
         var targetId = nearbyPlayers[0].PlayerId;
-        var response = await _client.GetAsync($"/players/{targetId}");
+        var response = await _client.GetAsync($"/api/players/{targetId}");
         Assert.True(response.IsSuccessStatusCode,
             $"GET /players/{targetId} returned {(int)response.StatusCode}");
 
@@ -88,14 +89,14 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     [Fact]
     public async Task GetPlayer_NonexistentId_Returns404()
     {
-        var response = await _client.GetAsync("/players/999999");
+        var response = await _client.GetAsync("/api/players/999999");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPlayersNearby_WithValidCoordinates_ReturnsSortedByDistance()
     {
-        var response = await _client.GetAsync("/players/nearby?lat=51.5074&lng=-0.1278&radius=10000");
+        var response = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=-0.1278&radius=10000");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var players = await response.Content.ReadFromJsonAsync<List<NearbyPlayerDto>>();
         Assert.NotNull(players);
@@ -111,21 +112,21 @@ public class PlayersApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     [Fact]
     public async Task GetPlayersNearby_InvalidLatAbove90_Returns400()
     {
-        var response = await _client.GetAsync("/players/nearby?lat=999&lng=-0.1278&radius=10000");
+        var response = await _client.GetAsync("/api/players/nearby?lat=999&lng=-0.1278&radius=10000");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPlayersNearby_InvalidLatBelowMinus90_Returns400()
     {
-        var response = await _client.GetAsync("/players/nearby?lat=-999&lng=-0.1278&radius=10000");
+        var response = await _client.GetAsync("/api/players/nearby?lat=-999&lng=-0.1278&radius=10000");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPlayersNearby_InvalidLngAbove180_Returns400()
     {
-        var response = await _client.GetAsync("/players/nearby?lat=51.5074&lng=999&radius=10000");
+        var response = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=999&radius=10000");
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }

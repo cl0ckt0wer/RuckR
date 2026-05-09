@@ -2,8 +2,11 @@
 @using RuckR.Client.Services
 @using RuckR.Client.Store.GameFeature
 @implements IDisposable
+@implements IAsyncDisposable
 @inject IState<GameState> GameState
 @inject SignalRClientService SignalRClient
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 
 <div class="connection-status @StatusClass" data-testid="connection-status">
     <span class="status-dot @DotClass" data-testid="status-dot"></span>
@@ -52,6 +55,8 @@
 
     private ConnectionStatusEnum _connectionStatus = ConnectionStatusEnum.Disconnected;
     private string _statusText = "Disconnected";
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<ConnectionStatus>? _dotNetRef;
 
     private string StatusClass => _connectionStatus switch
     {
@@ -69,12 +74,35 @@
 
     private string StatusText => _statusText;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         SignalRClient.ConnectionStateChanged += OnConnectionStateChanged;
         GameState.StateChanged += OnGameStateChanged;
 
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/connection-status.module.js");
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("subscribe", _dotNetRef);
+
         UpdateFromConnectionState(GameState.Value.IsSignalRConnected, GameState.Value.ConnectionError);
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            await ReconnectAsync();
+        }
+    }
+
+    [JSInvokable]
+    public void OnBrowserOffline()
+    {
+        UpdateFromConnectionState(false, "Connection lost");
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnBrowserOnline()
+    {
+        await ReconnectAsync();
     }
 
     private void OnConnectionStateChanged(bool isConnected, string? error)
@@ -131,5 +159,18 @@
     {
         SignalRClient.ConnectionStateChanged -= OnConnectionStateChanged;
         GameState.StateChanged -= OnGameStateChanged;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("unsubscribe");
+            await _module.DisposeAsync();
+        }
+
+        _dotNetRef?.Dispose();
     }
 }
