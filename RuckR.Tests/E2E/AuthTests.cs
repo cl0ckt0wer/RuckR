@@ -106,4 +106,35 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         var (isStillLoggedIn, _) = await nav.GetAuthStateAsync();
         Assert.False(isStillLoggedIn, "User should be logged out after logout");
     }
+
+    [Fact]
+    public async Task Logout_RemovesAccessToAuthenticatedPages()
+    {
+        var username = $"logout_{Guid.NewGuid():N}@test.com";
+        var password = "TestPass123!";
+
+        var registerPage = new RegisterPage(_page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync(username, password);
+
+        var nav = new NavMenu(_page, _baseUrl);
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await nav.WaitForBlazorReadyAsync();
+
+        var (isLoggedIn, _) = await nav.GetAuthStateAsync();
+        Assert.True(isLoggedIn, "User should be logged in before logout");
+
+        await nav.FullLogoutAsync();
+
+        var (isLoggedOut, _) = await nav.GetAuthStateAsync();
+        Assert.False(isLoggedOut, "User should be logged out after logout");
+
+        await _page.GotoAsync($"{_baseUrl.TrimEnd('/')}/collection");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForURLAsync(
+            url => url.Contains("/Identity/Account/Login", StringComparison.OrdinalIgnoreCase),
+            new PageWaitForURLOptions { Timeout = 30_000 });
+
+        Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
+    }
 }

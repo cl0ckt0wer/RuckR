@@ -20,17 +20,20 @@ namespace RuckR.Server.Hubs
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILocationTracker _locationTracker;
         private readonly IBattleResolver _battleResolver;
+        private readonly IPitchDiscoveryService _pitchDiscoveryService;
 
         public BattleHub(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
             ILocationTracker locationTracker,
-            IBattleResolver battleResolver)
+            IBattleResolver battleResolver,
+            IPitchDiscoveryService pitchDiscoveryService)
         {
             _db = db;
             _userManager = userManager;
             _locationTracker = locationTracker;
             _battleResolver = battleResolver;
+            _pitchDiscoveryService = pitchDiscoveryService;
         }
 
         public override async Task OnConnectedAsync()
@@ -64,7 +67,18 @@ namespace RuckR.Server.Hubs
             };
             _locationTracker.UpdatePosition(userId, position);
 
-            // Check for pitches within proximity (MVP: notify for any pitch within 100m)
+            var nearestPitches = await _pitchDiscoveryService.EnsureNearbyPitchesAsync(
+                userId,
+                Context.User?.Identity?.Name ?? string.Empty,
+                latitude,
+                longitude);
+
+            foreach (var pitch in nearestPitches)
+            {
+                await Clients.Caller.SendAsync("PitchDiscovered", pitch);
+            }
+
+            // Notify for any exact nearby pitch too, so existing 100m discovery behavior remains intact.
             var userPoint = new Point(longitude, latitude) { SRID = 4326 };
             var nearbyPitches = await _db.Pitches
                 .Where(p => p.Location.IsWithinDistance(userPoint, PitchProximityMeters))
@@ -72,7 +86,10 @@ namespace RuckR.Server.Hubs
 
             foreach (var pitch in nearbyPitches)
             {
-                await Clients.Caller.SendAsync("PitchDiscovered", pitch);
+                if (!nearestPitches.Any(p => p.Id == pitch.Id))
+                {
+                    await Clients.Caller.SendAsync("PitchDiscovered", pitch);
+                }
             }
         }
 

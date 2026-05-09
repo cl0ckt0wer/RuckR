@@ -171,11 +171,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 {
                     options.RecordException = true;
                 })
-                .AddEntityFrameworkCoreInstrumentation(options =>
-                {
-                    options.SetDbStatementForText = true;
-                    options.SetDbStatementForStoredProcedure = true;
-                })
+                .AddEntityFrameworkCoreInstrumentation()
                 .AddSource("RuckR.Server")
                 .AddConsoleExporter())
             .WithMetrics(metrics => metrics

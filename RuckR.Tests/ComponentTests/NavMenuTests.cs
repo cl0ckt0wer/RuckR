@@ -24,7 +24,7 @@ public class NavMenuTests : TestContext
         // so AuthorizeView renders the Login link instead of Logout.
         Services.AddSingleton<IAuthorizationService>(new TestAuthorizationService(allow: false));
 
-        var cut = RenderComponent<NavMenu>();
+        var cut = Render<NavMenu>();
 
         var navLinks = cut.FindAll("[data-testid^='nav-']");
         Assert.True(navLinks.Count >= 7, $"Expected at least 7 nav links, got {navLinks.Count}");
@@ -40,7 +40,7 @@ public class NavMenuTests : TestContext
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");
         Services.AddSingleton<AuthenticationStateProvider>(authProvider);
 
-        var cut = RenderComponent<NavMenu>();
+        var cut = Render<NavMenu>();
 
         var logoutLink = cut.Find("[data-testid='nav-logout']");
         Assert.NotNull(logoutLink);
@@ -56,7 +56,7 @@ public class NavMenuTests : TestContext
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");
         Services.AddSingleton<AuthenticationStateProvider>(authProvider);
 
-        var cut = RenderComponent<NavMenu>();
+        var cut = Render<NavMenu>();
 
         string[] expectedTestIds =
         {

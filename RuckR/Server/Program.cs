@@ -45,6 +45,7 @@ builder.Services.AddScoped<SeedService>();
 
 builder.Services.AddSingleton<ILocationTracker, LocationTracker>();
 builder.Services.AddScoped<IBattleResolver, BattleResolver>();
+builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
 
 builder.Services.AddDbContext<RuckRDbContext>(options =>
     options.UseSqlServer(
@@ -101,11 +102,7 @@ IOpenTelemetryBuilder otel = builder.Services.AddOpenTelemetry()
         {
             options.RecordException = true;
         })
-        .AddEntityFrameworkCoreInstrumentation(options =>
-        {
-            options.SetDbStatementForText = true;
-            options.SetDbStatementForStoredProcedure = true;
-        })
+        .AddEntityFrameworkCoreInstrumentation()
         .AddSource("RuckR.Server")
         .AddConsoleExporter())  // always on for dev visibility
     .WithMetrics(metrics => metrics

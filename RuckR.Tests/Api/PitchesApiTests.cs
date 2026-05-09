@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.Geometries;
+using RuckR.Server.Services;
 using RuckR.Shared.Models;
 using RuckR.Tests.Fixtures;
 
@@ -98,4 +101,90 @@ public class PitchesApiTests : IAsyncLifetime
         var sixthResponse = await rateLimitClient.PostAsJsonAsync("/api/pitches", sixthRequest);
         Assert.Equal((HttpStatusCode)429, sixthResponse.StatusCode);
     }
+
+    [Fact]
+    public async Task EnsureNearbyPitches_NoStadiumWithinThirtyMiles_CreatesStadium()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
+
+        var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
+            _userId,
+            "PitchFounder",
+            -12.3456,
+            98.7654);
+
+        var stadium = Assert.Single(pitches, p => p.Type == PitchType.Stadium);
+        Assert.Equal("PitchFounder's Stadium", stadium.Name);
+        Assert.Equal(_userId, stadium.CreatorUserId);
+    }
+
+    [Fact]
+    public async Task EnsureNearbyPitches_StadiumWithinThirtyMilesButNotTen_CreatesStandardPitch()
+    {
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            db.Pitches.Add(new PitchModel
+            {
+                Name = $"ExistingStadium_{Guid.NewGuid():N}",
+                Location = CreatePoint(0.30, 10),
+                CreatorUserId = _userId,
+                Type = PitchType.Stadium,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        });
+
+        using var scope = _factory.Services.CreateScope();
+        var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
+
+        var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
+            _userId,
+            "PitchFounder",
+            0,
+            10);
+
+        var standard = Assert.Single(pitches, p => p.Type == PitchType.Standard);
+        Assert.Equal("PitchFounder's Standard Pitch", standard.Name);
+    }
+
+    [Fact]
+    public async Task EnsureNearbyPitches_NoPitchWithinTwoMiles_CreatesPracticePitch()
+    {
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            db.Pitches.Add(new PitchModel
+            {
+                Name = $"ExistingStadium_{Guid.NewGuid():N}",
+                Location = CreatePoint(20.20, 20),
+                CreatorUserId = _userId,
+                Type = PitchType.Stadium,
+                CreatedAt = DateTime.UtcNow
+            });
+            db.Pitches.Add(new PitchModel
+            {
+                Name = $"ExistingStandard_{Guid.NewGuid():N}",
+                Location = CreatePoint(20.05, 20),
+                CreatorUserId = _userId,
+                Type = PitchType.Standard,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        });
+
+        using var scope = _factory.Services.CreateScope();
+        var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
+
+        var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
+            _userId,
+            "PitchFounder",
+            20,
+            20);
+
+        var practice = Assert.Single(pitches, p => p.Type == PitchType.Training);
+        Assert.Equal("PitchFounder's Practice Pitch", practice.Name);
+    }
+
+    private static Point CreatePoint(double latitude, double longitude)
+        => new(longitude, latitude) { SRID = 4326 };
 }
