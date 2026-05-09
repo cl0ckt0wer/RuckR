@@ -8,6 +8,7 @@
 | Finish Profile feature | complete | `ProfileModel` expanded (6 properties + DataAnnotations), `ProfileController` (GET/PUT), and `Profile.razor` (view/edit toggle with EditForm validation) fully implemented. |
 | Update NuGet packages | complete | All NuGet references updated to 10.0.7 via `dotnet` CLI. |
 | Creature Collector Rugby GPS | planned | Transform RuckR into a rugby-themed creature-collector game with GPS integration, real-time map, PVP battles, and persistent storage. See `docs/plan/20260505-creature-collector-rugby-gps/PRD.yaml`. |
+| Secure secret management | complete | `dotnet user-secrets` for dev, env vars for deploy/test. Passwords scrubbed from repo. See ADR-010. |
 
 ### Architectural Decisions
 
@@ -20,6 +21,7 @@
 - **ADR-007:** Player data model redesign — new models under `RuckR.Shared.Models` namespace: `PlayerModel` (creature), `PitchModel` (location), `CollectionModel` (user inventory), `BattleModel` (async PVP state). Follows existing `ProfileModel` convention (subdirectory with qualified namespace).
 - **ADR-008:** State management — **Fluxor** (Flux/Redux pattern for Blazor) for client-side state (inventory, active battles, map state). Rationale: Multiple pages need shared reactive state; Fluxor is the most popular Blazor state library with middleware, dev tools, and strong community adoption.
 - **ADR-009:** Authentication — **ASP.NET Core Identity** with **EF Core** for user registration/login. Razor pages for auth UI (login, register) served by the Server project. Rationale: ASP.NET Core Identity is the built-in, battle-tested auth framework; avoids third-party auth dependencies for a simple username/password MVP.
+- **ADR-010:** Secret management — layered approach by environment: **`dotnet user-secrets`** for development (no NuGet needed, built into ASP.NET Core), **environment variables** for deployment (`RUCKR_DB_PASSWORD`) and CI/test (`RUCKR_TEST_DB_PASSWORD` with auto-generated GUID fallback). No secrets committed to the repo. `.gitignore` covers `*.env`, `secrets.*`, and `appsettings.*.local.json`. Rationale: Single-VM deployment with no Azure connectivity makes Key Vault over-engineering; user-secrets + env vars is the idiomatic .NET pattern for this scale.
 
 ## Build & Run
 
@@ -55,6 +57,45 @@ Stop-Job -Name RuckRServer
 Remove-Job -Name RuckRServer
 ```
 
+## Deploy
+
+Publish to the exe.dev production VM via `scripts/publish-exe-dev.ps1`. This script deploys framework-dependent `linux-x64` build, ensures .NET 10 runtime and Docker SQL Server on the VM, and restarts the server.
+
+```powershell
+$env:RUCKR_DB_PASSWORD = "the-real-sa-password"
+.\scripts\publish-exe-dev.ps1
+```
+
+The script requires `RUCKR_DB_PASSWORD` env var — it will not run with a hardcoded password. On each deploy, the script writes the password to `~/ruckr/secrets.env` on the VM (`chmod 600`) and Docker/SQL Server source it from there. No password appears in the SSH command itself.
+
+### Setting secrets for local dev with Docker SQL Server
+
+If you use Docker SQL Server instead of LocalDB for development, set the connection string via user-secrets:
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:RuckRDbContext" "Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=the-real-sa-password;TrustServerCertificate=True;" --project RuckR/Server/RuckR.Server.csproj
+```
+
+Alternatively, export it as an environment variable in your shell profile:
+
+```powershell
+$env:ConnectionStrings__RuckRDbContext = "Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=the-real-sa-password;TrustServerCertificate=True;"
+```
+
+The ASP.NET Core configuration system layers user-secrets between `appsettings.Development.json` and environment variables automatically in Development mode — no code changes needed.
+
+### Agent Guidance for DB Passwords
+
+Agents must **never** hardcode, generate, or guess a DB password. Follow these rules by context:
+
+| Context | Rule |
+| ------- | ---- |
+| **Run tests** | No password needed — test fixtures auto-generate a GUID per run via `Guid.NewGuid().ToString("N")`. |
+| **Run dev server with LocalDB** (default) | No password needed — `appsettings.json` uses `Trusted_Connection=True`. |
+| **Run dev server with Docker SQL** | Check if user-secrets is already set: `dotnet user-secrets list --project RuckR/Server/RuckR.Server.csproj`. If `ConnectionStrings:RuckRDbContext` is missing, **stop and tell the user** to run the `dotnet user-secrets set` command above with their real password. |
+| **Deploy to exe.dev** | Check `$env:RUCKR_DB_PASSWORD` is set. If not, **stop and tell the user** to set it. Never pass a literal password in the command. |
+| **Commit or write code** | Never include a password string. If you see one in a PR or diff, flag it. |
+
 ## Architecture
 
 | Project          | Role                                                  |
@@ -74,7 +115,7 @@ Remove-Job -Name RuckRServer
 - Nullable reference types are enabled in all three projects.
 - The `SupportedPlatform include="browser"` on `RuckR.Shared` marks that assembly for WASM compatibility.
 - Service worker (`service-worker.js` / `service-worker.published.js`) is registered for PWA support on the client.
-- No test projects, linting config, CI/CD, or editorconfig exist yet.
+- Secrets never committed to the repo. Use `dotnet user-secrets` for local dev and environment variables (`RUCKR_DB_PASSWORD`, `RUCKR_TEST_DB_PASSWORD`) for deploy/test. See ADR-010.
 
 ## agentmemory
 
@@ -105,3 +146,32 @@ Start-Process -FilePath "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -Argument
 | PCC-03 | **Document Router NotFoundPage migration pattern** | .NET 10 Router requires `NotFoundPage` parameter + separate `NotFound.razor` page (removes `<NotFound>` fragment). `_Imports.razor` needs `@using RuckR.Client.Pages` for type resolution. This is a permanent pattern for all future Router usage. | `🟡 flagged` |
 | PCC-04 | **Clarify ProfileModel namespace convention** | `ProfileModel` lives in `RuckR.Shared.Models` (subdirectory). `WeatherForecast` is in `RuckR.Shared` (root directory). Both conventions coexist — models in subdirectories use qualified namespaces. Document this to avoid future relocation attempts. | `🟡 flagged` |
 | PCC-05 | **Document SDK-managed packages exclusion** | `dotnet list package --outdated` shows SDK-managed packages (`ILLink.Tasks`, `WebAssembly.Pack`) with auto-referenced versions. These should **not** be manually upgraded — the SDK manages them. Flag to prevent confusion during package audits. | `🟡 flagged` |
+| PCC-06 | **Adopt layered secret management (ADR-010)** | Remove all hardcoded passwords from the repo; use `dotnet user-secrets` for dev, `RUCKR_DB_PASSWORD` env var for deploy, and `RUCKR_TEST_DB_PASSWORD` env var with GUID fallback for tests. Add explicit `.gitignore` patterns (`*.env`, `secrets.*`, `appsettings.*.local.json`). All passwords scrubbed from `appsettings.json`, `appsettings.Development.json`, `scripts/publish-exe-dev.ps1`, `CustomWebApplicationFactory.cs`, and `DatabaseFixture.cs`. | `✅ accepted` |
+
+## gstack
+
+Use gstack skills for structured development workflows. Never answer ad-hoc when a skill exists for the task.
+
+Available skills: /office-hours, /plan-ceo-review, /plan-eng-review, /plan-design-review, /plan-devex-review, /design-consultation, /design-shotgun, /design-html, /autoplan, /review, /investigate, /design-review, /devex-review, /qa, /qa-only, /ship, /land-and-deploy, /canary, /benchmark, /cso, /codex, /pair-agent, /retro, /document-release, /context-save, /context-restore, /browse, /open-gstack-browser, /setup-browser-cookies, /setup-deploy, /setup-gbrain, /sync-gbrain, /careful, /freeze, /guard, /unfreeze, /gstack-upgrade, /learn, /make-pdf.
+
+## Skill routing
+
+When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+
+Key routing rules:
+- Product ideas/brainstorming → invoke /office-hours
+- Strategy/scope → invoke /plan-ceo-review
+- Architecture → invoke /plan-eng-review
+- Design system/plan review → invoke /design-consultation or /plan-design-review
+- Full review pipeline → invoke /autoplan
+- Bugs/errors → invoke /investigate
+- QA/testing site behavior → invoke /qa or /qa-only
+- Code review/diff check → invoke /review
+- Visual polish → invoke /design-review
+- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Save progress → invoke /context-save
+- Resume context → invoke /context-restore
+- Security audit → invoke /cso
+- Performance → invoke /benchmark
+- Update docs after shipping → invoke /document-release
+- Weekly retro → invoke /retro

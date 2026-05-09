@@ -5,7 +5,8 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class BattlesApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _clientA = null!;
@@ -83,7 +84,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
         var request = new ChallengeRequest(_usernameB, _playerIdA);
 
         // Act
-        var response = await _clientA.PostAsJsonAsync("/battles/challenge", request);
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -106,7 +107,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
         var request = new ChallengeRequest(_usernameA, _playerIdA);
 
         // Act
-        var response = await _clientA.PostAsJsonAsync("/battles/challenge", request);
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -122,15 +123,15 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     {
         // Arrange: create 3 pending challenges from User A
         // Use User B, C, D as opponents
-        var r1 = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var r1 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
 
-        var r2 = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var r2 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameC, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, r2.StatusCode);
 
-        var r3 = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var r3 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameD, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, r3.StatusCode);
 
@@ -139,7 +140,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
         var usernameE = $"battle_e_{Guid.NewGuid():N}";
         await _factory.CreateTestUserAsync(usernameE, "TestPass123!");
         var requestE = new ChallengeRequest(usernameE, _playerIdA);
-        var response = await _clientA.PostAsJsonAsync("/battles/challenge", requestE);
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", requestE);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -154,7 +155,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task Accept_TransitionsToAccepted()
     {
         // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
@@ -162,7 +163,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
 
         // Act: User B accepts with their player
         var acceptRequest = new AcceptChallengeRequest(_playerIdB);
-        var acceptResponse = await _clientB.PostAsJsonAsync($"/battles/{battle.Id}/accept", acceptRequest);
+        var acceptResponse = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", acceptRequest);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, acceptResponse.StatusCode);
@@ -179,20 +180,20 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task Decline_TransitionsToDeclined()
     {
         // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
         Assert.NotNull(battle);
 
         // Act: User B declines
-        var declineResponse = await _clientB.PostAsync($"/battles/{battle.Id}/decline", null);
+        var declineResponse = await _clientB.PostAsync($"/api/battles/{battle.Id}/decline", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, declineResponse.StatusCode);
 
         // Verify via history that it's declined
-        var historyResponse = await _clientB.GetAsync("/battles/history");
+        var historyResponse = await _clientB.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
         var history = await historyResponse.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(history);
@@ -209,21 +210,21 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task GetPending_ReturnsPendingChallenges()
     {
         // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
         Assert.NotNull(battle);
 
         // Act & Assert: User A sees outgoing pending challenge
-        var pendingA = await _clientA.GetAsync("/battles/pending");
+        var pendingA = await _clientA.GetAsync("/api/battles/pending");
         Assert.Equal(HttpStatusCode.OK, pendingA.StatusCode);
         var listA = await pendingA.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(listA);
         Assert.Contains(listA!, b => b.Id == battle.Id && b.ChallengerId == _userIdA);
 
         // Act & Assert: User B sees incoming pending challenge
-        var pendingB = await _clientB.GetAsync("/battles/pending");
+        var pendingB = await _clientB.GetAsync("/api/battles/pending");
         Assert.Equal(HttpStatusCode.OK, pendingB.StatusCode);
         var listB = await pendingB.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(listB);
@@ -237,23 +238,23 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task GetHistory_ReturnsCompletedBattles()
     {
         // Arrange: create a challenge, then decline it to move it to history
-        var challengeResponse = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
         Assert.NotNull(battle);
 
         // Decline to move to history
-        await _clientB.PostAsync($"/battles/{battle.Id}/decline", null);
+        await _clientB.PostAsync($"/api/battles/{battle.Id}/decline", null);
 
         // Act: check history for both users
-        var historyA = await _clientA.GetAsync("/battles/history");
+        var historyA = await _clientA.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyA.StatusCode);
         var listA = await historyA.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(listA);
         Assert.Contains(listA!, b => b.Id == battle.Id);
 
-        var historyB = await _clientB.GetAsync("/battles/history");
+        var historyB = await _clientB.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyB.StatusCode);
         var listB = await historyB.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(listB);
@@ -267,7 +268,7 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
     public async Task LazyExpiry_ChallengeOlderThan24h_ExpiresOnPending()
     {
         // Arrange: create a challenge
-        var challengeResponse = await _clientA.PostAsJsonAsync("/battles/challenge",
+        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
@@ -283,14 +284,14 @@ public class BattlesApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyn
         });
 
         // Act: GET /battles/pending — should trigger lazy-expiry and exclude this battle
-        var pendingA = await _clientA.GetAsync("/battles/pending");
+        var pendingA = await _clientA.GetAsync("/api/battles/pending");
         Assert.Equal(HttpStatusCode.OK, pendingA.StatusCode);
         var listA = await pendingA.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(listA);
         Assert.DoesNotContain(listA!, b => b.Id == battle.Id);
 
         // Verify the battle is now in history with Expired status
-        var historyA = await _clientA.GetAsync("/battles/history");
+        var historyA = await _clientA.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyA.StatusCode);
         var historyList = await historyA.Content.ReadFromJsonAsync<List<BattleModel>>();
         Assert.NotNull(historyList);

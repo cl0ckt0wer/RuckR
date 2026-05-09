@@ -13,7 +13,7 @@ public class NavMenu : BasePage
     private async Task EnsureNavExpandedAsync()
     {
         var toggler = await Page.QuerySelectorAsync(".navbar-toggler");
-        if (toggler != null)
+        if (toggler != null && await toggler.IsVisibleAsync())
         {
             var navScrollable = await Page.QuerySelectorAsync(".nav-scrollable.collapse");
             if (navScrollable != null)
@@ -110,6 +110,7 @@ public class NavMenu : BasePage
 
     public async Task ClickLoginAsync()
     {
+        await DismissErrorUiAsync();
         await EnsureNavExpandedAsync();
         await Page.GetByTestId("nav-login").ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
@@ -117,9 +118,24 @@ public class NavMenu : BasePage
 
     public async Task ClickLogoutAsync()
     {
+        await DismissErrorUiAsync();
         await EnsureNavExpandedAsync();
         await Page.GetByTestId("nav-logout").ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+    }
+
+    /// <summary>
+    /// Perform a full logout: click the nav logout link, complete the
+    /// Identity logout confirmation form, and wait for redirect back to
+    /// the Blazor app.
+    /// </summary>
+    public async Task FullLogoutAsync()
+    {
+        await Page.Context.ClearCookiesAsync();
+        await Page.GotoAsync(BaseUrl);
+        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorAsync();
+        await DismissErrorUiAsync();
     }
 
     public async Task<bool> IsVisibleAsync()

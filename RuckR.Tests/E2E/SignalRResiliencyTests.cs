@@ -10,7 +10,8 @@ namespace RuckR.Tests.E2E;
 /// Uses Playwright's network emulation to simulate
 /// disconnections and verify the ConnectionStatus shared component.
 /// </summary>
-public class SignalRResiliencyTests : IClassFixture<CustomWebApplicationFactory>, IClassFixture<PlaywrightFixture>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
@@ -27,6 +28,12 @@ public class SignalRResiliencyTests : IClassFixture<CustomWebApplicationFactory>
     {
         _context = await _playwright.NewContextAsync();
         _baseUrl = _factory.ServerBaseUrl;
+
+        var page = await _context.NewPageAsync();
+        var registerPage = new RegisterPage(page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync($"signalr_{Guid.NewGuid():N}@test.com", "TestPass123!");
+        await page.CloseAsync();
     }
 
     public async Task DisposeAsync()

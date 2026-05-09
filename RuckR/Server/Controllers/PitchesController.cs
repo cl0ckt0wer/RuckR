@@ -9,7 +9,7 @@ using RuckR.Shared.Models;
 namespace RuckR.Server.Controllers
 {
     [ApiController]
-    [Route("[controller]")]
+    [Route("api/[controller]")]
     public class PitchesController : ControllerBase
     {
         private const int MaxPitchesPerUserPerDay = 5;

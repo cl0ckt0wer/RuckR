@@ -116,7 +116,7 @@ else
         try
         {
             errorMessage = string.Empty;
-            profile = await Http.GetFromJsonAsync<ProfileModel>("Profile");
+            profile = await Http.GetFromJsonAsync<ProfileModel>("api/Profile");
         }
         catch (Exception ex)
         {
@@ -129,7 +129,7 @@ else
         try
         {
             errorMessage = string.Empty;
-            var response = await Http.PutAsJsonAsync("Profile", profile);
+            var response = await Http.PutAsJsonAsync("api/Profile", profile);
             if (response.IsSuccessStatusCode)
             {
                 isEditing = false;

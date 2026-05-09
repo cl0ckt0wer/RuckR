@@ -2,12 +2,5 @@
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
     "list"
-  ],
-  "mcp": {
-    "agentmemory": {
-      "type": "local",
-      "command": ["node", "C:/Users/clock/.agentmemory-docker/mcp-bridge.mjs"],
-      "enabled": true
-    }
-  }
+  ]
 }

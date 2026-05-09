@@ -5,6 +5,14 @@ let userMarker = null;
 
 export function initMap(containerId, centerLat, centerLng, zoom) {
     if (map) { map.remove(); }
+
+    if (!window.L) {
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.classList.add('leaflet-container');
+        }
+        return false;
+    }
     
     map = L.map(containerId).setView([centerLat, centerLng], zoom);
     
@@ -17,6 +25,8 @@ export function initMap(containerId, centerLat, centerLng, zoom) {
 }
 
 export function addPitchMarkers(markersJson, dotNetRef) {
+    if (!map || !window.L) { return; }
+
     clearPitchMarkers();
     const markers = JSON.parse(markersJson);
     
@@ -43,6 +53,8 @@ export function addPitchMarkers(markersJson, dotNetRef) {
 }
 
 export function addUserMarker(lat, lng) {
+    if (!map || !window.L) { return; }
+
     if (userMarker) {
         userMarker.setLatLng([lat, lng]);
     } else {
@@ -67,6 +79,8 @@ export function centerOn(lat, lng) {
 }
 
 export function clearPitchMarkers() {
+    if (!map) { return; }
+
     pitchMarkers.forEach(m => map.removeLayer(m));
     pitchMarkers = [];
 }

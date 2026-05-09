@@ -364,3 +364,16 @@ FodyWeavers.xsd
 
 # APM dependencies
 apm_modules/
+
+# Secrets & sensitive configuration
+**/secrets.*
+**/*.secret.*
+**/Properties/ServiceDependencies/**
+*.env
+!.env.example
+**/appsettings.*.local.json
+.gstack/
+
+# Generated diagnostics/deploy artifacts
+_diagnostics/
+publish.tar.gz

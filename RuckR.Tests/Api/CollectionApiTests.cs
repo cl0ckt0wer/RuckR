@@ -5,7 +5,8 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IAsyncLifetime
+[Collection(nameof(TestCollection))]
+public class CollectionApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -58,7 +59,7 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
     {
         _factory.LocationTracker.SetPosition(_userId, pitchLat, pitchLng);
         var request = new CapturePlayerRequest(playerId, pitchId);
-        var response = await _client.PostAsJsonAsync("/collection/capture", request);
+        var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
         response.EnsureSuccessStatusCode();
         var collection = await response.Content.ReadFromJsonAsync<CollectionModel>();
         return collection!;
@@ -75,7 +76,7 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
         var captured = await CaptureTestPlayerAsync(playerId, pitchId, pitchLat, pitchLng);
 
         // Act
-        var response = await _client.GetAsync("/collection");
+        var response = await _client.GetAsync("/api/collection");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -97,7 +98,7 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
         var request = new CapturePlayerRequest(playerId, pitchId);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/collection/capture", request);
+        var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -122,7 +123,7 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
         var request = new CapturePlayerRequest(playerId, pitchId);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/collection/capture", request);
+        var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -145,7 +146,7 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
         var request = new CapturePlayerRequest(playerId, pitchId);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/collection/capture", request);
+        var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -165,21 +166,21 @@ public class CollectionApiTests : IClassFixture<CustomWebApplicationFactory>, IA
         Assert.False(collection.IsFavorite);
 
         // Act: toggle favorite ON
-        var toggleOnResponse = await _client.PostAsync($"/collection/{collection.Id}/favorite", null);
+        var toggleOnResponse = await _client.PostAsync($"/api/collection/{collection.Id}/favorite", null);
         Assert.Equal(HttpStatusCode.OK, toggleOnResponse.StatusCode);
 
         // Verify it's now true
-        var getResponse = await _client.GetAsync("/collection");
+        var getResponse = await _client.GetAsync("/api/collection");
         var collections = await getResponse.Content.ReadFromJsonAsync<List<CollectionModel>>();
         var updated = collections!.First(c => c.Id == collection.Id);
         Assert.True(updated.IsFavorite);
 
         // Act: toggle favorite OFF
-        var toggleOffResponse = await _client.PostAsync($"/collection/{collection.Id}/favorite", null);
+        var toggleOffResponse = await _client.PostAsync($"/api/collection/{collection.Id}/favorite", null);
         Assert.Equal(HttpStatusCode.OK, toggleOffResponse.StatusCode);
 
         // Verify it's back to false
-        var getResponse2 = await _client.GetAsync("/collection");
+        var getResponse2 = await _client.GetAsync("/api/collection");
         var collections2 = await getResponse2.Content.ReadFromJsonAsync<List<CollectionModel>>();
         var updated2 = collections2!.First(c => c.Id == collection.Id);
         Assert.False(updated2.IsFavorite);

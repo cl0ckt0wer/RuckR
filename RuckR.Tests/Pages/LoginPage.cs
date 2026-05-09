@@ -24,6 +24,7 @@ public class LoginPage : BasePage
         // Wait for redirect after successful login (should go to Blazor app)
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await WaitForBlazorAsync();
+        await DismissErrorUiAsync();
     }
 
     public async Task GoToRegisterAsync()

@@ -1,0 +1,15 @@
+{
+  "collectionSizePerUser": 5,
+  "users": [
+    { "username": "ruckr1", "email": "ruckr1@ruckr.game" },
+    { "username": "ruckr2", "email": "ruckr2@ruckr.game" },
+    { "username": "ruckr3", "email": "ruckr3@ruckr.game" },
+    { "username": "ruckr4", "email": "ruckr4@ruckr.game" },
+    { "username": "ruckr5", "email": "ruckr5@ruckr.game" },
+    { "username": "ruckr6", "email": "ruckr6@ruckr.game" },
+    { "username": "ruckr7", "email": "ruckr7@ruckr.game" },
+    { "username": "ruckr8", "email": "ruckr8@ruckr.game" },
+    { "username": "ruckr9", "email": "ruckr9@ruckr.game" },
+    { "username": "ruckr10", "email": "ruckr10@ruckr.game" }
+  ]
+}

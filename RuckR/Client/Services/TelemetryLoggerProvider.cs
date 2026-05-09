@@ -11,15 +11,11 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     private readonly ConcurrentQueue<ClientLogEntry> _queue = new();
     private readonly string _sessionId = Guid.NewGuid().ToString("N")[..8];
     private readonly CancellationTokenSource _cts = new();
-    private readonly Task _flushLoop;
+    private Task? _flushLoop;
 
     public TelemetryLoggerProvider(HttpClient httpClient)
     {
         _httpClient = httpClient;
-        // Fire-and-forget via direct async call (not Task.Run) to avoid
-        // AggregateException wrapping in the WASM single-threaded runtime.
-        // FlushLoopAsync begins with an await, so it yields immediately.
-        _flushLoop = FlushLoopAsync(_cts.Token);
     }
 
     public ILogger CreateLogger(string categoryName)
@@ -29,6 +25,7 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     {
         if (_queue.Count < 1000)
             _queue.Enqueue(entry);
+        _flushLoop ??= FlushLoopAsync(_cts.Token);
     }
 
     private async Task FlushLoopAsync(CancellationToken ct)
@@ -71,7 +68,8 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync();
-        await _flushLoop; // wait for loop to exit
+        if (_flushLoop is not null)
+            await _flushLoop; // wait for loop to exit
         await FlushAsync(); // final flush
         _cts.Dispose();
     }
