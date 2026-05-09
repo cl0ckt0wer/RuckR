@@ -53,14 +53,14 @@
                     <span class="nav-link-text">Hello, @context.User.Identity?.Name!</span>
                 </div>
                 <div class="nav-item px-3">
-                    <a class="nav-link" href="/Identity/Account/LogOut" @onclick="NavToLogout" @onclick:preventDefault data-testid="nav-logout">
+                    <a class="nav-link" href="/Identity/Account/LogOut" target="_top" @onclick="NavToLogout" @onclick:preventDefault data-testid="nav-logout">
                         <span class="oi oi-account-logout" aria-hidden="true"></span> Logout
                     </a>
                 </div>
             </Authorized>
             <NotAuthorized>
                 <div class="nav-item px-3">
-                    <a class="nav-link" href="/Identity/Account/Login" @onclick="NavToLogin" @onclick:preventDefault data-testid="nav-login">
+                    <a class="nav-link" href="/Identity/Account/Login" target="_top" @onclick="NavToLogin" @onclick:preventDefault data-testid="nav-login">
                         <span class="oi oi-account-login" aria-hidden="true"></span> Login
                     </a>
                 </div>

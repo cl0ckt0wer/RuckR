@@ -131,8 +131,8 @@ public class NavMenu : BasePage
     /// </summary>
     public async Task FullLogoutAsync()
     {
-        await Page.Context.ClearCookiesAsync();
-        await Page.GotoAsync(BaseUrl);
+        await ClickLogoutAsync();
+        await Page.GetByRole(AriaRole.Button, new() { Name = "Click here to Logout" }).ClickAsync();
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await WaitForBlazorAsync();
         await DismissErrorUiAsync();

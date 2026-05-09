@@ -87,10 +87,10 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await nav.WaitForBlazorReadyAsync();
         Assert.Contains(_baseUrl, _page.Url, StringComparison.OrdinalIgnoreCase);
 
-        await nav.ClickLoginAsync();
+        var loginPage = new LoginPage(_page, _baseUrl);
+        await loginPage.GoToAsync();
         Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
 
-        var loginPage = new LoginPage(_page, _baseUrl);
         await loginPage.LoginAsync(username, password);
 
         await _page.GotoAsync(_baseUrl);
@@ -105,6 +105,47 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 
         var (isStillLoggedIn, _) = await nav.GetAuthStateAsync();
         Assert.False(isStillLoggedIn, "User should be logged out after logout");
+    }
+
+    [Fact]
+    public async Task Logout_ThenLogin_UsesNormalNavigationLinks()
+    {
+        var username = $"normalnav_{Guid.NewGuid():N}@test.com";
+        var password = "TestPass123!";
+
+        var registerPage = new RegisterPage(_page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync(username, password);
+
+        var nav = new NavMenu(_page, _baseUrl);
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await nav.WaitForBlazorReadyAsync();
+
+        await nav.ClickLogoutAsync();
+
+        Assert.Contains("/Identity/Account/Logout", _page.Url, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("RuckR", (await _page.Locator(".navbar-brand").TextContentAsync())?.Trim());
+
+        await _page.GetByRole(AriaRole.Button, new() { Name = "Click here to Logout" }).ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await nav.WaitForBlazorReadyAsync();
+
+        var loginLink = await _page.QuerySelectorAsync("a[href*='Login']");
+        Assert.NotNull(loginLink);
+        Assert.Contains("/Identity/Account/Login", await loginLink.GetAttributeAsync("href"));
+
+        await _page.GotoAsync($"{_baseUrl.TrimEnd('/')}/Identity/Account/Login");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        Assert.Equal("RuckR", (await _page.Locator(".navbar-brand").TextContentAsync())?.Trim());
+        Assert.Equal("Register", (await _page.GetByRole(AriaRole.Link, new() { Name = "Register", Exact = true }).TextContentAsync())?.Trim());
+
+        var loginPage = new LoginPage(_page, _baseUrl);
+        await loginPage.LoginAsync(username, password);
+
+        var (loggedInAgain, loggedInUsername) = await nav.GetAuthStateAsync();
+        Assert.True(loggedInAgain, "User should be logged in again after normal login navigation");
+        Assert.Equal(username, loggedInUsername);
     }
 
     [Fact]
