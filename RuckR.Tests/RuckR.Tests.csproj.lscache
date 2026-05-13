@@ -61,6 +61,12 @@ Api/
  PitchesApiTests.cs
  PlayersApiTests.cs
  TelemetryApiTests.cs
+ComponentTests/
+ FluxorIntegrationTests.cs
+ NavMenuTests.cs
+ PitchCreateValidationTests.cs
+ TestAuthorizationService.cs
+ TestAuthProvider.cs
 E2E/
  AuthTests.cs
  BlazorWasmLoadTests.cs
@@ -71,6 +77,7 @@ E2E/
  MobileTests.cs
  NavMenuTests.cs
  PvpTests.cs
+ SignalRResiliencyTests.cs
  StartupSmokeTests.cs
 Fixtures/
  CustomWebApplicationFactory.cs
@@ -419,15 +426,21 @@ UnitTest1.cs
  System.Xml.XPath.XDocument.dll
  WindowsBase.dll
 <NUGET>/
+ anglesharp.css/1.0.0-beta.144/lib/net8.0/AngleSharp.Css.dll
+ anglesharp.diffing/1.0.0/lib/netstandard2.0/AngleSharp.Diffing.dll
+ anglesharp/1.1.2/lib/net8.0/AngleSharp.dll
  azure.core/1.47.1/lib/net8.0/Azure.Core.dll
  azure.identity/1.14.2/lib/net8.0/Azure.Identity.dll
  bouncycastle.cryptography/2.6.2/lib/net6.0/BouncyCastle.Cryptography.dll
+ bunit.core/1.35.3/lib/net9.0/Bunit.Core.dll
+ bunit.web/1.35.3/lib/net9.0/Bunit.Web.dll
  docker.dotnet.enhanced.x509/3.131.1/lib/net10.0/Docker.DotNet.X509.dll
  docker.dotnet.enhanced/3.131.1/lib/net10.0/Docker.DotNet.dll
  fluentassertions/7.2.0/lib/net6.0/FluentAssertions.dll
  fluxor.blazor.web.reduxdevtools/6.9.0/lib/net10.0/Fluxor.Blazor.Web.ReduxDevTools.dll
  fluxor.blazor.web/6.9.0/lib/net10.0/Fluxor.Blazor.Web.dll
  fluxor/6.9.0/lib/net10.0/Fluxor.dll
+ microsoft.aspnetcore.components.webassembly.authentication/9.0.0-rc.2.24474.3/lib/net9.0/Microsoft.AspNetCore.Components.WebAssembly.Authentication.dll
  microsoft.aspnetcore.components.webassembly.server/10.0.7/lib/net10.0/Microsoft.AspNetCore.Components.WebAssembly.Server.dll
  microsoft.aspnetcore.components.webassembly/10.0.7/lib/net10.0/Microsoft.AspNetCore.Components.WebAssembly.dll
  microsoft.aspnetcore.http.connections.client/10.0.7/lib/net10.0/Microsoft.AspNetCore.Http.Connections.Client.dll

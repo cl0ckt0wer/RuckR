@@ -1,5 +1,5 @@
 ═══════════════════════════════════════════════════════════════════════════
-Token Analysis: Session ses_204c622d0ffekqzUPXzjQLyrvG
+Token Analysis: Session ses_1fc6082beffeQaph5XqXsAFAti
 Model: deepseek-v4-pro
 ═══════════════════════════════════════════════════════════════════════════
 
@@ -12,86 +12,108 @@ TOKEN BREAKDOWN BY CATEGORY
 Estimated using tokenizer analysis of message content:
 
 Input Categories:
-  SYSTEM    ████████████████░░░░░░░░░░░░░░    54.0% (71,412)
-  USER      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (99)
-  TOOLS     ██████████████░░░░░░░░░░░░░░░░    46.0% (60,800)
+  SYSTEM    ███████████░░░░░░░░░░░░░░░░░░░    37.9% (92,346)
+  USER      ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        0.2% (532)
+  TOOLS     ███████████████████░░░░░░░░░░░   61.9% (150,655)
 
-  Subtotal: 132,311 estimated input tokens
+  Subtotal: 243,533 estimated input tokens
   Note: inferred system/overhead values are heuristic estimates from API telemetry.
 
 Output Categories:
-  ASSISTANT ███████░░░░░░░░░░░░░░░░░░░░░░░     23.7% (2,394)
-  REASONING ███████████████████████░░░░░░░     76.3% (7,726)
+  ASSISTANT ███████░░░░░░░░░░░░░░░░░░░░░░░     22.8% (8,005)
+  REASONING ███████████████████████░░░░░░░    77.2% (27,056)
 
-  Subtotal: 10,120 estimated output tokens
+  Subtotal: 35,061 estimated output tokens
 
-Local Total: 142,431 tokens (estimated)
+Local Total: 278,594 tokens (estimated)
 
 TOOL USAGE BREAKDOWN
 ─────────────────────────────────────────────────────────────────────────
-task                 ███████████████░░░░░░░░░░░░░░░    51.4% (31,224)   50x
-read                 █████████████░░░░░░░░░░░░░░░░░    43.4% (26,416)    2x
-todowrite            █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      2.3% (1,385)    6x
-grep                 █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      2.2% (1,345)    1x
-question             ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        0.6% (373)    2x
-agentmemory_memory_save ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (57)    3x
+bash                 ██████████████████████████░░░░   85.4% (128,654)  142x
+read                 ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░      6.0% (9,007)   22x
+agentmemory_memory_export █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      4.5% (6,714)    1x
+task                 █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      2.7% (4,105)    1x
+todowrite            ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░      0.9% (1,399)    8x
+invalid              ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░        0.3% (453)    4x
+edit                 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (96)   24x
+agentmemory_memory_smart_search ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.1% (84)    6x
+write                ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.0% (55)   11x
+agentmemory_memory_sessions ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.0% (40)    5x
+glob                 ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.0% (21)    1x
+agentmemory_memory_recall ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.0% (14)    1x
+agentmemory_memory_audit ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░         0.0% (13)    1x
 
 TOP CONTRIBUTORS
 ─────────────────────────────────────────────────────────────────────────
-• System (inferred from API telemetry) 71,412 tokens (50.1%)
-• task                         31,224 tokens (21.9%)
-• read                         26,416 tokens (18.5%)
-• todowrite                    1,385 tokens (1.0%)
-• grep                         1,345 tokens (0.9%)
+• bash                         128,654 tokens (46.2%)
+• System (inferred from API telemetry) 92,346 tokens (33.1%)
+• read                         9,007 tokens (3.2%)
+• agentmemory_memory_export    6,714 tokens (2.4%)
+• task                         4,105 tokens (1.5%)
 
 ═══════════════════════════════════════════════════════════════════════════
 MOST RECENT API CALL
 ─────────────────────────────────────────────────────────────────────────
 
 Raw telemetry from last API response:
-  Input (fresh):            215 tokens
-  Cache read:           132,096 tokens
-  Output:                   581 tokens
-  Reasoning:                 71 tokens
-  Provider total:       132,963 tokens
-  Cost:              $0.0218
+  Input (fresh):             77 tokens
+  Cache read:           243,456 tokens
+  Output:                   138 tokens
+  Reasoning:                 38 tokens
+  Provider total:       243,709 tokens
+  Cost:              $0.0360
   ─────────────────────────────────────
-  Total:                132,963 tokens
+  Total:                243,709 tokens
 
 ═══════════════════════════════════════════════════════════════════════════
-SESSION TOTALS (All 31 API calls)
+SESSION TOTALS (All 198 API calls)
 ─────────────────────────────────────────────────────────────────────────
 
-Assistant messages observed: 32 (structural count)
+Assistant messages observed: 201 (structural count)
 
 Total tokens processed across the entire session (for cost calculation):
 
-  Input tokens:         357,829 (fresh tokens across all calls)
-  Cache read:         2,059,136 (cached tokens across all calls)
+  Input tokens:         555,959 (fresh tokens across all calls)
+  Cache read:        27,187,200 (cached tokens across all calls)
   Cache write:                0 (tokens written to cache)
-  Output tokens:         52,775 (all model responses)
-  Reasoning tokens:       7,702 (thinking/reasoning)
+  Output tokens:         39,640 (all model responses)
+  Reasoning tokens:      26,985 (thinking/reasoning)
   ─────────────────────────────────────
-  Session Total:      2,477,442 tokens (for billing)
-  Cache read calls:          29 / 31
-  Cache write calls:          0 / 31
+  Session Total:     27,809,784 tokens (for billing)
+  Cache read calls:         198 / 198
+  Cache write calls:          0 / 198
 
 ═══════════════════════════════════════════════════════════════════════════
 SESSION COST
 ─────────────────────────────────────────────────────────────────────────
 
 Token usage breakdown:
-  Input tokens:         357,829
-  Output tokens:         52,775
-  Reasoning tokens:       7,702
-  Cache read:         2,059,136
+  Input tokens:         555,959
+  Output tokens:         39,640
+  Reasoning tokens:      26,985
+  Cache read:        27,187,200
 
 ─────────────────────────────────────────────────────────────────────────
-ACTUAL COST (from API):  $1.1317
-Estimated cost:          $0.5393 (-52.3% diff)
+ACTUAL COST (from API):  $5.1414
+Estimated cost:          $0.7558 (-85.3% diff)
 
 Note: Actual cost from OpenCode includes provider-specific pricing
 and 200K+ context adjustments.
+
+══════════════════════════════════════════════════════════════════════════
+AVAILABLE SKILLS (always-available context)
+─────────────────────────────────────────────────────────────────────────
+
+These skills were recovered from the skill tool metadata available to this session.
+
+  Skill                  Description                                   Tokens
+  ───────────────────────────────────────────────────────────────────────
+  blazor-wasm-troublesh… Troubleshoot Blazor WebAssembly and Blazor W…    ~188
+  analyzing-dotnet-perf… Scans .NET code for ~50 performance anti-pat…     ~68
+  ───────────────────────────────────────────────────────────────────────
+  Total: ~256 tokens (2 skills available)
+
+  Note: Full skill tool description is ~2,496 tokens (includes boilerplate).
 
 ═══════════════════════════════════════════════════════════════════════════
 AVAILABLE SUBAGENTS (in task tool definition)
@@ -128,15 +150,22 @@ TOOL DEFINITION COSTS (Estimated from argument analysis)
 
   Tool                Est. Tokens   Args   Complexity
   ───────────────────────────────────────────────────────────────────
-  agentmemory_memory_save         ~400       4   simple
   todowrite                  ~380       1   complex (arrays/objects)
-  question                   ~380       1   complex (arrays/objects)
+  bash                       ~370       3   simple
+  edit                       ~370       3   simple
   task                       ~370       3   simple
-  grep                       ~370       3   simple
-  read                       ~340       2   simple
-  tokenscope                 ~310       1   simple
+  agentmemory_memory_recall         ~340       2   simple
+  agentmemory_memory_smart_search         ~340       2   simple
+  write                      ~340       2   simple
+  invalid                    ~340       2   simple
+  glob                       ~310       1   simple
+  read                       ~310       1   simple
+  agentmemory_memory_sessions         ~280       0   simple
+  agentmemory_memory_export         ~280       0   simple
+  agentmemory_memory_audit         ~280       0   simple
+  tokenscope                 ~280       0   simple
   ───────────────────────────────────────────────────────────────────
-  Total:             ~      2,550 tokens (7 enabled tools)
+  Total:             ~      4,590 tokens (14 enabled tools)
 
   Note: Estimates inferred from tool call arguments in this session.
         Actual schema tokens may vary +/-20%.
@@ -146,83 +175,34 @@ CACHE EFFICIENCY
 ─────────────────────────────────────────────────────────────────────────
 
   Token Distribution:
-    Cache Read:         2,059,136 tokens   ██████████████████████████░░░░  85.2%
-    Fresh Input:          357,829 tokens   ████░░░░░░░░░░░░░░░░░░░░░░░░░░  14.8%
+    Cache Read:        27,187,200 tokens   █████████████████████████████░  98.0%
+    Fresh Input:          555,959 tokens   █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  2.0%
   ───────────────────────────────────────────────────────────────────
-  Cache Hit Rate:      85.2% (cache read / (cache read + fresh input))
+  Cache Hit Rate:      98.0% (cache read / (cache read + fresh input))
 
   Cost Analysis (deepseek-v4-pro @ $1.00/M input, $0.00/M cache read, $0.00/M cache write):
-    Without caching:   $2.4170  (2,416,965 tokens x $1.00/M)
-    With caching:      $0.3578  (fresh x $1.00/M + cache read x $0.00/M + cache write x $0.00/M)
+    Without caching:   $27.7432  (27,743,159 tokens x $1.00/M)
+    With caching:      $0.5560  (fresh x $1.00/M + cache read x $0.00/M + cache write x $0.00/M)
   ───────────────────────────────────────────────────────────────────
-  Cost Savings:        $2.0591  (85.2% reduction)
-  Effective Rate:      $0.15/M tokens  (vs. $1.00/M standard)
+  Cost Savings:        $27.1872  (98.0% reduction)
+  Effective Rate:      $0.02/M tokens  (vs. $1.00/M standard)
 
 ═══════════════════════════════════════════════════════════════════════════
-SUBAGENT COSTS (50 child sessions, 775 API calls)
+SUBAGENT COSTS (1 child sessions, 15 API calls)
 ─────────────────────────────────────────────────────────────────────────
 
-  gem-researcher               $0.0798  (163,663 tokens, 9 calls)
-  gem-documentation-writer     $0.3287  (373,422 tokens, 13 calls)
-  gem-researcher               $0.3792  (1,218,246 tokens, 19 calls)
-  gem-researcher               $0.2464  (668,418 tokens, 15 calls)
-  gem-researcher               $0.3678  (1,299,040 tokens, 20 calls)
-  gem-researcher               $0.2621  (679,256 tokens, 13 calls)
-  gem-planner                  $0.4281  (1,345,381 tokens, 20 calls)
-  gem-reviewer                 $0.3035  (205,442 tokens, 4 calls)
-  gem-critic                   $0.1925  (357,078 tokens, 8 calls)
-  gem-planner                  $0.2867  (523,207 tokens, 8 calls)
-  gem-implementer              $0.1951  (734,601 tokens, 19 calls)
-  gem-implementer              $0.0496  (96,085 tokens, 6 calls)
-  gem-implementer              $0.0204  (68,402 tokens, 5 calls)
-  gem-implementer              $0.1550  (520,599 tokens, 13 calls)
-  gem-implementer              $0.0571  (104,693 tokens, 7 calls)
-  gem-documentation-writer     $0.1776  (597,231 tokens, 25 calls)
-  gem-implementer              $0.0626  (120,270 tokens, 7 calls)
-  gem-implementer              $0.1523  (611,802 tokens, 24 calls)
-  gem-implementer              $0.1538  (657,564 tokens, 28 calls)
-  gem-implementer              $0.1744  (657,537 tokens, 19 calls)
-  gem-implementer              $0.0710  (249,464 tokens, 13 calls)
-  gem-implementer              $0.2285  (921,674 tokens, 25 calls)
-  gem-implementer              $0.1443  (498,904 tokens, 16 calls)
-  gem-implementer              $0.1272  (390,928 tokens, 12 calls)
-  gem-implementer              $0.0739  (237,340 tokens, 11 calls)
-  gem-implementer              $0.1460  (491,064 tokens, 17 calls)
-  gem-implementer              $0.0662  (237,889 tokens, 13 calls)
-  gem-implementer              $0.1084  (384,711 tokens, 17 calls)
-  gem-implementer              $0.0567  (200,576 tokens, 11 calls)
-  gem-implementer              $0.0705  (264,615 tokens, 14 calls)
-  gem-implementer              $0.1475  (559,086 tokens, 18 calls)
-  gem-implementer              $0.0664  (250,773 tokens, 13 calls)
-  gem-implementer              $0.2689  (892,953 tokens, 20 calls)
-  gem-implementer              $0.3581  (1,621,614 tokens, 41 calls)
-  gem-implementer              $0.3101  (1,186,372 tokens, 23 calls)
-  gem-implementer              $0.1841  (725,703 tokens, 24 calls)
-  gem-implementer              $0.1766  (649,319 tokens, 19 calls)
-  gem-implementer              $0.1274  (467,329 tokens, 18 calls)
-  gem-implementer              $0.2274  (773,955 tokens, 18 calls)
-  gem-implementer              $0.4924  (1,608,590 tokens, 26 calls)
-  gem-implementer              $0.2364  (775,928 tokens, 25 calls)
-  gem-implementer              $0.0637  (224,987 tokens, 12 calls)
-  gem-implementer              $0.1477  (423,423 tokens, 13 calls)
-  gem-implementer              $0.2179  (755,742 tokens, 15 calls)
-  gem-implementer              $0.0821  (206,809 tokens, 11 calls)
-  gem-implementer              $0.2907  (774,725 tokens, 15 calls)
-  gem-implementer              $0.0248  (55,956 tokens, 4 calls)
-  gem-reviewer                 $0.1667  (232,564 tokens, 9 calls)
-  gem-implementer              $0.0224  (67,479 tokens, 5 calls)
-  gem-documentation-writer     $0.3556  (1,105,559 tokens, 15 calls)
+  explore                      $0.2786  (742,591 tokens, 15 calls)
 ─────────────────────────────────────────────────────────────────────────
-Subagent Total:            $9.1321  (28,237,968 tokens, 775 calls)
+Subagent Total:            $0.2786  (742,591 tokens, 15 calls)
 
 ═══════════════════════════════════════════════════════════════════════════
 SUMMARY
 ─────────────────────────────────────────────────────────────────────────
 
                           Cost        Tokens          API Calls
-  Main session:      $    1.1317     2,477,442            31
-  Subagents:         $    9.1321    28,237,968           775
+  Main session:      $    5.1414    27,809,784           198
+  Subagents:         $    0.2786       742,591            15
 ─────────────────────────────────────────────────────────────────────────
-  TOTAL:             $   10.2637    30,715,410           806
+  TOTAL:             $    5.4200    28,552,375           213
 
 ═══════════════════════════════════════════════════════════════════════════
