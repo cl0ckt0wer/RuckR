@@ -12,25 +12,31 @@ const offlineAssetsInclude = [ /\.dll$/, /\.pdb$/, /\.wasm/, /\.html/, /\.js$/, 
 const offlineAssetsExclude = [ /^service-worker\.js$/ ];
 
 async function onInstall(event) {
-    console.info('Service worker: Install');
+     console.info('Service worker: Install');
 
-    // Fetch and cache all matching items from the assets manifest
-    const assetsRequests = self.assetsManifest.assets
-        .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
-        .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
-        .map(asset => new Request(asset.url, { integrity: asset.hash, cache: 'no-cache' }));
-    await caches.open(cacheName).then(cache => cache.addAll(assetsRequests));
-}
+     // Fetch and cache all matching items from the assets manifest
+     const assetsRequests = self.assetsManifest.assets
+         .filter(asset => offlineAssetsInclude.some(pattern => pattern.test(asset.url)))
+         .filter(asset => !offlineAssetsExclude.some(pattern => pattern.test(asset.url)))
+         .map(asset => new Request(asset.url, { integrity: asset.hash, cache: 'no-cache' }));
+     await caches.open(cacheName).then(cache => cache.addAll(assetsRequests));
 
-async function onActivate(event) {
-    console.info('Service worker: Activate');
+     // Activate immediately so the new SW takes over without waiting for all tabs to close
+     await self.skipWaiting();
+ }
 
-    // Delete unused caches
-    const cacheKeys = await caches.keys();
-    await Promise.all(cacheKeys
-        .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
-        .map(key => caches.delete(key)));
-}
+ async function onActivate(event) {
+     console.info('Service worker: Activate');
+
+     // Take control of all clients immediately
+     await self.clients.claim();
+
+     // Delete unused caches
+     const cacheKeys = await caches.keys();
+     await Promise.all(cacheKeys
+         .filter(key => key.startsWith(cacheNamePrefix) && key !== cacheName)
+         .map(key => caches.delete(key)));
+ }
 
 async function onFetch(event) {
     let cachedResponse = null;

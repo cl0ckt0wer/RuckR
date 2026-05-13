@@ -1,4 +1,10 @@
+using System.Net.Http;
+using System.Text;
+using System.Diagnostics;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Identity;
@@ -58,8 +64,12 @@ builder.Services.AddScoped<SeedService>();
 
 builder.Services.AddSingleton<ILocationTracker, LocationTracker>();
 builder.Services.AddScoped<IBattleResolver, BattleResolver>();
+builder.Services.AddScoped<IBattleService, BattleService>();
+builder.Services.AddScoped<IProfileService, ProfileService>();
+builder.Services.AddScoped<IRateLimitService, RateLimitService>();
 builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
 builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
+builder.Services.AddHostedService<ChallengeCleanupService>();
 
 builder.Services.AddDbContext<RuckRDbContext>(options =>
     options.UseSqlServer(
@@ -72,6 +82,7 @@ builder.Services.AddDefaultIdentity<IdentityUser>(options =>
 {
     options.SignIn.RequireConfirmedAccount = false; // MVP: no email confirmation
 })
+.AddDefaultUI()
 .AddEntityFrameworkStores<RuckRDbContext>();
 
 builder.Services.AddAuthorization();
@@ -82,6 +93,8 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.AccessDeniedPath = "/Identity/Account/AccessDenied";
     options.ExpireTimeSpan = TimeSpan.FromDays(14);
     options.SlidingExpiration = true;
+    options.Cookie.SameSite = SameSiteMode.None;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     options.Events.OnRedirectToLogin = context =>
     {
         if (context.Request.Path.StartsWithSegments("/api"))
@@ -140,20 +153,108 @@ builder.Services.Configure<OpenTelemetry.Logs.OpenTelemetryLoggerOptions>(option
     options.IncludeFormattedMessage = true;
 });
 
-// Point WebRootPath to Client build output so UseBlazorFrameworkFiles() finds _framework
-var clientWwwroot = Path.GetFullPath(Path.Combine(
-    builder.Environment.ContentRootPath,
-    "..", "..", "..", "Client", "bin",
-    builder.Environment.IsDevelopment() ? "Debug" : "Release",
-    "net10.0", "wwwroot"));
-if (Directory.Exists(clientWwwroot))
+// ── GeoBlazor/ArcGIS key bridge ──
+// GeoBlazor reads IConfiguration on the client side.
+// In hosted Blazor WASM, the client loads wwwroot/appsettings*.json at runtime.
+// This middleware injects only the explicit map keys from env vars into the
+// JSON response, so the keys are never committed to source control.
+var arcGisApiKey = GetEnvironmentSecret("ArcGISApiKey", "ARC_GIS_API_KEY");
+var arcGisPortalItemId = GetEnvironmentSecret("ArcGISPortalItemId", "ARC_GIS_PORTAL_ITEM_ID");
+var geoBlazorLicenseKey = GetEnvironmentSecret(
+    "GeoBlazor__LicenseKey",
+    "GeoBlazor:LicenseKey",
+    "GeoBlazor__RegistrationKey",
+    "GeoBlazor:RegistrationKey",
+    "GEOBLAZOR_LICENSE_KEY",
+    "GEOBLAZOR_REGISTRATION_KEY",
+    "GEOBLAZOR_API");
+
+if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGisPortalItemId) || !string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
 {
-    builder.WebHost.UseWebRoot(clientWwwroot);
+    builder.Logging.AddFilter("GeoBlazorConfiguration", LogLevel.Debug);
 }
 
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// Serve client appsettings with GeoBlazor/ArcGIS key injection (before static files).
+if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGisPortalItemId) || !string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
+{
+    app.Use(async (context, next) =>
+    {
+        var path = context.Request.Path.Value ?? "";
+        if (path.StartsWith("/appsettings") && path.EndsWith(".json"))
+        {
+            var filePath = ResolveClientAppSettingsPath(app.Environment, path);
+            if (filePath is not null)
+            {
+                var json = await System.IO.File.ReadAllTextAsync(filePath);
+                var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
+
+                if (!string.IsNullOrWhiteSpace(arcGisApiKey))
+                {
+                    root["ArcGISApiKey"] = arcGisApiKey;
+                }
+
+                if (!string.IsNullOrWhiteSpace(arcGisPortalItemId))
+                {
+                    root["ArcGISPortalItemId"] = arcGisPortalItemId;
+                }
+
+                if (!string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
+                {
+                    var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
+                    geoBlazor["LicenseKey"] = geoBlazorLicenseKey;
+                    root["GeoBlazor"] = geoBlazor;
+                }
+
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsync(root.ToJsonString());
+                return;
+            }
+        }
+        await next();
+    });
+}
+
+static string? ResolveClientAppSettingsPath(IWebHostEnvironment environment, string requestPath)
+{
+    var relativePath = requestPath.TrimStart('/');
+    var configuration = environment.IsDevelopment() ? "Debug" : "Release";
+    var candidateRoots = new[]
+    {
+        environment.WebRootPath,
+        Path.GetFullPath(Path.Combine(environment.ContentRootPath, "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
+        Path.GetFullPath(Path.Combine(environment.ContentRootPath, "..", "Client", "wwwroot"))
+    };
+
+    foreach (var root in candidateRoots)
+    {
+        if (string.IsNullOrWhiteSpace(root))
+            continue;
+
+        var path = Path.Combine(root, relativePath);
+        if (System.IO.File.Exists(path))
+            return path;
+    }
+
+    return null;
+}
+
+static string? GetEnvironmentSecret(params string[] names)
+{
+    foreach (var name in names)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+    }
+
+    return null;
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -170,10 +271,113 @@ else
 
 app.UseHttpLogging();
 
+// ── Jaeger Reverse Proxy ──
+// The SPA fallback (MapFallbackToFile) catches all unmatched paths,
+// so we intercept /jaeger/* before Blazor serves the SPA shell.
+app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/jaeger"), proxy =>
+{
+    var target = "http://localhost:16686";
+    var client = new HttpClient();
+
+    proxy.Run(async ctx =>
+    {
+        var path = ctx.Request.Path.Value ?? "";
+        var query = ctx.Request.QueryString.Value ?? "";
+        var targetUri = $"{target}{path}{query}";
+
+        var request = new HttpRequestMessage();
+        request.RequestUri = new Uri(targetUri);
+        request.Method = new HttpMethod(ctx.Request.Method);
+
+        // Copy request headers (excluding hop-by-hop and content-length)
+        foreach (var header in ctx.Request.Headers)
+        {
+            if (header.Key.Equals("Host", StringComparison.OrdinalIgnoreCase))
+            {
+                request.Headers.Host = "localhost:16686";
+            }
+            else if (!header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)
+                     && !header.Key.Equals("Connection", StringComparison.OrdinalIgnoreCase)
+                     && !header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        // Forward request body for non-GET requests
+        if (ctx.Request.ContentLength > 0)
+        {
+            var stream = new MemoryStream();
+            await ctx.Request.Body.CopyToAsync(stream);
+            stream.Position = 0;
+            request.Content = new StreamContent(stream);
+        }
+
+        try
+        {
+            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctx.RequestAborted);
+
+            ctx.Response.StatusCode = (int)response.StatusCode;
+
+            // Copy response headers
+            foreach (var header in response.Headers)
+            {
+                if (!header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
+                {
+                    ctx.Response.Headers[header.Key] = header.Value.ToArray();
+                }
+            }
+
+            // Copy response body
+            await response.Content.CopyToAsync(ctx.Response.Body);
+        }
+        catch (Exception ex)
+        {
+            ctx.Response.StatusCode = 502;
+            await ctx.Response.WriteAsync($"Jaeger proxy error: {ex.Message}");
+        }
+    });
+});
+
 app.UseBlazorFrameworkFiles();
-app.MapStaticAssets();
+
+    // Prevent caching of Blazor WASM files between deploys.
+    // The service worker handles offline caching; the browser HTTP cache should
+    // always fetch fresh so users don't need Ctrl+Shift+R after an update.
+    app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/_framework"), framework =>
+    {
+        framework.Use(async (context, next) =>
+        {
+            context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            context.Response.Headers["Pragma"] = "no-cache";
+            context.Response.Headers["Expires"] = "0";
+            await next();
+        });
+    });
+
+    app.MapStaticAssets();
 
 app.UseRouting();
+
+app.UseCookiePolicy();
+
+// Security headers — set CSP server-side so browsers respect it for all responses
+// including the /.well-known/webauthn probe that Safari fires on every page.
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline' https://js.arcgis.com; " +
+        "worker-src 'self' blob:; " +
+        "style-src 'self' 'unsafe-inline' https:; " +
+        "img-src 'self' data: blob: https:; " +
+        "connect-src 'self' wss: https:; " +
+        "font-src 'self' data: https://js.arcgis.com; " +
+        "frame-ancestors 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'";
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -181,6 +385,10 @@ app.UseAuthorization();
 app.MapRazorPages().WithStaticAssets();
 app.MapControllers().WithStaticAssets();
 app.MapHub<BattleHub>("/battlehub");
+
+// Respond 204 to Safari's WebAuthn domain-probe to avoid CSP console warnings.
+app.MapGet("/.well-known/webauthn", () => Results.StatusCode(204));
+
 app.MapGet("/Identity/Account/UserInfo", async (HttpContext context) =>
 {
     if (context.User.Identity?.IsAuthenticated == true)
@@ -192,17 +400,39 @@ app.MapGet("/Identity/Account/UserInfo", async (HttpContext context) =>
 
 app.MapFallbackToFile("index.html");
 
-// Apply EF Core migrations, then seed data on startup
+// Apply EF Core migrations, then seed data on startup.
+// Use a SQL-native app lock to prevent concurrent migrations during rolling deploys.
 try
 {
     using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<RuckRDbContext>();
-    await dbContext.Database.MigrateAsync();
+    var conn = dbContext.Database.GetDbConnection();
+    await conn.OpenAsync();
+    try
+    {
+        await using var acquire = conn.CreateCommand();
+        acquire.CommandText = "DECLARE @res int; EXEC @res = sp_getapplock @Resource='RuckR:EFMigrate', @LockMode='Exclusive', @LockOwner='Session', @LockTimeout=30000; SELECT @res;";
+        var acquireResult = Convert.ToInt32(await acquire.ExecuteScalarAsync());
+        if (acquireResult < 0)
+        {
+            throw new InvalidOperationException($"Unable to acquire migration lock (sp_getapplock result: {acquireResult}).");
+        }
+
+        await dbContext.Database.MigrateAsync();
+
+        await using var release = conn.CreateCommand();
+        release.CommandText = "EXEC sp_releaseapplock @Resource='RuckR:EFMigrate', @LockOwner='Session';";
+        await release.ExecuteNonQueryAsync();
+    }
+    finally
+    {
+        await conn.CloseAsync();
+    }
 }
 catch (Exception ex)
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogWarning(ex, "Database migration skipped — database may not be available yet.");
+    logger.LogError(ex, "Database migration failed");
 }
 
 try
