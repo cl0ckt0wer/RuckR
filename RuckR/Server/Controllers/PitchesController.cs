@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using RuckR.Server.Data;
+using RuckR.Server.Services;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
@@ -14,17 +14,16 @@ namespace RuckR.Server.Controllers
     {
         private const int MaxPitchesPerUserPerDay = 5;
 
-        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
-
-        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
         private static readonly GeometryFactory _geometryFactory =
             NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
         private readonly RuckRDbContext _db;
+        private readonly IRateLimitService _rateLimitService;
 
-        public PitchesController(RuckRDbContext db)
+        public PitchesController(RuckRDbContext db, IRateLimitService rateLimitService)
         {
             _db = db;
+            _rateLimitService = rateLimitService;
         }
 
         /// <summary>
@@ -40,6 +39,8 @@ namespace RuckR.Server.Controllers
             if (pageSize > 100) pageSize = 100;
 
             var pitches = await _db.Pitches
+                .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
+                          && !(p.Location.Y == -1 && p.Location.X == -1))
                 .OrderBy(p => p.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -68,6 +69,8 @@ namespace RuckR.Server.Controllers
 
             var pitches = await _db.Pitches
                 .Where(p => p.Location.IsWithinDistance(searchPoint, radius))
+                .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
+                          && !(p.Location.Y == -1 && p.Location.X == -1))
                 .ToListAsync();
 
             return Ok(pitches);
@@ -101,6 +104,10 @@ namespace RuckR.Server.Controllers
                 return BadRequest("Latitude must be between -90 and 90 degrees.");
             if (request.Longitude < -180 || request.Longitude > 180)
                 return BadRequest("Longitude must be between -180 and 180 degrees.");
+            if (IsNullIsland(request.Latitude, request.Longitude))
+                return BadRequest("Latitude and longitude cannot both be zero. Provide a real location.");
+            if (IsSentinelLocation(request.Latitude, request.Longitude))
+                return BadRequest("Location appears to be a placeholder (-1,-1). Provide a real location.");
 
             // Validate PitchType
             if (!Enum.TryParse<PitchType>(request.Type, ignoreCase: true, out var pitchType))
@@ -112,7 +119,7 @@ namespace RuckR.Server.Controllers
                 return Unauthorized("User identity not found.");
 
             // --- Rate limiting ---
-            if (!CheckRateLimit(userId))
+            if (!await _rateLimitService.IsAllowedAsync(userId, "create_pitch", MaxPitchesPerUserPerDay, TimeSpan.FromHours(24)))
                 return StatusCode(429, "Rate limit exceeded. You can create up to 5 pitches per 24 hours.");
 
             var requestPoint = _geometryFactory.CreatePoint(new Coordinate(request.Longitude, request.Latitude));
@@ -140,35 +147,17 @@ namespace RuckR.Server.Controllers
         }
 
         /// <summary>
-        /// Checks if the user has exceeded their daily rate limit.
-        /// Thread-safe via ConcurrentDictionary.
-        /// </summary>
-        private bool CheckRateLimit(string userId)
-        {
-            var now = DateTime.UtcNow;
-            var cutoff = now.AddHours(-24);
-
-            var userTimestamps = _rateLimitTracker.GetOrAdd(userId, _ => new List<DateTime>());
-
-            lock (userTimestamps)
-            {
-                // Remove entries older than 24 hours
-                userTimestamps.RemoveAll(ts => ts < cutoff);
-
-                if (userTimestamps.Count >= MaxPitchesPerUserPerDay)
-                    return false;
-
-                userTimestamps.Add(now);
-                return true;
-            }
-        }
-
-        /// <summary>
         /// Extracts the current user's ID from the authenticated principal.
         /// </summary>
         private string GetCurrentUserId()
         {
             return User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? string.Empty;
         }
+
+        private static bool IsNullIsland(double lat, double lng) =>
+            Math.Abs(lat) < 0.05 && Math.Abs(lng) < 0.05;
+
+        private static bool IsSentinelLocation(double lat, double lng) =>
+            Math.Abs(lat - (-1)) < 0.01 && Math.Abs(lng - (-1)) < 0.01;
     }
 }
