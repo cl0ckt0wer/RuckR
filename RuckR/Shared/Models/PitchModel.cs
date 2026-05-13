@@ -1,5 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 using NetTopologySuite.Geometries;
 
 namespace RuckR.Shared.Models
@@ -19,8 +21,18 @@ namespace RuckR.Shared.Models
         /// Use /pitches/nearby endpoint for spatial queries.
         /// </summary>
         [Required]
-        [System.Text.Json.Serialization.JsonIgnore]
+        [JsonIgnore]
         public Point Location { get; set; } = null!;
+
+        /// <summary>Latitude — populated from Location at query time, serialized for the client.</summary>
+        [NotMapped]
+        [JsonPropertyName("latitude")]
+        public double Latitude { get; set; }
+
+        /// <summary>Longitude — populated from Location at query time, serialized for the client.</summary>
+        [NotMapped]
+        [JsonPropertyName("longitude")]
+        public double Longitude { get; set; }
 
         [Required]
         public string CreatorUserId { get; set; } = string.Empty;

@@ -38,40 +38,52 @@ namespace RuckR.Server.Controllers
             if (pageSize < 1) pageSize = 20;
             if (pageSize > 100) pageSize = 100;
 
-            var pitches = await _db.Pitches
-                .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
-                          && !(p.Location.Y == -1 && p.Location.X == -1))
-                .OrderBy(p => p.CreatedAt)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+var pitches = await _db.Pitches
+                 .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
+                           && !(p.Location.Y == -1 && p.Location.X == -1))
+                 .OrderBy(p => p.CreatedAt)
+                 .Skip((page - 1) * pageSize)
+                 .Take(pageSize)
+                 .ToListAsync();
 
-            return Ok(pitches);
-        }
+             foreach (var p in pitches)
+             {
+                 p.Latitude = p.Location.Y;
+                 p.Longitude = p.Location.X;
+             }
 
-        /// <summary>
-        /// GET /pitches/nearby — proximity search for pitches within a radius.
-        /// </summary>
-        [HttpGet("nearby")]
-        public async Task<ActionResult<List<PitchModel>>> GetNearbyPitches(
-            [FromQuery] double lat,
-            [FromQuery] double lng,
-            [FromQuery] double radius = 5000)
-        {
-            if (lat < -90 || lat > 90)
-                return BadRequest("Latitude must be between -90 and 90 degrees.");
-            if (lng < -180 || lng > 180)
-                return BadRequest("Longitude must be between -180 and 180 degrees.");
-            if (radius <= 0 || radius > 50_000)
-                return BadRequest("Radius must be between 1 and 50000 meters.");
+             return Ok(pitches);
+         }
 
-            var searchPoint = _geometryFactory.CreatePoint(new Coordinate(lng, lat));
+         /// <summary>
+         /// GET /pitches/nearby — proximity search for pitches within a radius.
+         /// </summary>
+         [HttpGet("nearby")]
+         public async Task<ActionResult<List<PitchModel>>> GetNearbyPitches(
+             [FromQuery] double lat,
+             [FromQuery] double lng,
+             [FromQuery] double radius = 5000)
+         {
+             if (lat < -90 || lat > 90)
+                 return BadRequest("Latitude must be between -90 and 90 degrees.");
+             if (lng < -180 || lng > 180)
+                 return BadRequest("Longitude must be between -180 and 180 degrees.");
+             if (radius <= 0 || radius > 50_000)
+                 return BadRequest("Radius must be between 1 and 50000 meters.");
 
-            var pitches = await _db.Pitches
-                .Where(p => p.Location.IsWithinDistance(searchPoint, radius))
-                .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
-                          && !(p.Location.Y == -1 && p.Location.X == -1))
-                .ToListAsync();
+             var searchPoint = _geometryFactory.CreatePoint(new Coordinate(lng, lat));
+
+             var pitches = await _db.Pitches
+                 .Where(p => p.Location.IsWithinDistance(searchPoint, radius))
+                 .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
+                           && !(p.Location.Y == -1 && p.Location.X == -1))
+                 .ToListAsync();
+
+             foreach (var p in pitches)
+             {
+                 p.Latitude = p.Location.Y;
+                 p.Longitude = p.Location.X;
+             }
 
             return Ok(pitches);
         }
