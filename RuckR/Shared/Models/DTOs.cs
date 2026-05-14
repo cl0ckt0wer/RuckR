@@ -60,7 +60,9 @@ namespace RuckR.Shared.Models
         double Latitude,
         double Longitude,
         DateTime ExpiresAtUtc,
-        int SuccessChancePercent);
+        int SuccessChancePercent,
+        string? ParkName = null,
+        string? ParkPlaceId = null);
 
     public sealed record RecruitmentAttemptRequest(
         [Required] Guid EncounterId,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # v2 — Native bash, zero manual steps. One command to publish, deploy, and verify.
-# Usage: ./scripts/publish-exe-dev.sh [--skip-build] [--skip-restart] [--yes]
+# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--skip-build] [--no-restore] [--skip-restart] [--yes]
 set -euo pipefail
 
 SSH_HOST="ruckr.exe.xyz"
@@ -13,11 +13,12 @@ SERVER_CSPROJ="$REPO_ROOT/RuckR/Server/RuckR.Server.csproj"
 LOCAL_BACKUP_DIR="${RUCKR_LOCAL_BACKUP_DIR:-/mnt/c/Users/clock/dbbackups}"
 RELEASE_ID=$(date +%Y%m%d%H%M%S)
 PREV_RELEASE=""
+RELEASES_TO_KEEP=10
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; MAGENTA='\033[0;35m'; BOLD='\033[1m'; NC='\033[0m'
 
-SKIP_BUILD=false; SKIP_RESTART=false; NONINTERACTIVE=false
-for arg in "$@"; do case "$arg" in --skip-build) SKIP_BUILD=true ;; --skip-restart) SKIP_RESTART=true ;; --yes|-y) NONINTERACTIVE=true ;; *) echo "Unknown: $arg"; exit 1 ;; esac; done
+APP_ONLY=false; SKIP_BUILD=false; NO_RESTORE=false; SKIP_RESTART=false; NONINTERACTIVE=false
+for arg in "$@"; do case "$arg" in --app-only) APP_ONLY=true ;; --skip-build) SKIP_BUILD=true ;; --no-restore) NO_RESTORE=true ;; --skip-restart) SKIP_RESTART=true ;; --yes|-y) NONINTERACTIVE=true ;; *) echo "Unknown: $arg"; exit 1 ;; esac; done
 
 step()   { echo -e "\n${CYAN}━━━ ${BOLD}$1${NC}"; }
 info()   { echo -e "  ${BOLD}$1${NC} $2"; }
@@ -90,12 +91,16 @@ dotnet --version | xargs -I{} echo "  .NET SDK: {}"
 ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_HOST" "echo ok" 2>/dev/null && ok "SSH to $SSH_HOST" || fail "SSH to $SSH_HOST failed. Check connectivity and credentials."
 
 # ── Publish ──
-step "3/10  Building framework-dependent linux-x64"
+step "3/10  Building portable framework-dependent app"
 if $SKIP_BUILD; then
   warn "Skipping build (--skip-build)"
 else
   rm -rf "$PUBLISH_DIR"
-  run dotnet publish "$SERVER_CSPROJ" -c Release -r linux-x64 --no-self-contained -o "$PUBLISH_DIR"
+  publish_args=(publish "$SERVER_CSPROJ" -c Release -o "$PUBLISH_DIR")
+  if $NO_RESTORE; then
+    publish_args+=(--no-restore)
+  fi
+  run dotnet "${publish_args[@]}"
   size=$(du -sh "$PUBLISH_DIR" | cut -f1)
   ok "Published ($size)"
 fi
@@ -109,37 +114,41 @@ ok "Compressed ($archive_mb)"
 
 # ── Ensure VM infra (runtime, SQL, Jaeger) ──
 step "5/10  Checking VM infrastructure"
-runtime=$(ssh "$SSH_HOST" '/usr/share/dotnet/dotnet --list-runtimes 2>/dev/null | grep -c "ASP.NETCore 10\.0" || true')
-if [ "$runtime" -eq 0 ]; then
-  info "Installing" ".NET 10 runtime..."
-  ssh "$SSH_HOST" 'wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && chmod +x /tmp/dotnet-install.sh && sudo /tmp/dotnet-install.sh --channel 10.0 --runtime aspnetcore --install-dir /usr/share/dotnet'
-  ok ".NET 10 runtime installed"
+if $APP_ONLY; then
+  warn "Skipping VM runtime/container checks (--app-only)"
 else
-  ok ".NET 10 runtime present"
-fi
+  runtime=$(ssh "$SSH_HOST" '/usr/share/dotnet/dotnet --list-runtimes 2>/dev/null | grep -c "ASP.NETCore 10\.0" || true')
+  if [ "$runtime" -eq 0 ]; then
+    info "Installing" ".NET 10 runtime..."
+    ssh "$SSH_HOST" 'wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && chmod +x /tmp/dotnet-install.sh && sudo /tmp/dotnet-install.sh --channel 10.0 --runtime aspnetcore --install-dir /usr/share/dotnet'
+    ok ".NET 10 runtime installed"
+  else
+    ok ".NET 10 runtime present"
+  fi
 
-sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null')
-if [ -z "$sql" ]; then
-  info "Starting" "SQL Server container..."
-  # Data persisted to host volume — survives container recreation
-  ssh "$SSH_HOST" "docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$PASSWORD -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
-  for i in $(seq 1 20); do
-    ready=$(ssh "$SSH_HOST" 'docker logs ruckr-sql 2>&1 | grep -q "SQL Server is now ready" && echo ready || echo waiting')
-    [ "$ready" = "ready" ] && break
-    sleep 3
-  done
-  ok "SQL Server ready"
-else
-  ok "SQL Server container running"
-fi
+  sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null')
+  if [ -z "$sql" ]; then
+    info "Starting" "SQL Server container..."
+    # Data persisted to host volume — survives container recreation
+    ssh "$SSH_HOST" "docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$PASSWORD -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
+    for i in $(seq 1 20); do
+      ready=$(ssh "$SSH_HOST" 'docker logs ruckr-sql 2>&1 | grep -q "SQL Server is now ready" && echo ready || echo waiting')
+      [ "$ready" = "ready" ] && break
+      sleep 3
+    done
+    ok "SQL Server ready"
+  else
+    ok "SQL Server container running"
+  fi
 
-jaeger=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-jaeger" --format "{{.Names}}" 2>/dev/null')
-if [ -z "$jaeger" ]; then
-  info "Starting" "Jaeger container..."
-  ssh "$SSH_HOST" "docker rm -f ruckr-jaeger 2>/dev/null; docker run -d --name ruckr-jaeger --restart unless-stopped -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 --memory 256m -e QUERY_BASE_PATH=/jaeger jaegertracing/all-in-one:latest"
-  ok "Jaeger started"
-else
-  ok "Jaeger container running"
+  jaeger=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-jaeger" --format "{{.Names}}" 2>/dev/null')
+  if [ -z "$jaeger" ]; then
+    info "Starting" "Jaeger container..."
+    ssh "$SSH_HOST" "docker rm -f ruckr-jaeger 2>/dev/null; docker run -d --name ruckr-jaeger --restart unless-stopped -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 --memory 256m -e QUERY_BASE_PATH=/jaeger jaegertracing/all-in-one:latest"
+    ok "Jaeger started"
+  else
+    ok "Jaeger container running"
+  fi
 fi
 
 # ── Deploy secrets ──
@@ -182,6 +191,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 ArcGISApiKey='$ARC_GIS_KEY'
 ArcGISPortalItemId='$ARC_GIS_PORTAL_ITEM_ID'
 GeoBlazor__LicenseKey='$esc_geoblazor'
+GeoBlazor__RegistrationKey='$esc_geoblazor'
 APPEOF
 ssh "$SSH_HOST" "chmod 600 $DEPLOY_DIR/app.env"
 ok "secrets.env and app.env deployed (chmod 600)"
@@ -229,6 +239,9 @@ fi
 
 # ── Install systemd service ──
 step "7/10  Installing systemd service"
+if $APP_ONLY; then
+  warn "Skipping systemd service install (--app-only)"
+else
 cat <<UNIT | ssh "$SSH_HOST" "sudo tee /etc/systemd/system/ruckr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ruckr.service > /dev/null"
 [Unit]
 Description=RuckR Server
@@ -243,7 +256,7 @@ EnvironmentFile=$ABS_DEPLOY_DIR/app.env
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
 Environment=DOTNET_ROOT=/usr/share/dotnet
-ExecStart=$ABS_DEPLOY_DIR/current/RuckR.Server
+ExecStart=/usr/share/dotnet/dotnet $ABS_DEPLOY_DIR/current/RuckR.Server.dll
 Restart=always
 RestartSec=5
 KillSignal=SIGINT
@@ -254,6 +267,7 @@ SyslogIdentifier=ruckr
 WantedBy=multi-user.target
 UNIT
 ok "ruckr.service installed and enabled"
+fi
 
 # ── Capture current symlink for rollback ──
 step "8/10  Deploying release $RELEASE_ID"
@@ -261,8 +275,12 @@ PREV_RELEASE=$(ssh "$SSH_HOST" "readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null 
 
 ssh "$SSH_HOST" "mkdir -p $DEPLOY_DIR/releases/$RELEASE_ID"
 run scp "$ARCHIVE" "$SSH_HOST:/tmp/publish.tar.gz"
-ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases/$RELEASE_ID && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && chmod +x RuckR.Server && ln -sfn $ABS_DEPLOY_DIR/releases/$RELEASE_ID $ABS_DEPLOY_DIR/current && echo 'extracted and linked'"
+ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases/$RELEASE_ID && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && ln -sfn $ABS_DEPLOY_DIR/releases/$RELEASE_ID $ABS_DEPLOY_DIR/current && echo 'extracted and linked'"
 ok "Deployed current → releases/$RELEASE_ID"
+
+step "8b/10  Pruning old releases"
+ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases && current=\$(readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
+ok "Kept newest $RELEASES_TO_KEEP releases"
 
 # ── Restart & verify ──
 step "9/10  Restarting server"
@@ -308,8 +326,12 @@ else
   fi
 
   info "Configuring" "exe.dev proxy..."
-  ssh exe.dev share port ruckr 5000 2>/dev/null || true
-  ssh exe.dev share set-public ruckr 2>/dev/null || true
+  if $APP_ONLY; then
+    warn "Skipping exe.dev proxy config (--app-only)"
+  else
+    ssh exe.dev share port ruckr 5000 2>/dev/null || true
+    ssh exe.dev share set-public ruckr 2>/dev/null || true
+  fi
 fi
 
 # ── Summary ──

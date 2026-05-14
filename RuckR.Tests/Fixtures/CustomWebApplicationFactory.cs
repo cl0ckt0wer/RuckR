@@ -30,6 +30,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     {
         private readonly MsSqlContainer _dbContainer;
         private readonly TestLocationTracker _locationTracker = new();
+        private readonly TestRealWorldParkService _parkService = new();
         private string _serverAddress = string.Empty;
         private WebApplication? _kestrelApp;
 
@@ -46,6 +47,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     }
 
     public TestLocationTracker LocationTracker => _locationTracker;
+
+    public TestRealWorldParkService ParkService => _parkService;
 
     /// <summary>
     /// Returns the Kestrel server's base address (e.g. http://127.0.0.1:51234/) for
@@ -127,6 +130,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         builder.Services.AddScoped<IProfileService, ProfileService>();
         builder.Services.AddScoped<IRateLimitService, RateLimitService>();
         builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
+        builder.Services.AddMemoryCache();
+        builder.Services.AddSingleton<IRealWorldParkService>(_parkService);
         builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
 
         // Replace DbContext with test container
@@ -303,6 +308,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             services.RemoveAll<ILocationTracker>();
             services.AddSingleton<ILocationTracker>(_locationTracker);
 
+            services.RemoveAll<IRealWorldParkService>();
+            services.AddSingleton<IRealWorldParkService>(_parkService);
+
             services.AddAuthentication(options =>
             {
                 options.DefaultAuthenticateScheme = TestAuthHandler.TestScheme;
@@ -413,5 +421,59 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         }
 
         return null;
+    }
+}
+
+public sealed class TestRealWorldParkService : IRealWorldParkService
+{
+    private readonly object _syncRoot = new();
+    private IReadOnlyList<RealWorldPark>? _parks;
+
+    public void UseDefaultPark()
+    {
+        lock (_syncRoot)
+        {
+            _parks = null;
+        }
+    }
+
+    public void UseNoParks()
+    {
+        lock (_syncRoot)
+        {
+            _parks = Array.Empty<RealWorldPark>();
+        }
+    }
+
+    public void UseParks(params RealWorldPark[] parks)
+    {
+        lock (_syncRoot)
+        {
+            _parks = parks;
+        }
+    }
+
+    public Task<IReadOnlyList<RealWorldPark>> FindNearbyParksAsync(
+        double latitude,
+        double longitude,
+        double radiusMeters,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<RealWorldPark>? configuredParks;
+        lock (_syncRoot)
+        {
+            configuredParks = _parks;
+        }
+
+        if (configuredParks is not null)
+        {
+            return Task.FromResult(configuredParks);
+        }
+
+        IReadOnlyList<RealWorldPark> parks =
+        [
+            new("test-park", "Test Real World Park", latitude, longitude, 0)
+        ];
+        return Task.FromResult(parks);
     }
 }

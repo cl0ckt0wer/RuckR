@@ -68,6 +68,8 @@ builder.Services.AddScoped<IBattleService, BattleService>();
 builder.Services.AddScoped<IProfileService, ProfileService>();
 builder.Services.AddScoped<IRateLimitService, RateLimitService>();
 builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<IRealWorldParkService, ArcGisPlacesParkService>();
 builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
 builder.Services.AddHostedService<ChallengeCleanupService>();
 
@@ -212,10 +214,14 @@ if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGi
                 {
                     var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
                     geoBlazor["LicenseKey"] = geoBlazorLicenseKey;
+                    geoBlazor["RegistrationKey"] = geoBlazorLicenseKey;
                     root["GeoBlazor"] = geoBlazor;
                 }
 
                 context.Response.ContentType = "application/json; charset=utf-8";
+                context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+                context.Response.Headers["Pragma"] = "no-cache";
+                context.Response.Headers["Expires"] = "0";
                 await context.Response.WriteAsync(root.ToJsonString());
                 return;
             }
@@ -347,25 +353,51 @@ app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/jaeger"), proxy =>
 
 app.UseBlazorFrameworkFiles();
 
-    // Prevent caching of Blazor WASM files between deploys.
-    // The service worker handles offline caching; the browser HTTP cache should
-    // always fetch fresh so users don't need Ctrl+Shift+R after an update.
-    app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/_framework"), framework =>
+app.UseWhen(ctx => ctx.Request.Path.Equals("/service-worker.js", StringComparison.OrdinalIgnoreCase), serviceWorker =>
+{
+    serviceWorker.Use(async (context, next) =>
     {
-        framework.Use(async (context, next) =>
-        {
-            context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-            context.Response.Headers["Pragma"] = "no-cache";
-            context.Response.Headers["Expires"] = "0";
-            await next();
-        });
+        context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
+        await next();
     });
+});
+
+// Keep boot/runtime manifests fresh, but let fingerprinted WASM assets use the
+// static-asset pipeline's immutable caching and precompressed responses.
+app.UseWhen(ctx => IsBlazorBootResource(ctx.Request.Path), framework =>
+{
+    framework.Use(async (context, next) =>
+    {
+        context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
+        await next();
+    });
+});
 
     app.MapStaticAssets();
 
 app.UseRouting();
 
 app.UseCookiePolicy();
+
+app.Use(async (context, next) =>
+{
+    if (IsSpaShellRequest(context.Request))
+    {
+        context.Response.OnStarting(() =>
+        {
+            context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+            context.Response.Headers["Pragma"] = "no-cache";
+            context.Response.Headers["Expires"] = "0";
+            return Task.CompletedTask;
+        });
+    }
+
+    await next();
+});
 
 // Security headers — set CSP server-side so browsers respect it for all responses
 // including the /.well-known/webauthn probe that Safari fires on every page.
@@ -454,5 +486,34 @@ catch (Exception ex)
 }
 
 app.Run();
+
+static bool IsBlazorBootResource(PathString path)
+{
+    return path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/_framework/blazor.webassembly.js", StringComparison.OrdinalIgnoreCase)
+        || path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsSpaShellRequest(HttpRequest request)
+{
+    if (!HttpMethods.IsGet(request.Method) && !HttpMethods.IsHead(request.Method))
+        return false;
+
+    var path = request.Path.Value ?? "";
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/Identity", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/_content", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/healthz", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/jaeger", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/.well-known", StringComparison.OrdinalIgnoreCase)
+        || Path.HasExtension(path))
+    {
+        return false;
+    }
+
+    return request.Headers.Accept.Any(value =>
+        value?.Contains("text/html", StringComparison.OrdinalIgnoreCase) == true);
+}
 
 public partial class Program { }

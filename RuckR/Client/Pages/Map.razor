@@ -17,6 +17,7 @@
 @inject ILogger<Map> Logger
 @inject IGeolocationService GeolocationService
 @inject ApiClientService ApiClient
+@inject AuthenticationStateProvider AuthStateProvider
 @inject IDispatcher Dispatcher
 @inject IState<MapState> MapState
 @inject IState<LocationState> LocationState
@@ -84,6 +85,24 @@
                 &#x1F4A1;
             </button>
         </div>
+        <div class="pitch-legend" data-testid="pitch-legend">
+            <div class="pitch-legend__title">Pitches</div>
+            <div class="pitch-legend__row">
+                <span class="pitch-legend__marker pitch-legend__marker--stadium"></span>
+                <span>Stadium</span>
+                <strong>@PitchCount(PitchType.Stadium)</strong>
+            </div>
+            <div class="pitch-legend__row">
+                <span class="pitch-legend__marker pitch-legend__marker--standard"></span>
+                <span>Standard</span>
+                <strong>@PitchCount(PitchType.Standard)</strong>
+            </div>
+            <div class="pitch-legend__row">
+                <span class="pitch-legend__marker pitch-legend__marker--training"></span>
+                <span>Training</span>
+                <strong>@PitchCount(PitchType.Training)</strong>
+            </div>
+        </div>
     }
 </div>
 
@@ -99,16 +118,20 @@
 
 @if (_selectedPitch is not null)
 {
-    <div class="map-overlay" data-testid="pitch-overlay">
+    <div class="map-overlay pitch-card pitch-card--@PitchTypeCssClass(_selectedPitch.Type)" data-testid="pitch-overlay">
         <div class="d-flex justify-content-between align-items-start mb-2">
-            <h5 class="mb-0" data-testid="pitch-name">@_selectedPitch.Name</h5>
+            <div>
+                <div class="pitch-card__eyebrow">@PitchTypeDisplayName(_selectedPitch.Type)</div>
+                <h5 class="mb-0" data-testid="pitch-name">@_selectedPitch.Name</h5>
+            </div>
             <button type="button" class="btn-close" data-testid="pitch-close" @onclick="ClearSelection" aria-label="Close"></button>
         </div>
-        <div class="mb-2">
-            <span class="badge bg-@PitchTypeBadgeClass(_selectedPitch.Type) me-2">@_selectedPitch.Type</span>
+        <div class="pitch-card__meta mb-2">
+            <span class="pitch-card__pill">@PitchTypeDescription(_selectedPitch.Type)</span>
+            <span class="pitch-card__distance">@PitchDistanceText(_selectedPitch)</span>
         </div>
-        <p class="small text-muted mb-0">
-            Lat @_selectedPitch.Latitude.ToString("F4"), Lng @_selectedPitch.Longitude.ToString("F4")
+        <p class="small text-white-50 mb-0">
+            @_selectedPitch.Latitude.ToString("F4"), @_selectedPitch.Longitude.ToString("F4")
         </p>
     </div>
 }
@@ -124,6 +147,9 @@
             <span class="badge bg-@EncounterRarityBadgeClass(_selectedEncounter.Rarity) me-2">@_selectedEncounter.Rarity</span>
             <span class="badge bg-secondary">Level @_selectedEncounter.Level</span>
         </div>
+        <p class="small text-success mb-1">
+            Recruit at @EncounterParkName(_selectedEncounter)
+        </p>
         <p class="small text-muted mb-1">
             Distance: @DistanceBucketFromPosition(_selectedEncounter.Latitude, _selectedEncounter.Longitude)
         </p>
@@ -133,6 +159,7 @@
         <button class="btn btn-sm btn-@RecruitButtonClass()"
                 data-testid="recruit-btn"
                 disabled="@(!_canRecruit)"
+                title="@_recruitBlockedReason"
                 @onclick="AttemptRecruitment">
             @if (_isRecruiting)
             {
@@ -143,6 +170,10 @@
                 @:Recruit @_selectedEncounter.Name
             }
         </button>
+        @if (!_canRecruit)
+        {
+            <p class="small mt-2 mb-0 text-warning">@_recruitBlockedReason</p>
+        }
         @if (_recruitMessage is not null)
         {
             <p class="small mt-2 mb-0 text-@_recruitMessageClass">@_recruitMessage</p>
@@ -211,6 +242,65 @@
      .map-fab:disabled {
          opacity: 0.4;
      }
+     .pitch-legend {
+         position: absolute;
+         top: 0.75rem;
+         left: 0.75rem;
+         z-index: 10;
+         min-width: 148px;
+         padding: 0.6rem 0.7rem;
+         border: 1px solid rgba(255,255,255,0.14);
+         border-radius: 0.75rem;
+         background: linear-gradient(145deg, rgba(9, 24, 30, 0.88), rgba(17, 24, 39, 0.8));
+         color: #f8fafc;
+         box-shadow: 0 14px 34px rgba(0,0,0,0.28);
+         backdrop-filter: blur(8px);
+     }
+     .pitch-legend__title {
+         margin-bottom: 0.35rem;
+         font-size: 0.72rem;
+         font-weight: 800;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+         color: rgba(226,232,240,0.78);
+     }
+     .pitch-legend__row {
+         display: grid;
+         grid-template-columns: 18px 1fr auto;
+         align-items: center;
+         gap: 0.4rem;
+         font-size: 0.78rem;
+         line-height: 1.45;
+     }
+     .pitch-legend__row strong {
+         font-size: 0.78rem;
+         color: #fff;
+     }
+     .pitch-legend__marker {
+         display: inline-block;
+         width: 12px;
+         height: 12px;
+         border: 2px solid #f8fafc;
+         box-shadow: 0 0 0 2px rgba(15,23,42,0.5);
+     }
+     .pitch-legend__marker--stadium {
+         transform: rotate(45deg);
+         background: #f59e0b;
+     }
+     .pitch-legend__marker--standard {
+         border-radius: 0.15rem;
+         background: #22c55e;
+     }
+     .pitch-legend__marker--training {
+         width: 0;
+         height: 0;
+         border-left: 7px solid transparent;
+         border-right: 7px solid transparent;
+         border-bottom: 13px solid #38bdf8;
+         border-top: 0;
+         background: transparent;
+         box-shadow: none;
+     }
 
      .map-overlay {
          position: absolute;
@@ -228,6 +318,47 @@
      }
      .map-overlay--encounter {
          border-color: rgba(74,222,128,0.4);
+     }
+     .pitch-card {
+         overflow: hidden;
+         border-width: 1px 1px 1px 5px;
+         box-shadow: 0 16px 40px rgba(0,0,0,0.32);
+     }
+     .pitch-card--stadium {
+         border-left-color: #f59e0b;
+     }
+     .pitch-card--standard {
+         border-left-color: #22c55e;
+     }
+     .pitch-card--training {
+         border-left-color: #38bdf8;
+     }
+     .pitch-card__eyebrow {
+         margin-bottom: 0.15rem;
+         font-size: 0.72rem;
+         font-weight: 800;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+         color: rgba(226,232,240,0.72);
+     }
+     .pitch-card__meta {
+         display: flex;
+         flex-wrap: wrap;
+         gap: 0.4rem;
+     }
+     .pitch-card__pill,
+     .pitch-card__distance {
+         display: inline-flex;
+         align-items: center;
+         border-radius: 999px;
+         padding: 0.2rem 0.55rem;
+         font-size: 0.75rem;
+         background: rgba(255,255,255,0.1);
+         color: #f8fafc;
+     }
+     .pitch-card__distance {
+         background: rgba(15,23,42,0.42);
+         color: rgba(226,232,240,0.86);
      }
      .map-info-bar {
          position: absolute;
@@ -281,6 +412,8 @@
     private DateTime _lastPitchFetchAtUtc = DateTime.MinValue;
 
     private const double EncounterBrowseRadiusMeters = 5000.0;
+    private const double RecruitDistanceMeters = 75.0;
+    private const double MaxRecruitAccuracyMeters = 50.0;
 
     private const double BrowseRadiusMeters = 5000.0;
     private const double MinPitchRefreshDistanceMeters = 50.0;
@@ -295,6 +428,8 @@
     private int _prevLevelXp;
     private bool _canRecruit;
     private bool _isRecruiting;
+    private bool _isAuthenticated;
+    private string _recruitBlockedReason = "Go to the park to recruit.";
     private string? _recruitMessage;
     private string _recruitMessageClass = "success";
     private bool _showOnboarding = true;
@@ -330,9 +465,9 @@
         _viewReady = true;
         Logger.LogInformation("MapView initialized, loading pitches near London");
 
+        await RefreshAuthenticationStateAsync();
         await LoadPitchMarkersAsync(_latitude, _longitude);
-        _gameProgress = await ApiClient.GetGameProgressAsync();
-        _prevLevelXp = _gameProgress is null ? 0 : _gameProgress.Level <= 1 ? 0 : (_gameProgress.Level - 1) * 100;
+        await RefreshGameProgress();
     }
 
     private async void OnPositionChanged(GeoPosition pos)
@@ -353,6 +488,7 @@
                 await LoadPitchMarkersAsync(pos.Latitude, pos.Longitude);
             }
 
+            UpdateRecruitEligibility();
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -367,8 +503,8 @@
         if (state.SelectedPitchId.HasValue && state.SelectedPitchId.Value != _lastSelectedPitchId)
         {
             _lastSelectedPitchId = state.SelectedPitchId.Value;
-_selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
-                _ = InvokeAsync(StateHasChanged);
+            _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
+            _ = InvokeAsync(StateHasChanged);
         }
         else if (!state.SelectedPitchId.HasValue && _selectedPitch is not null)
         {
@@ -380,10 +516,14 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
         if (state.SelectedEncounterId.HasValue)
         {
             _selectedEncounter = state.VisibleEncounters.FirstOrDefault(e => e.EncounterId == state.SelectedEncounterId.Value);
+            UpdateRecruitEligibility();
         }
         else if (_selectedEncounter is not null)
         {
             _selectedEncounter = null;
+            _canRecruit = false;
+            _recruitBlockedReason = "Select a recruitable player.";
+            _ = InvokeAsync(StateHasChanged);
         }
     }
 
@@ -398,14 +538,24 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
             Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
             await UpdatePitchGraphicsAsync(pitches);
 
-            var encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
+            var encounters = new List<PlayerEncounterDto>();
+            if (_isAuthenticated)
+            {
+                encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
+                _statusMessage = encounters.Count == 0
+                    ? "No recruitable players nearby. Head to a real-world park to find players."
+                    : null;
+            }
+            else
+            {
+                _statusMessage = "Log in to discover recruitable players at nearby real-world parks.";
+            }
+
             Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
             await UpdateEncounterGraphicsAsync(encounters);
 
             _lastPitchFetchPosition = new GeoPosition { Latitude = lat, Longitude = lng };
             _lastPitchFetchAtUtc = DateTime.UtcNow;
-
-            _statusMessage = null;
         }
         catch (Exception ex)
         {
@@ -437,7 +587,8 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
                     ["_ruckrType"] = "pitch",
                     ["_ruckrId"] = pitch.Id,
                     ["name"] = pitch.Name,
-                    ["pitchType"] = pitch.Type.ToString()
+                    ["pitchType"] = PitchTypeDisplayName(pitch.Type),
+                    ["pitchRole"] = PitchTypeDescription(pitch.Type)
                 })
             );
 
@@ -481,7 +632,8 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
                     ["_ruckrEncounterId"] = encounter.EncounterId.ToString(),
                     ["name"] = encounter.Name,
                     ["rarity"] = encounter.Rarity,
-                    ["level"] = encounter.Level
+                    ["level"] = encounter.Level,
+                    ["parkName"] = encounter.ParkName
                 })
             );
 
@@ -537,8 +689,7 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
                                 if (encounter is not null)
                                 {
                                     _selectedEncounter = encounter;
-                                    _canRecruit = _lastKnownPosition is not null &&
-                                                  GeoPosition.HaversineDistance(_lastKnownPosition, new GeoPosition { Latitude = encounter.Latitude, Longitude = encounter.Longitude }) <= 100;
+                                    UpdateRecruitEligibility();
                                     _recruitMessage = null;
                                     Dispatcher.Dispatch(new SelectEncounterAction(encounterId));
                                     return;
@@ -594,10 +745,62 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
         return d < 50 ? "<50m" : d < 100 ? "<100m" : d < 250 ? "<250m" : d < 500 ? "<500m" : ">500m";
     }
 
+    private void UpdateRecruitEligibility()
+    {
+        _canRecruit = false;
+
+        if (_selectedEncounter is null)
+        {
+            _recruitBlockedReason = "Select a recruitable player.";
+            return;
+        }
+
+        var parkName = EncounterParkName(_selectedEncounter);
+        if (_lastKnownPosition is null)
+        {
+            _recruitBlockedReason = $"Waiting for GPS. Go to {parkName} to recruit.";
+            return;
+        }
+
+        var distanceMeters = GeoPosition.HaversineDistance(
+            _lastKnownPosition,
+            new GeoPosition { Latitude = _selectedEncounter.Latitude, Longitude = _selectedEncounter.Longitude });
+
+        if (_lastKnownPosition.Accuracy.HasValue && _lastKnownPosition.Accuracy.Value > MaxRecruitAccuracyMeters)
+        {
+            _recruitBlockedReason =
+                $"Improve GPS accuracy to {MaxRecruitAccuracyMeters:0}m or better. Current accuracy: {_lastKnownPosition.Accuracy.Value:0}m.";
+            return;
+        }
+
+        if (distanceMeters > RecruitDistanceMeters)
+        {
+            _recruitBlockedReason = $"Go to {parkName} to recruit. You are about {FormatDistance(distanceMeters)} away.";
+            return;
+        }
+
+        _canRecruit = true;
+        _recruitBlockedReason = $"Ready to recruit at {parkName}.";
+    }
+
     private string RecruitButtonClass()
     {
         if (!_canRecruit) return "secondary";
         return "success";
+    }
+
+    private static string FormatDistance(double distanceMeters)
+    {
+        return distanceMeters < 1000
+            ? $"{Math.Round(distanceMeters)} m"
+            : $"{distanceMeters / 1000:0.0} km";
+    }
+
+    private static string EncounterParkName(PlayerEncounterDto encounter)
+    {
+        return string.IsNullOrWhiteSpace(encounter.ParkName)
+            ? "this park"
+            : encounter.ParkName;
     }
 
     private async Task AttemptRecruitment()
@@ -648,8 +851,17 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
 
     private async Task RefreshGameProgress()
     {
-        _gameProgress = await ApiClient.GetGameProgressAsync();
+        await RefreshAuthenticationStateAsync();
+        _gameProgress = _isAuthenticated
+            ? await ApiClient.GetGameProgressAsync()
+            : null;
         _prevLevelXp = _gameProgress is null ? 0 : _gameProgress.Level <= 1 ? 0 : (_gameProgress.Level - 1) * 100;
+    }
+
+    private async Task RefreshAuthenticationStateAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
     }
 
     private int LevelForXp(int xp) => Math.Clamp(1 + (xp / 100), 1, 100);
@@ -695,22 +907,67 @@ _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.Selected
         return moved >= MinPitchRefreshDistanceMeters;
     }
 
+    private int PitchCount(PitchType type)
+    {
+        return MapState.Value.VisiblePitches.Count(p => p.Type == type);
+    }
+
+    private string PitchDistanceText(PitchModel pitch)
+    {
+        if (_lastKnownPosition is null)
+        {
+            return "Distance unknown";
+        }
+
+        var distanceMeters = GeoPosition.HaversineDistance(
+            _lastKnownPosition,
+            new GeoPosition { Latitude = pitch.Latitude, Longitude = pitch.Longitude });
+
+        return distanceMeters < 1000
+            ? $"{Math.Round(distanceMeters)} m away"
+            : $"{distanceMeters / 1000:0.0} km away";
+    }
+
+    private static string PitchTypeDisplayName(PitchType type) => type switch
+    {
+        PitchType.Stadium => "Stadium",
+        PitchType.Standard => "Standard pitch",
+        PitchType.Training => "Training pitch",
+        _ => "Pitch"
+    };
+
+    private static string PitchTypeDescription(PitchType type) => type switch
+    {
+        PitchType.Stadium => "Major venue",
+        PitchType.Standard => "Match-ready",
+        PitchType.Training => "Practice ground",
+        _ => "Rugby location"
+    };
+
+    private static string PitchTypeCssClass(PitchType type) => type switch
+    {
+        PitchType.Stadium => "stadium",
+        PitchType.Standard => "standard",
+        PitchType.Training => "training",
+        _ => "standard"
+    };
+
     private static SimpleMarkerSymbol GetPitchSymbol(PitchType type) => type switch
     {
         PitchType.Standard => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
-            color: new MapColor(47, 127, 79),
-            size: new Dimension(14),
-            style: SimpleMarkerSymbolStyle.Circle),
+            outline: new Outline(color: new MapColor("#F8FAFC"), width: new Dimension(2)),
+            color: new MapColor("#22C55E"),
+            size: new Dimension(15),
+            style: SimpleMarkerSymbolStyle.Square),
         PitchType.Training => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
-            color: new MapColor(62, 163, 109),
-            size: new Dimension(14),
-            style: SimpleMarkerSymbolStyle.Circle),
+            outline: new Outline(color: new MapColor("#082F49"), width: new Dimension(2)),
+            color: new MapColor("#38BDF8"),
+            size: new Dimension(15),
+            style: SimpleMarkerSymbolStyle.Triangle),
         PitchType.Stadium => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
-            color: new MapColor(196, 147, 18),
-            size: new Dimension(16),
+            outline: new Outline(color: new MapColor("#111827"), width: new Dimension(3)),
+            color: new MapColor("#F59E0B"),
+            size: new Dimension(19),
             style: SimpleMarkerSymbolStyle.Diamond),
         _ => new SimpleMarkerSymbol(
             outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),

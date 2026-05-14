@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using RuckR.Server.Services;
 using RuckR.Shared.Models;
 using RuckR.Tests.Fixtures;
 
@@ -21,6 +22,7 @@ public class RecruitmentApiTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        _factory.ParkService.UseDefaultPark();
         _username = $"recruit_{Guid.NewGuid():N}";
         _userId = await _factory.CreateTestUserAsync(_username, "TestPass123!");
         _client = _factory.CreateAuthenticatedClient(_userId, _username);
@@ -68,6 +70,76 @@ public class RecruitmentApiTests : IAsyncLifetime
         var first = encounters![0];
         var expected = ExpectedChance(20, first.Level, first.Rarity);
         Assert.Equal(expected, first.SuccessChancePercent);
+    }
+
+    [Fact]
+    public async Task GetEncounters_SpawnsRecruitablePlayersAtRealWorldParkLocations()
+    {
+        var beforeRequestUtc = DateTime.UtcNow;
+        var anchor = await GetAnyPlayerLocationAsync();
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var response = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var encounters = await response.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(encounters);
+        Assert.NotEmpty(encounters);
+
+        Assert.All(encounters!, encounter =>
+        {
+            Assert.Equal(anchor.lat, encounter.Latitude, precision: 6);
+            Assert.Equal(anchor.lng, encounter.Longitude, precision: 6);
+            Assert.Equal("Test Real World Park", encounter.ParkName);
+            Assert.Equal("test-park", encounter.ParkPlaceId);
+            Assert.True(
+                encounter.ExpiresAtUtc >= beforeRequestUtc.AddMinutes(115),
+                $"Encounter should last close to two hours. Actual expiry: {encounter.ExpiresAtUtc:o}");
+            Assert.False(string.IsNullOrWhiteSpace(encounter.Name));
+            Assert.False(string.IsNullOrWhiteSpace(encounter.Rarity));
+            Assert.InRange(encounter.SuccessChancePercent, 5, 95);
+        });
+    }
+
+    [Fact]
+    public async Task GetEncounters_NoRealWorldParks_ReturnsNoRecruitablePlayers()
+    {
+        _factory.ParkService.UseNoParks();
+
+        var anchor = await GetAnyPlayerLocationAsync();
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var response = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var encounters = await response.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(encounters);
+        Assert.Empty(encounters!);
+    }
+
+    [Fact]
+    public async Task GetEncounters_ParkAwayFromPlayer_SpawnsRecruitableAtParkNotPlayerLocation()
+    {
+        var anchor = await GetAnyPlayerLocationAsync();
+        var parkLat = anchor.lat + 0.002;
+        var parkLng = anchor.lng - 0.002;
+        _factory.ParkService.UseParks(new RealWorldPark("frost-park", "Frost Park", parkLat, parkLng, 250));
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var response = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var encounters = await response.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(encounters);
+        Assert.NotEmpty(encounters);
+
+        Assert.All(encounters!, encounter =>
+        {
+            Assert.Equal(parkLat, encounter.Latitude, precision: 6);
+            Assert.Equal(parkLng, encounter.Longitude, precision: 6);
+            Assert.Equal("Frost Park", encounter.ParkName);
+            Assert.Equal("frost-park", encounter.ParkPlaceId);
+        });
     }
 
     [Fact]
@@ -152,7 +224,7 @@ public class RecruitmentApiTests : IAsyncLifetime
         var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
         Assert.NotNull(result);
         Assert.False(result!.Success);
-        Assert.Contains("Move closer", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("park", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<(double lat, double lng)> GetAnyPlayerLocationAsync()

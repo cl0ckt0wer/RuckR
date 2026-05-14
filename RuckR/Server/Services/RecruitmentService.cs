@@ -9,23 +9,30 @@ public class RecruitmentService : IRecruitmentService
 {
     private const double RecruitDistanceMeters = 75.0;
     private const int RecruitSuccessXp = 25;
-    private static readonly TimeSpan EncounterLifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan EncounterLifetime = TimeSpan.FromHours(2);
     private static readonly GeometryFactory GeometryFactory =
         NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
     private readonly RuckRDbContext _db;
+    private readonly IRealWorldParkService _parkService;
 
-    public RecruitmentService(RuckRDbContext db)
+    public RecruitmentService(RuckRDbContext db, IRealWorldParkService parkService)
     {
         _db = db;
+        _parkService = parkService;
     }
 
     public async Task<IReadOnlyList<PlayerEncounterDto>> GetEncountersAsync(string userId, double lat, double lng, double radiusMeters)
     {
-        var searchPoint = GeometryFactory.CreatePoint(new Coordinate(lng, lat));
         var now = DateTime.UtcNow;
 
         await CleanupExpiredEncountersAsync(now);
+
+        var nearbyParks = await _parkService.FindNearbyParksAsync(lat, lng, radiusMeters);
+        if (nearbyParks.Count == 0)
+        {
+            return Array.Empty<PlayerEncounterDto>();
+        }
 
         var collectedPlayerIds = await _db.Collections
             .Where(c => c.UserId == userId)
@@ -33,8 +40,6 @@ public class RecruitmentService : IRecruitmentService
             .ToListAsync();
 
         var candidates = await _db.Players
-            .Where(p => p.SpawnLocation != null)
-            .Where(p => p.SpawnLocation!.IsWithinDistance(searchPoint, radiusMeters))
             .Where(p => !collectedPlayerIds.Contains(p.Id))
             .AsNoTracking()
             .ToListAsync();
@@ -54,23 +59,24 @@ public class RecruitmentService : IRecruitmentService
         var encounters = new List<PlayerEncounterDto>(topCandidates.Count);
         foreach (var player in topCandidates)
         {
-            if (player.SpawnLocation is null)
-            {
-                continue;
-            }
+            var park = nearbyParks[Random.Shared.Next(nearbyParks.Count)];
+            var parkLocation = GeometryFactory.CreatePoint(new Coordinate(park.Longitude, park.Latitude));
 
-            var entry = await GetOrCreateEncounterAsync(userId, player, now);
+            var entry = await GetOrCreateEncounterAsync(userId, player, now, parkLocation, nearbyParks);
+            var encounterPark = GetNearestPark(entry.Latitude, entry.Longitude, nearbyParks);
             encounters.Add(new PlayerEncounterDto(
                 entry.Id,
                 player.Id,
                 player.Name,
-                $"{player.SpawnLocation!.Y}, {player.SpawnLocation.X}",
+                player.Position.ToString(),
                 player.Rarity.ToString(),
                 player.Level,
                 entry.Latitude,
                 entry.Longitude,
                 entry.ExpiresAtUtc,
-                CalculateSuccessChance(userLevel, player.Level, player.Rarity)));
+                CalculateSuccessChance(userLevel, player.Level, player.Rarity),
+                encounterPark?.Name,
+                encounterPark?.PlaceId));
         }
 
         return encounters;
@@ -97,7 +103,7 @@ public class RecruitmentService : IRecruitmentService
         var distanceMeters = GeoPosition.HaversineDistance(userPosition, encounterPos);
         if (distanceMeters > RecruitDistanceMeters)
         {
-            return new RecruitmentAttemptResultDto(false, 0, "Move closer to recruit this player.", null);
+            return new RecruitmentAttemptResultDto(false, 0, "Go to the park to recruit this player.", null);
         }
 
         var player = await _db.Players.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.PlayerId);
@@ -175,13 +181,23 @@ public class RecruitmentService : IRecruitmentService
         return Math.Clamp(chance, 5, 95);
     }
 
-    private async Task<PlayerEncounterModel> GetOrCreateEncounterAsync(string userId, PlayerModel player, DateTime now)
+    private async Task<PlayerEncounterModel> GetOrCreateEncounterAsync(
+        string userId,
+        PlayerModel player,
+        DateTime now,
+        Point parkLocation,
+        IReadOnlyList<RealWorldPark> nearbyParks)
     {
         var existing = await _db.PlayerEncounters
             .FirstOrDefaultAsync(e => e.UserId == userId && e.PlayerId == player.Id && e.ExpiresAtUtc > now);
         if (existing is not null)
         {
-            return existing;
+            if (nearbyParks.Any(park => IsNearPark(existing, park)))
+            {
+                return existing;
+            }
+
+            _db.PlayerEncounters.Remove(existing);
         }
 
         var newEntry = new PlayerEncounterModel
@@ -189,8 +205,8 @@ public class RecruitmentService : IRecruitmentService
             Id = Guid.NewGuid(),
             UserId = userId,
             PlayerId = player.Id,
-            Latitude = player.SpawnLocation!.Y,
-            Longitude = player.SpawnLocation.X,
+            Latitude = parkLocation.Y,
+            Longitude = parkLocation.X,
             ExpiresAtUtc = now.Add(EncounterLifetime),
             CreatedAtUtc = now
         };
@@ -198,6 +214,49 @@ public class RecruitmentService : IRecruitmentService
         _db.PlayerEncounters.Add(newEntry);
         await _db.SaveChangesAsync();
         return newEntry;
+    }
+
+    private static bool IsNearPark(PlayerEncounterModel encounter, RealWorldPark park)
+    {
+        var encounterPosition = new GeoPosition
+        {
+            Latitude = encounter.Latitude,
+            Longitude = encounter.Longitude
+        };
+        var parkPosition = new GeoPosition
+        {
+            Latitude = park.Latitude,
+            Longitude = park.Longitude
+        };
+
+        return GeoPosition.HaversineDistance(encounterPosition, parkPosition) <= 25;
+    }
+
+    private static RealWorldPark? GetNearestPark(
+        double latitude,
+        double longitude,
+        IReadOnlyList<RealWorldPark> nearbyParks)
+    {
+        if (nearbyParks.Count == 0)
+        {
+            return null;
+        }
+
+        var encounterPosition = new GeoPosition
+        {
+            Latitude = latitude,
+            Longitude = longitude
+        };
+
+        return nearbyParks
+            .OrderBy(park => GeoPosition.HaversineDistance(
+                encounterPosition,
+                new GeoPosition
+                {
+                    Latitude = park.Latitude,
+                    Longitude = park.Longitude
+                }))
+            .First();
     }
 
     private async Task DeleteEncounterAsync(Guid encounterId)

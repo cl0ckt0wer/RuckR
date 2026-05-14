@@ -220,7 +220,7 @@
 
         if (user.Identity is null || !user.Identity.IsAuthenticated)
         {
-            var returnUrl = Uri.EscapeDataString(Navigation.Uri);
+            var returnUrl = Uri.EscapeDataString("/" + Navigation.ToBaseRelativePath(Navigation.Uri));
             Navigation.NavigateTo($"/Identity/Account/Login?returnUrl={returnUrl}", forceLoad: true);
             return;
         }
