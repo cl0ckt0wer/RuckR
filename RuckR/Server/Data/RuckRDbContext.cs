@@ -13,6 +13,9 @@ namespace RuckR.Server.Data
         public DbSet<BattleModel> Battles { get; set; }
         public DbSet<UserGameProfileModel> UserGameProfiles { get; set; }
         public DbSet<PlayerEncounterModel> PlayerEncounters { get; set; }
+        public DbSet<UserProfileModel> UserProfiles { get; set; }
+        public DbSet<RateLimitRecord> RateLimitRecords { get; set; }
+        public DbSet<UserConsent> UserConsents { get; set; }
 
         public RuckRDbContext(DbContextOptions<RuckRDbContext> options) : base(options) { }
 
@@ -56,6 +59,20 @@ namespace RuckR.Server.Data
                 entity.HasKey(p => p.UserId);
                 entity.Property(p => p.Level).HasDefaultValue(1);
                 entity.Property(p => p.Experience).HasDefaultValue(0);
+            });
+
+            modelBuilder.Entity<UserProfileModel>(entity =>
+            {
+                entity.HasKey(p => p.UserId);
+                entity.Property(p => p.Name).HasMaxLength(200);
+                entity.Property(p => p.Biography).HasMaxLength(1000);
+                entity.Property(p => p.Location).HasMaxLength(500);
+                entity.Property(p => p.AvatarUrl).HasMaxLength(500);
+            });
+
+            modelBuilder.Entity<RateLimitRecord>(entity =>
+            {
+                entity.HasIndex(r => new { r.UserId, r.Action, r.TimestampUtc });
             });
 
             modelBuilder.Entity<PlayerEncounterModel>(entity =>

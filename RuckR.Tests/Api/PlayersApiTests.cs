@@ -104,8 +104,8 @@ public class PlayersApiTests : IAsyncLifetime
 
         for (int i = 1; i < players.Count; i++)
         {
-            Assert.True(players[i - 1].FuzzyDistanceMeters <= players[i].FuzzyDistanceMeters,
-                $"Players not sorted by distance at index {i}");
+            Assert.True((int)players[i - 1].DistanceBucket <= (int)players[i].DistanceBucket,
+                $"Players not sorted by distance bucket at index {i}");
         }
     }
 

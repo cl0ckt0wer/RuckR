@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -14,26 +13,24 @@ namespace RuckR.Server.Controllers
     [Authorize]
     public class CollectionController : ControllerBase
     {
-        private const int MaxCapturesPerHour = 20;
         private const double CaptureProximityMeters = 100.0;
         private const double MaxCaptureAccuracyMeters = 50.0;
-
-        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
-
-        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILocationTracker _locationTracker;
+        private readonly IRateLimitService _rateLimitService;
 
         public CollectionController(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
-            ILocationTracker locationTracker)
+            ILocationTracker locationTracker,
+            IRateLimitService rateLimitService)
         {
             _db = db;
             _userManager = userManager;
             _locationTracker = locationTracker;
+            _rateLimitService = rateLimitService;
         }
 
         /// <summary>
@@ -112,7 +109,8 @@ namespace RuckR.Server.Controllers
                 return Conflict("Player already collected.");
 
             // 6. Rate limiting
-            if (!CheckRateLimit(userId))
+            const int MaxCapturesPerHour = 20;
+            if (!await _rateLimitService.IsAllowedAsync(userId, "capture", MaxCapturesPerHour, TimeSpan.FromHours(1)))
                 return StatusCode(429, $"Rate limit exceeded. You can capture up to {MaxCapturesPerHour} players per hour.");
 
             // 7. Create and save collection entry
@@ -241,31 +239,7 @@ namespace RuckR.Server.Controllers
             collection.IsFavorite = !collection.IsFavorite;
             await _db.SaveChangesAsync();
 
-            return Ok();
-        }
-
-        /// <summary>
-        /// Checks if the user has exceeded their hourly capture rate limit.
-        /// Thread-safe via ConcurrentDictionary with lock-based list mutation.
-        /// </summary>
-        private bool CheckRateLimit(string userId)
-        {
-            var now = DateTime.UtcNow;
-            var cutoff = now.AddHours(-1);
-
-            var userTimestamps = _rateLimitTracker.GetOrAdd(userId, _ => new List<DateTime>());
-
-            lock (userTimestamps)
-            {
-                // Remove entries older than 1 hour
-                userTimestamps.RemoveAll(ts => ts < cutoff);
-
-                if (userTimestamps.Count >= MaxCapturesPerHour)
-                    return false;
-
-                userTimestamps.Add(now);
-                return true;
-            }
+return Ok();
         }
 
         /// <summary>

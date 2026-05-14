@@ -47,7 +47,7 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 
         // Verify the map is actually rendered (not blank)
         var isRendered = await mapPage.IsMapRenderedAsync();
-        Assert.True(isRendered, "Leaflet map container should be visible on mobile viewport");
+        Assert.True(isRendered, "GeoBlazor map container should be visible on mobile viewport");
     }
 
     [Fact]

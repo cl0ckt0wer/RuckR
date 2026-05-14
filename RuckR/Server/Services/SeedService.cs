@@ -46,6 +46,9 @@ namespace RuckR.Server.Services
 
         public async Task SeedIfEmptyAsync()
         {
+            // Always seed the default pitch if none exist.
+            await SeedDefaultPitchAsync();
+
             if (await _db.Players.AnyAsync())
             {
                 _logger.LogInformation("Players table is not empty — skipping player seed data generation.");
@@ -59,7 +62,6 @@ namespace RuckR.Server.Services
                     _options.DefaultCenterLng,
                     _options.SpreadRadiusKm);
 
-                await SeedDefaultPitchAsync();
                 await SeedPlayersAsync();
 
                 _logger.LogInformation("Player seed data generation complete.");

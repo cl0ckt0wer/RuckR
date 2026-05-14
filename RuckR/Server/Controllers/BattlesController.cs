@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RuckR.Server.Data;
+using RuckR.Server.Services;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
@@ -13,33 +13,45 @@ namespace RuckR.Server.Controllers
     [Authorize]
     public class BattlesController : ControllerBase
     {
-        private const int MaxChallengesPerHour = 10;
-        private const int MaxPendingChallenges = 3;
-        private static readonly TimeSpan ChallengeExpiryDuration = TimeSpan.FromHours(24);
-
-        internal static readonly ConcurrentDictionary<string, List<DateTime>> _rateLimitTracker = new();
-
-        internal static void ResetRateLimits() => _rateLimitTracker.Clear();
-
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
+        private readonly IBattleService _battleService;
+        private readonly IRateLimitService _rateLimitService;
 
-        public BattlesController(RuckRDbContext db, UserManager<IdentityUser> userManager)
+        public BattlesController(
+            RuckRDbContext db,
+            UserManager<IdentityUser> userManager,
+            IBattleService battleService,
+            IRateLimitService rateLimitService)
         {
             _db = db;
             _userManager = userManager;
+            _battleService = battleService;
+            _rateLimitService = rateLimitService;
         }
 
         /// <summary>
         /// POST /battles/challenge — send a challenge to another user.
-        /// Validates: not self, opponent exists, player owned, ≤3 pending, rate limit.
+        /// Validates: not self, opponent exists, player owned, ≤3 pending, rate limit, idempotency.
         /// </summary>
         [HttpPost("challenge")]
-        public async Task<ActionResult<BattleModel>> Challenge([FromBody] ChallengeRequest request)
+        public async Task<ActionResult<BattleModel>> Challenge(
+            [FromBody] ChallengeRequest request,
+            [FromQuery] string? idempotencyKey = null)
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
+
+            // 0. Idempotency check
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var existing = await _db.Battles
+                    .FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey
+                        && b.ChallengerId == userId);
+                if (existing is not null)
+                    return Ok(existing);
+            }
 
             // 1. Cannot challenge self
             var opponent = await _userManager.FindByNameAsync(request.OpponentUsername);
@@ -60,20 +72,19 @@ namespace RuckR.Server.Controllers
                 return BadRequest("Selected player is not in your collection.");
 
             // 3. Current user has ≤3 pending challenges (Status=Pending and not expired)
-            var now = DateTime.UtcNow;
-            var expiryCutoff = now - ChallengeExpiryDuration;
-
+            var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
             var pendingCount = await _db.Battles
                 .CountAsync(b => b.ChallengerId == userId
                     && b.Status == BattleStatus.Pending
                     && b.CreatedAt > expiryCutoff);
 
-            if (pendingCount >= MaxPendingChallenges)
-                return BadRequest($"You already have {MaxPendingChallenges} or more pending challenges. Wait for them to expire or be resolved.");
+            if (pendingCount >= _battleService.MaxPendingChallenges)
+                return BadRequest($"You already have {_battleService.MaxPendingChallenges} or more pending challenges. Wait for them to expire or be resolved.");
 
-            // 4. Rate limit: max 10 challenges per hour
-            if (!CheckRateLimit(userId))
-                return StatusCode(429, $"Rate limit exceeded. You can send up to {MaxChallengesPerHour} challenges per hour.");
+            // 4. Rate limit
+            var allowed = await _rateLimitService.IsAllowedAsync(userId, "challenge", _battleService.MaxChallengesPerHour, TimeSpan.FromHours(1));
+            if (!allowed)
+                return StatusCode(429, $"Rate limit exceeded. You can send up to {_battleService.MaxChallengesPerHour} challenges per hour.");
 
             var battle = new BattleModel
             {
@@ -81,7 +92,8 @@ namespace RuckR.Server.Controllers
                 OpponentId = opponent.Id,
                 ChallengerPlayerId = request.SelectedPlayerId,
                 Status = BattleStatus.Pending,
-                CreatedAt = now
+                CreatedAt = DateTime.UtcNow,
+                IdempotencyKey = idempotencyKey
             };
 
             _db.Battles.Add(battle);
@@ -116,7 +128,7 @@ namespace RuckR.Server.Controllers
                 return BadRequest("Challenge is no longer pending.");
 
             // Lazy-expiry: expire challenges older than 24h
-            if (IsExpired(battle))
+            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
             {
                 battle.Status = BattleStatus.Expired;
                 battle.ResolvedAt = DateTime.UtcNow;
@@ -175,7 +187,7 @@ namespace RuckR.Server.Controllers
                 return BadRequest("Challenge is no longer pending.");
 
             // Lazy-expiry: expire challenges older than 24h
-            if (IsExpired(battle))
+            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
             {
                 battle.Status = BattleStatus.Expired;
                 battle.ResolvedAt = DateTime.UtcNow;
@@ -201,8 +213,7 @@ namespace RuckR.Server.Controllers
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
 
-            var now = DateTime.UtcNow;
-            var expiryCutoff = now - ChallengeExpiryDuration;
+            var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
 
             var pendingBattles = await _db.Battles
                 .Where(b => (b.ChallengerId == userId || b.OpponentId == userId)
@@ -214,7 +225,7 @@ namespace RuckR.Server.Controllers
             foreach (var battle in expired)
             {
                 battle.Status = BattleStatus.Expired;
-                battle.ResolvedAt = now;
+                battle.ResolvedAt = DateTime.UtcNow;
             }
 
             if (expired.Count > 0)
@@ -245,40 +256,6 @@ namespace RuckR.Server.Controllers
             return Ok(history);
         }
 
-        /// <summary>
-        /// Thread-safe rate limit check using ConcurrentDictionary with lock-based list mutation.
-        /// Cleans entries older than 1 hour. Returns true if the user is within the limit.
-        /// </summary>
-        private bool CheckRateLimit(string userId)
-        {
-            var now = DateTime.UtcNow;
-            var cutoff = now.AddHours(-1);
-
-            var userTimestamps = _rateLimitTracker.GetOrAdd(userId, _ => new List<DateTime>());
-
-            lock (userTimestamps)
-            {
-                userTimestamps.RemoveAll(ts => ts < cutoff);
-
-                if (userTimestamps.Count >= MaxChallengesPerHour)
-                    return false;
-
-                userTimestamps.Add(now);
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// Returns true if the battle's CreatedAt is older than 24 hours.
-        /// </summary>
-        private static bool IsExpired(BattleModel battle)
-        {
-            return battle.CreatedAt <= DateTime.UtcNow - ChallengeExpiryDuration;
-        }
-
-        /// <summary>
-        /// Extracts the current user's ID using UserManager.
-        /// </summary>
         private string GetCurrentUserId()
         {
             return _userManager.GetUserId(User) ?? string.Empty;

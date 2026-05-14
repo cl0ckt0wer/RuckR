@@ -33,18 +33,18 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
-    public async Task MapPage_Loads_ShowsLeafletMap()
+    public async Task MapPage_Loads_ShowsGeoBlazorMap()
     {
         var mapPage = new MapPage(_page, _baseUrl);
         await mapPage.GoToAsync();
 
         // Verify map container exists in DOM
         var isRendered = await mapPage.IsMapRenderedAsync();
-        Assert.True(isRendered, "Leaflet map container should be rendered in the DOM");
+        Assert.True(isRendered, "Map container should be rendered in the DOM");
 
-        // Verify map tiles loaded
+        // Verify map shell loaded
         var mapLoaded = await mapPage.WaitForMapLoadedAsync();
-        Assert.True(mapLoaded, "Leaflet map tiles should load within timeout");
+        Assert.True(mapLoaded, "Map shell should load within timeout");
     }
 
     [Fact]

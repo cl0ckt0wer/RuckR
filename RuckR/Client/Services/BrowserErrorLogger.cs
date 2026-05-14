@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.JSInterop;
 using RuckR.Shared.Models;
 
@@ -10,7 +11,10 @@ public sealed class BrowserErrorLogger : IAsyncDisposable
     private IJSObjectReference? _module;
     private DotNetObjectReference<BrowserErrorLogger>? _dotNetObjectReference;
 
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+    [DynamicDependency(nameof(LogBrowserError))]
     public BrowserErrorLogger(IJSRuntime jsRuntime, TelemetryLoggerProvider telemetryLoggerProvider)
+#pragma warning restore CS8618
     {
         _jsRuntime = jsRuntime;
         _telemetryLoggerProvider = telemetryLoggerProvider;
@@ -19,7 +23,7 @@ public sealed class BrowserErrorLogger : IAsyncDisposable
     public async Task InitializeAsync()
     {
         _dotNetObjectReference = DotNetObjectReference.Create(this);
-        _module = await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/client-logging.module.js");
+        _module = await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/browser-logging.module.js");
         await _module.InvokeVoidAsync("start", _dotNetObjectReference);
     }
 

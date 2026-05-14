@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using RuckR.Server.Data;
+using RuckR.Server.Services;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
@@ -14,11 +16,19 @@ namespace RuckR.Server.Controllers
     {
         private readonly RuckRDbContext _db;
         private readonly ILogger<PlayersController> _logger;
+        private readonly UserManager<IdentityUser> _userManager;
+        private readonly IRateLimitService _rateLimitService;
 
-        public PlayersController(RuckRDbContext db, ILogger<PlayersController> logger)
+        public PlayersController(
+            RuckRDbContext db,
+            ILogger<PlayersController> logger,
+            UserManager<IdentityUser> userManager,
+            IRateLimitService rateLimitService)
         {
             _db = db;
             _logger = logger;
+            _userManager = userManager;
+            _rateLimitService = rateLimitService;
         }
 
         [HttpGet]
@@ -62,12 +72,24 @@ namespace RuckR.Server.Controllers
             return player;
         }
 
+        /// <summary>
+        /// GET /api/players/nearby — returns players within radius, using DistanceBucket instead of exact distance.
+        /// Does NOT expose OwnerUsername to prevent location triangulation.
+        /// </summary>
         [HttpGet("nearby")]
         public async Task<ActionResult<List<NearbyPlayerDto>>> GetNearbyPlayers(
             [FromQuery] double lat,
             [FromQuery] double lng,
             [FromQuery] double radius = 10000)
         {
+            var userId = _userManager.GetUserId(User);
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized("User identity not found.");
+
+            var allowed = await _rateLimitService.IsAllowedAsync(userId, "players_nearby", 60, TimeSpan.FromMinutes(1));
+            if (!allowed)
+                return StatusCode(429, "Rate limit exceeded for nearby player scans.");
+
             // Validate lat/lng ranges
             if (lat < -90 || lat > 90)
             {
@@ -97,7 +119,7 @@ namespace RuckR.Server.Controllers
                     p.Name,
                     p.Position.ToString(),
                     p.Rarity.ToString(),
-                    p.SpawnLocation!.Distance(point),
+                    GeoPosition.GetDistanceBucket(p.SpawnLocation!.Distance(point)),
                     u != null ? u.UserName! : null!
                 );
 

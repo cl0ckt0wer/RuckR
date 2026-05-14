@@ -95,16 +95,22 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.SlidingExpiration = true;
     options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-    options.Events.OnRedirectToLogin = context =>
-    {
-        if (context.Request.Path.StartsWithSegments("/api"))
-        {
-            context.Response.StatusCode = 401;
-            return Task.CompletedTask;
-        }
-        context.Response.Redirect(context.RedirectUri);
-        return Task.CompletedTask;
-    };
+options.Events.OnRedirectToLogin = context =>
+         {
+             if (context.Request.Path.StartsWithSegments("/api"))
+             {
+                 context.Response.StatusCode = 401;
+                 return Task.CompletedTask;
+             }
+             // Normalize absolute ReturnUrl to relative path when behind a reverse proxy.
+             var redirectUri = context.RedirectUri;
+             if (Uri.TryCreate(redirectUri, UriKind.Absolute, out var absUri))
+             {
+                 redirectUri = absUri.PathAndQuery;
+             }
+             context.Response.Redirect(redirectUri);
+             return Task.CompletedTask;
+         };
 });
 
 builder.Services.AddSignalR();

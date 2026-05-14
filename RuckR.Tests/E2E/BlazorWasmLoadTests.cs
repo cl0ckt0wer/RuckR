@@ -101,9 +101,10 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
             _page.Response -= OnResponse;
         }
 
-        // Verify blazor.webassembly.js loaded successfully
+        // Verify the fingerprinted .NET 10 Blazor boot script loaded successfully.
         var jsUrl = frameworkResponses.Keys
-            .FirstOrDefault(k => k.EndsWith("/blazor.webassembly.js", StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(k => k.Contains("/blazor.webassembly.", StringComparison.OrdinalIgnoreCase)
+                && k.EndsWith(".js", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(jsUrl);
         Assert.Equal(200, frameworkResponses[jsUrl]);
 

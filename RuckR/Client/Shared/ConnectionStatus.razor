@@ -1,16 +1,22 @@
 @using Fluxor
 @using RuckR.Client.Services
 @using RuckR.Client.Store.GameFeature
-@implements IDisposable
 @implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IDispatcher Dispatcher
 @inject IState<GameState> GameState
 @inject SignalRClientService SignalRClient
 @inject AuthenticationStateProvider AuthStateProvider
-@inject IJSRuntime JS
 
 <div class="connection-status @StatusClass" data-testid="connection-status">
     <span class="status-dot @DotClass" data-testid="status-dot"></span>
     <span class="status-text" data-testid="status-text">@StatusText</span>
+    <span class="status-detail" data-testid="online-status">@OnlineStatusText</span>
+    <span class="status-detail" data-testid="quality-status">@QualityStatusText</span>
+    @if (GameState.Value.PendingActionCount > 0)
+    {
+        <span class="status-detail" data-testid="queue-status">Queued @GameState.Value.PendingActionCount</span>
+    }
     @if (_connectionStatus == ConnectionStatusEnum.Disconnected)
     {
         <button class="btn btn-sm btn-outline-light ms-2" data-testid="reconnect-btn" @onclick="ReconnectAsync">Reconnect</button>
@@ -21,16 +27,21 @@
     .connection-status {
         display: flex;
         align-items: center;
+        gap: 0.5rem;
         padding: 0.5rem 1rem;
         font-size: 0.85rem;
+        flex-wrap: wrap;
     }
     .status-dot {
         display: inline-block;
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        margin-right: 0.5rem;
         flex-shrink: 0;
+    }
+    .status-detail {
+        opacity: 0.8;
+        white-space: nowrap;
     }
     .status-dot.connected {
         background-color: #28a745;
@@ -55,7 +66,7 @@
 
     private ConnectionStatusEnum _connectionStatus = ConnectionStatusEnum.Disconnected;
     private string _statusText = "Disconnected";
-    private IJSObjectReference? _module;
+    private IJSObjectReference? _geoModule;
     private DotNetObjectReference<ConnectionStatus>? _dotNetRef;
 
     private string StatusClass => _connectionStatus switch
@@ -73,15 +84,20 @@
     };
 
     private string StatusText => _statusText;
+    private string OnlineStatusText => GameState.Value.IsBrowserOnline ? "Online" : "Offline";
+    private string QualityStatusText => GameState.Value.ConnectionLatencyMs switch
+    {
+        null when GameState.Value.IsSignalRConnected => "Quality unknown",
+        null => "No signal",
+        <= 150 => $"Good {GameState.Value.ConnectionLatencyMs}ms",
+        <= 400 => $"Fair {GameState.Value.ConnectionLatencyMs}ms",
+        _ => $"Poor {GameState.Value.ConnectionLatencyMs}ms"
+    };
 
     protected override async Task OnInitializedAsync()
     {
         SignalRClient.ConnectionStateChanged += OnConnectionStateChanged;
         GameState.StateChanged += OnGameStateChanged;
-
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/connection-status.module.js");
-        _dotNetRef = DotNetObjectReference.Create(this);
-        await _module.InvokeVoidAsync("subscribe", _dotNetRef);
 
         UpdateFromConnectionState(GameState.Value.IsSignalRConnected, GameState.Value.ConnectionError);
 
@@ -92,17 +108,27 @@
         }
     }
 
-    [JSInvokable]
-    public void OnBrowserOffline()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        UpdateFromConnectionState(false, "Connection lost");
-        _ = InvokeAsync(StateHasChanged);
+        if (!firstRender)
+            return;
+
+        _geoModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/geolocation.module.js");
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await _geoModule.InvokeVoidAsync("watchOnlineStatus", _dotNetRef);
     }
 
     [JSInvokable]
-    public async Task OnBrowserOnline()
+    public async Task OnBrowserOnlineStateChanged(bool isOnline)
     {
-        await ReconnectAsync();
+        Dispatcher.Dispatch(new SetBrowserOnlineStateAction(isOnline));
+
+        if (isOnline)
+        {
+            await ReconnectAsync();
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OnConnectionStateChanged(bool isConnected, string? error)
@@ -120,7 +146,12 @@
 
     private void UpdateFromConnectionState(bool isConnected, string? error)
     {
-        if (isConnected)
+        if (!GameState.Value.IsBrowserOnline)
+        {
+            _connectionStatus = ConnectionStatusEnum.Disconnected;
+            _statusText = "Disconnected";
+        }
+        else if (isConnected)
         {
             _connectionStatus = ConnectionStatusEnum.Connected;
             _statusText = "Connected";
@@ -155,20 +186,21 @@
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         SignalRClient.ConnectionStateChanged -= OnConnectionStateChanged;
         GameState.StateChanged -= OnGameStateChanged;
-    }
 
-    public async ValueTask DisposeAsync()
-    {
-        Dispose();
-
-        if (_module is not null)
+        if (_geoModule is not null)
         {
-            await _module.InvokeVoidAsync("unsubscribe");
-            await _module.DisposeAsync();
+            try
+            {
+                await _geoModule.InvokeVoidAsync("clearOnlineStatusWatch");
+                await _geoModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
         }
 
         _dotNetRef?.Dispose();

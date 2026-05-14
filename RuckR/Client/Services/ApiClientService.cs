@@ -146,6 +146,19 @@ public class ApiClientService
         }
     }
 
+    public async Task<GameProgressDto?> GetGameProgressAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<GameProgressDto>("api/recruitment/profile");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch game progression profile");
+            return null;
+        }
+    }
+
     // Battles
     public async Task<BattleModel?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {

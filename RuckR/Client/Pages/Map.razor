@@ -22,7 +22,25 @@
 @inject IState<LocationState> LocationState
 @implements IAsyncDisposable
 
-<div class="map-shell">
+<div class="map-shell" data-testid="map-container">
+    @if (!_hasApiKey)
+    {
+        <div class="map-unavailable-shell">
+            <div class="map-unavailable-panel">
+                <p class="mb-1 fw-bold">Map unavailable</p>
+                <p class="small text-muted mb-0">
+                    ArcGIS API key is not configured. Set the <code>ARC_GIS_API_KEY</code> environment variable.
+                </p>
+            </div>
+        </div>
+    }
+
+    <div data-testid="map-loading" class="map-loading" style="@(_viewReady ? "display:none" : "")">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
     @if (_hasApiKey)
     {
         <MapView @ref="_mapView"
@@ -67,18 +85,17 @@
             </button>
         </div>
     }
-    else
-    {
-        <div class="map-unavailable-shell">
-            <div class="map-unavailable-panel">
-                <p class="mb-1 fw-bold">Map unavailable</p>
-                <p class="small text-muted mb-0">
-                    ArcGIS API key is not configured. Set the <code>ARC_GIS_API_KEY</code> environment variable.
-                </p>
-            </div>
-        </div>
-    }
 </div>
+
+@if (_showOnboarding && _hasApiKey)
+{
+    <div class="onboarding-banner" data-testid="onboarding-banner">
+        <span class="onboarding-text">Welcome to RuckR! Explore the map to find pitches and recruit players.</span>
+        <button class="btn-close btn-close-white" data-testid="onboarding-close" @onclick="DismissOnboarding" aria-label="Dismiss"></button>
+    </div>
+}
+
+@if (_selectedPitch is not null)
 
 @if (_selectedPitch is not null)
 {
@@ -96,52 +113,157 @@
     </div>
 }
 
+@if (_selectedEncounter is not null)
+{
+    <div class="map-overlay map-overlay--encounter" data-testid="encounter-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
+            <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearEncounterSelection" aria-label="Close"></button>
+        </div>
+        <div class="mb-2">
+            <span class="badge bg-@EncounterRarityBadgeClass(_selectedEncounter.Rarity) me-2">@_selectedEncounter.Rarity</span>
+            <span class="badge bg-secondary">Level @_selectedEncounter.Level</span>
+        </div>
+        <p class="small text-muted mb-1">
+            Distance: @DistanceBucketFromPosition(_selectedEncounter.Latitude, _selectedEncounter.Longitude)
+        </p>
+        <p class="small text-muted mb-2">
+            Success chance: @_selectedEncounter.SuccessChancePercent%
+        </p>
+        <button class="btn btn-sm btn-@RecruitButtonClass()"
+                data-testid="recruit-btn"
+                disabled="@(!_canRecruit)"
+                @onclick="AttemptRecruitment">
+            @if (_isRecruiting)
+            {
+                <span class="spinner-border spinner-border-sm" role="status"></span>
+            }
+            else
+            {
+                @:Recruit @_selectedEncounter.Name
+            }
+        </button>
+        @if (_recruitMessage is not null)
+        {
+            <p class="small mt-2 mb-0 text-@_recruitMessageClass">@_recruitMessage</p>
+        }
+    </div>
+}
+
+@if (_gameProgress is not null)
+{
+    <div class="game-progress-chip" title="Level @_gameProgress.Level — @_gameProgress.Experience / @_gameProgress.NextLevelExperience XP">
+        <span class="fw-bold">@_gameProgress.Level</span>
+        <div class="progress flex-grow-1 ms-2">
+            <div class="progress-bar"
+                 role="progressbar"
+                 style="width:@ProgressPercent%; min-width: 8px;"
+                 aria-valuenow="@_gameProgress.Experience - _prevLevelXp"
+                 aria-valuemin="0"
+                 aria-valuemax="@_gameProgress.NextLevelExperience - _prevLevelXp">
+            </div>
+        </div>
+    </div>
+}
+
 <div class="map-info-bar">
     <span class="text-muted small">
         @if (_statusMessage is not null)
         {
             @_statusMessage
         }
-        else if (_pitchGraphics.Count > 0)
+        else if (_pitchGraphics.Count > 0 || _encounterGraphics.Count > 0)
         {
-            <text>@_pitchGraphics.Count pitches visible on map. Tap a marker to see details.</text>
+            <text>@_pitchGraphics.Count pitches, @_encounterGraphics.Count encounters visible. Tap a marker to see details.</text>
         }
         else
         {
-            <text>Loading pitches...</text>
+            <text>Loading...</text>
         }
     </span>
 </div>
 
 <style>
-    .map-fab-group {
-        position: absolute;
-        bottom: 3.5rem;
-        right: 0.5rem;
-        z-index: 10;
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-    .map-fab {
-        width: 2.5rem;
-        height: 2.5rem;
-        padding: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        border-radius: 0.375rem;
-        background: rgba(33,37,41,0.85);
-        border: 1px solid rgba(255,255,255,0.15);
-    }
-    .map-fab:hover:not(:disabled) {
-        background: rgba(52,58,64,0.95);
-    }
-    .map-fab:disabled {
-        opacity: 0.4;
-    }
-</style>
+     .map-fab-group {
+         position: absolute;
+         bottom: 3.5rem;
+         right: 0.5rem;
+         z-index: 10;
+         display: flex;
+         flex-direction: column;
+         gap: 0.25rem;
+     }
+     .map-fab {
+         width: 2.5rem;
+         height: 2.5rem;
+         padding: 0;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         font-size: 1.1rem;
+         border-radius: 0.375rem;
+         background: rgba(33,37,41,0.85);
+         border: 1px solid rgba(255,255,255,0.15);
+     }
+     .map-fab:hover:not(:disabled) {
+         background: rgba(52,58,64,0.95);
+     }
+     .map-fab:disabled {
+         opacity: 0.4;
+     }
+
+     .map-overlay {
+         position: absolute;
+         bottom: 1rem;
+         left: 0.5rem;
+         right: 0.5rem;
+         max-width: 380px;
+         margin: 0 auto;
+         background: rgba(33,37,41,0.92);
+         border: 1px solid rgba(255,255,255,0.15);
+         border-radius: 0.5rem;
+         padding: 0.75rem 1rem;
+         color: #fff;
+         z-index: 10;
+     }
+     .map-overlay--encounter {
+         border-color: rgba(74,222,128,0.4);
+     }
+     .map-info-bar {
+         position: absolute;
+         bottom: 0;
+         left: 0;
+         right: 0;
+         padding: 0.25rem 0.5rem;
+         background: rgba(0,0,0,0.5);
+         color: #ccc;
+         font-size: 0.75rem;
+         text-align: center;
+         z-index: 5;
+     }
+
+     .game-progress-chip {
+         position: absolute;
+         top: 0.75rem;
+         right: 0.75rem;
+         display: flex;
+         align-items: center;
+         gap: 0.25rem;
+         background: rgba(33,37,41,0.85);
+         border: 1px solid rgba(255,255,255,0.15);
+         border-radius: 1.5rem;
+         padding: 0.35rem 0.65rem;
+         font-size: 0.8rem;
+         color: #fff;
+         z-index: 10;
+         min-width: 80px;
+         justify-content: center;
+     }
+     .game-progress-chip .progress {
+         height: 6px;
+         width: 60px;
+     }
+ </style>
 
 @code {
     private MapView? _mapView;
@@ -158,13 +280,24 @@
     private GeoPosition? _lastPitchFetchPosition;
     private DateTime _lastPitchFetchAtUtc = DateTime.MinValue;
 
+    private const double EncounterBrowseRadiusMeters = 5000.0;
+
     private const double BrowseRadiusMeters = 5000.0;
     private const double MinPitchRefreshDistanceMeters = 50.0;
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
     private readonly Dictionary<int, Graphic> _pitchGraphics = new();
+    private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
     private PitchModel? _selectedPitch;
     private int _lastSelectedPitchId = -1;
+    private PlayerEncounterDto? _selectedEncounter;
+    private GameProgressDto? _gameProgress;
+    private int _prevLevelXp;
+    private bool _canRecruit;
+    private bool _isRecruiting;
+    private string? _recruitMessage;
+    private string _recruitMessageClass = "success";
+    private bool _showOnboarding = true;
 
     protected override void OnInitialized()
     {
@@ -198,6 +331,8 @@
         Logger.LogInformation("MapView initialized, loading pitches near London");
 
         await LoadPitchMarkersAsync(_latitude, _longitude);
+        _gameProgress = await ApiClient.GetGameProgressAsync();
+        _prevLevelXp = _gameProgress is null ? 0 : _gameProgress.Level <= 1 ? 0 : (_gameProgress.Level - 1) * 100;
     }
 
     private async void OnPositionChanged(GeoPosition pos)
@@ -232,14 +367,23 @@
         if (state.SelectedPitchId.HasValue && state.SelectedPitchId.Value != _lastSelectedPitchId)
         {
             _lastSelectedPitchId = state.SelectedPitchId.Value;
-            _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
-            _ = InvokeAsync(StateHasChanged);
+_selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
+                _ = InvokeAsync(StateHasChanged);
         }
         else if (!state.SelectedPitchId.HasValue && _selectedPitch is not null)
         {
             _lastSelectedPitchId = -1;
             _selectedPitch = null;
             _ = InvokeAsync(StateHasChanged);
+        }
+
+        if (state.SelectedEncounterId.HasValue)
+        {
+            _selectedEncounter = state.VisibleEncounters.FirstOrDefault(e => e.EncounterId == state.SelectedEncounterId.Value);
+        }
+        else if (_selectedEncounter is not null)
+        {
+            _selectedEncounter = null;
         }
     }
 
@@ -253,6 +397,10 @@
             var pitches = await ApiClient.GetNearbyPitchesAsync(lat, lng, BrowseRadiusMeters);
             Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
             await UpdatePitchGraphicsAsync(pitches);
+
+            var encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
+            Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+            await UpdateEncounterGraphicsAsync(encounters);
 
             _lastPitchFetchPosition = new GeoPosition { Latitude = lat, Longitude = lng };
             _lastPitchFetchAtUtc = DateTime.UtcNow;
@@ -305,6 +453,59 @@
         }
     }
 
+    private async Task UpdateEncounterGraphicsAsync(IReadOnlyList<PlayerEncounterDto> encounters)
+    {
+        if (_mapView is null) return;
+
+        foreach (var old in _encounterGraphics.Values)
+        {
+            try { await _mapView.RemoveGraphic(old); }
+            catch (Exception ex) { Logger.LogDebug(ex, "Failed to remove old encounter graphic"); }
+        }
+        _encounterGraphics.Clear();
+
+        foreach (var encounter in encounters)
+        {
+            var symbol = new SimpleMarkerSymbol(
+                outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
+                color: EncounterRarityColor(encounter.Rarity),
+                size: new Dimension(14),
+                style: SimpleMarkerSymbolStyle.Circle);
+
+            var graphic = new Graphic(
+                geometry: new Point(longitude: encounter.Longitude, latitude: encounter.Latitude),
+                symbol: symbol,
+                attributes: new AttributesDictionary(new Dictionary<string, object?>
+                {
+                    ["_ruckrType"] = "encounter",
+                    ["_ruckrEncounterId"] = encounter.EncounterId.ToString(),
+                    ["name"] = encounter.Name,
+                    ["rarity"] = encounter.Rarity,
+                    ["level"] = encounter.Level
+                })
+            );
+
+            try
+            {
+                await _mapView.AddGraphic(graphic);
+                _encounterGraphics[encounter.EncounterId] = graphic;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to add graphic for encounter {EncounterId}", encounter.EncounterId);
+            }
+        }
+    }
+
+    private static MapColor EncounterRarityColor(string rarity) => rarity switch
+    {
+        "Uncommon" => new MapColor(47, 133, 90),
+        "Rare" => new MapColor(37, 99, 235),
+        "Epic" => new MapColor(217, 119, 6),
+        "Legendary" => new MapColor(200, 30, 30),
+        _ => new MapColor(107, 114, 128)
+    };
+
     private async Task HandleMapClick(ClickEvent clickEvent)
     {
         if (clickEvent?.MapPoint is null || _mapView is null)
@@ -318,12 +519,31 @@
                 if (hit is GraphicHit graphicHit)
                 {
                     var attrs = graphicHit.Graphic.Attributes;
-                    if (attrs.TryGetValue("_ruckrType", out var type) && type?.ToString() == "pitch")
+                    if (attrs.TryGetValue("_ruckrType", out var type))
                     {
-                        if (attrs.TryGetValue("_ruckrId", out var idObj) && idObj is int pitchId)
+                        if (type?.ToString() == "pitch")
                         {
-                            Dispatcher.Dispatch(new SelectPitchAction(pitchId));
-                            return;
+                            if (attrs.TryGetValue("_ruckrId", out var idObj) && idObj is int pitchId)
+                            {
+                                Dispatcher.Dispatch(new SelectPitchAction(pitchId));
+                                return;
+                            }
+                        }
+                        else if (type?.ToString() == "encounter")
+                        {
+                            if (attrs.TryGetValue("_ruckrEncounterId", out var encIdObj) && Guid.TryParse(encIdObj?.ToString(), out var encounterId))
+                            {
+                                var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId);
+                                if (encounter is not null)
+                                {
+                                    _selectedEncounter = encounter;
+                                    _canRecruit = _lastKnownPosition is not null &&
+                                                  GeoPosition.HaversineDistance(_lastKnownPosition, new GeoPosition { Latitude = encounter.Latitude, Longitude = encounter.Longitude }) <= 100;
+                                    _recruitMessage = null;
+                                    Dispatcher.Dispatch(new SelectEncounterAction(encounterId));
+                                    return;
+                                }
+                            }
                         }
                     }
                 }
@@ -345,6 +565,94 @@
     {
         Dispatcher.Dispatch(new ClearSelectionAction());
     }
+
+    private void DismissOnboarding()
+    {
+        _showOnboarding = false;
+    }
+
+    private void ClearEncounterSelection()
+    {
+        _selectedEncounter = null;
+        Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private static string EncounterRarityBadgeClass(string rarity) => rarity switch
+    {
+        "Common" => "secondary",
+        "Uncommon" => "success",
+        "Rare" => "primary",
+        "Epic" => "warning",
+        "Legendary" => "danger",
+        _ => "secondary"
+    };
+
+    private string DistanceBucketFromPosition(double lat, double lng)
+    {
+        if (_lastKnownPosition is null) return "unknown";
+        var d = GeoPosition.HaversineDistance(_lastKnownPosition!, new GeoPosition { Latitude = lat, Longitude = lng });
+        return d < 50 ? "<50m" : d < 100 ? "<100m" : d < 250 ? "<250m" : d < 500 ? "<500m" : ">500m";
+    }
+
+    private string RecruitButtonClass()
+    {
+        if (!_canRecruit) return "secondary";
+        return "success";
+    }
+
+    private async Task AttemptRecruitment()
+    {
+        if (_selectedEncounter is null || _isRecruiting) return;
+
+        _isRecruiting = true;
+        _recruitMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId);
+            if (result is null)
+            {
+                _recruitMessage = "Recruitment failed. Please try again.";
+                _recruitMessageClass = "danger";
+            }
+            else if (result.Success)
+            {
+                _recruitMessage = result.Message;
+                _recruitMessageClass = "success";
+                await RefreshGameProgress();
+                await LoadPitchMarkersAsync(_lastKnownPosition?.Latitude ?? _latitude, _lastKnownPosition?.Longitude ?? _longitude);
+            }
+            else
+            {
+                _recruitMessage = result.Message;
+                _recruitMessageClass = "danger";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Recruitment attempt failed");
+            _recruitMessage = "Recruitment failed. Please try again.";
+            _recruitMessageClass = "danger";
+        }
+        finally
+        {
+            _isRecruiting = false;
+            StateHasChanged();
+        }
+    }
+
+    private double ProgressPercent => _gameProgress is null || _prevLevelXp >= _gameProgress.NextLevelExperience
+        ? 0
+        : Math.Clamp((double)(_gameProgress.Experience - _prevLevelXp) / (_gameProgress.NextLevelExperience - _prevLevelXp) * 100, 0, 100);
+
+    private async Task RefreshGameProgress()
+    {
+        _gameProgress = await ApiClient.GetGameProgressAsync();
+        _prevLevelXp = _gameProgress is null ? 0 : _gameProgress.Level <= 1 ? 0 : (_gameProgress.Level - 1) * 100;
+    }
+
+    private int LevelForXp(int xp) => Math.Clamp(1 + (xp / 100), 1, 100);
 
     private async Task CenterOnNearestPitchByTypeAsync(PitchType? filterType = null)
     {
@@ -434,5 +742,6 @@
             try { await _mapView.ClearGraphics(); } catch { }
         }
         _pitchGraphics.Clear();
+        _encounterGraphics.Clear();
     }
 }

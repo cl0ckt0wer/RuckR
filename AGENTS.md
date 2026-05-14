@@ -59,14 +59,27 @@ Remove-Job -Name RuckRServer
 
 ## Deploy
 
-Publish to the exe.dev production VM via `scripts/publish-exe-dev.ps1`. This script deploys framework-dependent `linux-x64` build, ensures .NET 10 runtime and Docker SQL Server on the VM, and restarts the server.
+Publish to the exe.dev production VM via `scripts/publish-exe-dev.sh` (bash v2, recommended) or `scripts/publish-exe-dev.ps1` (PowerShell v1).
 
+**v2 (bash) — auto-discovers DB password from user-secrets, single command:**
+```bash
+./scripts/publish-exe-dev.sh
+```
+
+With flags:
+```bash
+./scripts/publish-exe-dev.sh --skip-build       # skip dotnet publish (use existing publish/)
+./scripts/publish-exe-dev.sh --skip-restart      # skip server restart (deploy files only)
+./scripts/publish-exe-dev.sh --yes               # non-interactive mode
+```
+
+**v1 (PowerShell):**
 ```powershell
 $env:RUCKR_DB_PASSWORD = "the-real-sa-password"
 .\scripts\publish-exe-dev.ps1
 ```
 
-The script requires `RUCKR_DB_PASSWORD` env var — it will not run with a hardcoded password. On each deploy, the script writes the password to `~/ruckr/secrets.env` on the VM (`chmod 600`) and Docker/SQL Server source it from there. No password appears in the SSH command itself.
+Both scripts deploy framework-dependent `linux-x64` build, ensure .NET 10 runtime and Docker SQL Server on the VM, atomically switch the release symlink, restart via systemd, and verify the health endpoint. The password is written to `~/ruckr/secrets.env` (chmod 600) on the VM — no password appears in SSH commands.
 
 ### Setting secrets for local dev with Docker SQL Server
 
@@ -93,7 +106,7 @@ Agents must **never** hardcode, generate, or guess a DB password. Follow these r
 | **Run tests** | No password needed — test fixtures auto-generate a GUID per run via `Guid.NewGuid().ToString("N")`. |
 | **Run dev server with LocalDB** (default) | No password needed — `appsettings.json` uses `Trusted_Connection=True`. |
 | **Run dev server with Docker SQL** | Check if user-secrets is already set: `dotnet user-secrets list --project RuckR/Server/RuckR.Server.csproj`. If `ConnectionStrings:RuckRDbContext` is missing, **stop and tell the user** to run the `dotnet user-secrets set` command above with their real password. |
-| **Deploy to exe.dev** | Check `$env:RUCKR_DB_PASSWORD` is set. If not, **stop and tell the user** to set it. Never pass a literal password in the command. |
+| **Deploy to exe.dev** | Use `scripts/publish-exe-dev.sh` (bash v2) — it auto-discovers the password from user-secrets. No env var needed. Never pass a literal password in the command. |
 | **Commit or write code** | Never include a password string. If you see one in a PR or diff, flag it. |
 
 ## Architecture
@@ -116,6 +129,7 @@ Agents must **never** hardcode, generate, or guess a DB password. Follow these r
 - The `SupportedPlatform include="browser"` on `RuckR.Shared` marks that assembly for WASM compatibility.
 - Service worker (`service-worker.js` / `service-worker.published.js`) is registered for PWA support on the client.
 - Secrets never committed to the repo. Use `dotnet user-secrets` for local dev and environment variables (`RUCKR_DB_PASSWORD`, `RUCKR_TEST_DB_PASSWORD`) for deploy/test. See ADR-010.
+- **PowerShell 7 (`pwsh`) is preferred over PowerShell 5 (`powershell`)**. All PowerShell snippets and commands assume `pwsh` unless otherwise noted.
 
 ## agentmemory
 
@@ -147,6 +161,24 @@ Start-Process -FilePath "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe" -Argument
 | PCC-04 | **Clarify ProfileModel namespace convention** | `ProfileModel` lives in `RuckR.Shared.Models` (subdirectory). `WeatherForecast` is in `RuckR.Shared` (root directory). Both conventions coexist — models in subdirectories use qualified namespaces. Document this to avoid future relocation attempts. | `🟡 flagged` |
 | PCC-05 | **Document SDK-managed packages exclusion** | `dotnet list package --outdated` shows SDK-managed packages (`ILLink.Tasks`, `WebAssembly.Pack`) with auto-referenced versions. These should **not** be manually upgraded — the SDK manages them. Flag to prevent confusion during package audits. | `🟡 flagged` |
 | PCC-06 | **Adopt layered secret management (ADR-010)** | Remove all hardcoded passwords from the repo; use `dotnet user-secrets` for dev, `RUCKR_DB_PASSWORD` env var for deploy, and `RUCKR_TEST_DB_PASSWORD` env var with GUID fallback for tests. Add explicit `.gitignore` patterns (`*.env`, `secrets.*`, `appsettings.*.local.json`). All passwords scrubbed from `appsettings.json`, `appsettings.Development.json`, `scripts/publish-exe-dev.ps1`, `CustomWebApplicationFactory.cs`, and `DatabaseFixture.cs`. | `✅ accepted` |
+
+## OpenCode Commands
+
+### publish to exe.dev
+
+When the user says "publish to exe.dev" or similar, run:
+
+```bash
+./scripts/publish-exe-dev.sh
+```
+
+The v2 bash script auto-discovers the DB password from `dotnet user-secrets` for `RuckR.Server.csproj` — no manual env var setup needed. Steps:
+
+1. Run `./scripts/publish-exe-dev.sh`
+2. If SSH fails, ask the user to verify credentials/connectivity
+3. Report back: release ID, whether health check passed, and the app URL
+
+Pass `--skip-build` to reuse the existing `publish/` directory, or `--skip-restart` to deploy files without restarting the systemd service.
 
 ## gstack
 

@@ -91,8 +91,7 @@
     {
         var isWild = string.IsNullOrWhiteSpace(item.OwnerUsername);
         var isSelf = !isWild && string.Equals(item.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
-        var fuzzyDist = GetFuzzyDistance(item);
-        var displayDistance = FormatDistanceDisplay(fuzzyDist);
+        var displayDistance = FormatDistanceBucket(item.DistanceBucket);
 
         <div class="col">
             <div class="card h-100" data-testid="player-card">
@@ -100,9 +99,9 @@
                     <h5 class="card-title mb-0" data-testid="player-name">@item.Name</h5>
                 </div>
                 <div class="card-body d-flex flex-column">
-                    @* Owner username or Wild *@
+                    @* Owner status — only "Wild" or "You", never another user's name *@
                     <p class="card-text mb-1">
-                        <small class="text-muted">Owner:</small>
+                        <small class="text-muted">Creature:</small>
                         @if (isWild)
                         {
                             <span class="badge bg-secondary" data-testid="owner-badge">Wild</span>
@@ -113,7 +112,7 @@
                         }
                         else
                         {
-                            <span data-testid="owner-badge">@item.OwnerUsername</span>
+                            <span class="badge bg-light text-dark" data-testid="owner-badge">Owned</span>
                         }
                     </p>
 
@@ -123,7 +122,7 @@
                     @* Rarity badge (color-coded) *@
                     <span class="badge @RarityBadgeClass(item.Rarity) mb-3" data-testid="rarity-badge">@item.Rarity</span>
 
-                    @* Fuzzy distance (prominent) *@
+                    @* Distance bucket (prominent) — no exact meters exposed *@
                     <div class="text-center mb-3 p-2 rounded" style="background-color: #f8f9fa;" data-testid="distance-display">
                         <span class="fs-4 fw-bold">@displayDistance</span>
                     </div>
@@ -143,8 +142,8 @@
                         else
                         {
                             <button class="btn btn-primary btn-sm w-100"
-                                    @onclick="() => ChallengePlayer(item)"
-                                    data-testid="challenge-btn">
+                                    data-testid="challenge-btn"
+                                    @onclick="() => ChallengePlayer(item)">
                                 ⚔️ Challenge
                             </button>
                         }
@@ -165,16 +164,10 @@
     private int _selectedRadiusKm = 10;
     private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
 
-    /// <summary>
-    /// Fuzzy distance cache keyed by PlayerId. Static to persist across page
-    /// navigations within the Blazor WASM session, satisfying the "per session"
-    /// requirement. Each player gets a random ±20% offset applied once.
-    /// </summary>
-    private static readonly Dictionary<int, double> s_fuzzyCache = new();
-
     private IEnumerable<NearbyPlayerDto> _sortedPlayers =>
         _nearbyPlayers
-            .OrderBy(p => GetFuzzyDistance(p))
+            .OrderBy(p => (int)p.DistanceBucket)
+            .ThenBy(p => p.Name)
             .ToList();
 
     protected override async Task OnInitializedAsync()
@@ -238,38 +231,18 @@
         }
     }
 
-    private double GetFuzzyDistance(NearbyPlayerDto player)
+    private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
     {
-        if (s_fuzzyCache.TryGetValue(player.PlayerId, out var cached))
-            return cached;
-
-        // Apply ±20% random offset: range 0.8x to 1.2x
-        var fuzzy = player.FuzzyDistanceMeters * (0.8 + Random.Shared.NextDouble() * 0.4);
-        s_fuzzyCache[player.PlayerId] = fuzzy;
-        return fuzzy;
-    }
-
-    private static string FormatDistanceDisplay(double fuzzyDistanceMeters)
-    {
-        return fuzzyDistanceMeters switch
-        {
-            <= 50.0 => "< 50m",
-            <= 100.0 => "< 100m",
-            <= 250.0 => "< 250m",
-            <= 500.0 => "< 500m",
-            _ => $"~{fuzzyDistanceMeters / 1000.0:F1}km"
-        };
-    }
-
-    private async Task OnRadiusChangedAsync()
-    {
-        await LoadNearbyPlayersAsync();
-    }
+        DistanceBucket.Within50m => "< 50m",
+        DistanceBucket.Within100m => "< 100m",
+        DistanceBucket.Within250m => "< 250m",
+        DistanceBucket.Within500m => "< 500m",
+        _ => "> 500m"
+    };
 
     private void ChallengePlayer(NearbyPlayerDto player)
     {
-        Navigation.NavigateTo(
-            $"/battle?opponent={Uri.EscapeDataString(player.OwnerUsername)}&player={player.PlayerId}");
+        Navigation.NavigateTo($"/battle?player={player.PlayerId}");
     }
 
     private async Task EnableGpsAsync()
@@ -279,8 +252,6 @@
             _gpsDisabled = false;
             _isLoading = true;
             await GeolocationService.StartWatchAsync();
-
-            // Give the location service a moment to get a fix
             await Task.Delay(1500);
 
             var lat = LocationState.Value.UserLatitude;
@@ -311,4 +282,9 @@
         "Legendary" => "bg-warning text-dark",
         _ => "bg-secondary"
     };
+
+    private async Task OnRadiusChangedAsync()
+    {
+        await LoadNearbyPlayersAsync();
+    }
 }

@@ -3,7 +3,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace RuckR.Shared.Models
 {
-    public sealed record ChallengeRequest(string OpponentUsername, int SelectedPlayerId);
+    public sealed record ChallengeRequest(
+        string OpponentUsername,
+        int SelectedPlayerId,
+        [MaxLength(36)] string? IdempotencyKey = null);
 
     public sealed record AcceptChallengeRequest(int SelectedPlayerId);
 
@@ -33,8 +36,8 @@ namespace RuckR.Shared.Models
         string Name,
         string Position,
         string Rarity,
-        double FuzzyDistanceMeters,
-        string OwnerUsername);
+        DistanceBucket DistanceBucket,
+        string? OwnerUsername);
 
     public sealed record CapturePlayerRequest(
         [Required] int PlayerId,
@@ -68,4 +71,9 @@ namespace RuckR.Shared.Models
         int SuccessChancePercent,
         string Message,
         CollectionModel? Collection);
+
+    public sealed record GameProgressDto(
+        int Level,
+        int Experience,
+        int NextLevelExperience);
 }

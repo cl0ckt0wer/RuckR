@@ -35,5 +35,12 @@ namespace RuckR.Shared.Models
         /// </summary>
         [Timestamp]
         public byte[]? RowVersion { get; set; }
+
+        /// <summary>
+        /// Client-generated idempotency key (GUID) to prevent duplicate challenges
+        /// from network retries.
+        /// </summary>
+        [MaxLength(36)]
+        public string? IdempotencyKey { get; set; }
     }
 }

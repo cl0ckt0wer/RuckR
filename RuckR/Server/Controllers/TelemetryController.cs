@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using RuckR.Server.Data;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
@@ -10,6 +12,7 @@ namespace RuckR.Server.Controllers
     public class TelemetryController : ControllerBase
     {
         private readonly ILogger<TelemetryController> _logger;
+        private readonly RuckRDbContext _db;
 
         private static readonly Regex GpsAcceptedRegex = new(
             @"ACCEPTED.*?(?:lat=|raw=\()(?<lat>-?\d+\.\d+).*?(?:lng=|,\s*)(?<lng>-?\d+\.\d+).*?accuracy=(?<acc>\d+)m(\s+displacement=(?<disp>\d+\.?\d*)m)?",
@@ -19,9 +22,10 @@ namespace RuckR.Server.Controllers
             @"discarding position.*displacement\s+(?<disp>\d+\.?\d*)m.*threshold\s+(?<thresh>\d+\.?\d*)m.*accuracy=(?<acc>\d+)m",
             RegexOptions.Compiled);
 
-        public TelemetryController(ILogger<TelemetryController> logger)
+        public TelemetryController(ILogger<TelemetryController> logger, RuckRDbContext db)
         {
             _logger = logger;
+            _db = db;
         }
 
         [HttpPost]
@@ -93,8 +97,24 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpGet("health")]
-        public IActionResult Health()
+        public async Task<IActionResult> Health()
         {
+            // Verify DB connectivity with a lightweight query
+            bool dbHealthy = false;
+            try
+            {
+                dbHealthy = await _db.Database.CanConnectAsync();
+            }
+            catch
+            {
+                dbHealthy = false;
+            }
+
+            if (!dbHealthy)
+            {
+                return StatusCode(503, new { status = "unhealthy", reason = "database unavailable", timestamp = DateTime.UtcNow });
+            }
+
             return Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
         }
 

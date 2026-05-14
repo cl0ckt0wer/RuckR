@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -25,11 +27,16 @@ using Testcontainers.MsSql;
 namespace RuckR.Tests.Fixtures;
 
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
-{
-    private readonly MsSqlContainer _dbContainer;
-    private readonly TestLocationTracker _locationTracker = new();
-    private string _serverAddress = string.Empty;
-    private WebApplication? _kestrelApp;
+    {
+        private readonly MsSqlContainer _dbContainer;
+        private readonly TestLocationTracker _locationTracker = new();
+        private string _serverAddress = string.Empty;
+        private WebApplication? _kestrelApp;
+
+        // Test ArcGIS keys — injected into client appsettings so the map renders in E2E tests.
+        private const string TestArcGisApiKey = "test-arcgis-api-key-for-e2e";
+        private const string TestArcGisPortalItemId = "test-portal-item-id-for-e2e";
+        private const string TestGeoBlazorLicenseKey = "test-geoblazor-license-key-for-e2e";
 
     public CustomWebApplicationFactory()
     {
@@ -116,6 +123,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         builder.Services.AddSingleton<ILocationTracker>(_locationTracker);
 
         builder.Services.AddScoped<IBattleResolver, BattleResolver>();
+        builder.Services.AddScoped<IBattleService, BattleService>();
+        builder.Services.AddScoped<IProfileService, ProfileService>();
+        builder.Services.AddScoped<IRateLimitService, RateLimitService>();
         builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();
         builder.Services.AddScoped<IRecruitmentService, RecruitmentService>();
 
@@ -203,6 +213,33 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         _kestrelApp.UseExceptionHandler("/Error");
 
         _kestrelApp.UseHttpLogging();
+
+        // ── Serve client appsettings with ArcGIS/GeoBlazor key injection (before static files) ──
+        _kestrelApp.Use(async (context, next) =>
+        {
+            var path = context.Request.Path.Value ?? "";
+            if (path.StartsWith("/appsettings") && path.EndsWith(".json"))
+            {
+                var filePath = ResolveClientAppSettingsPath(_kestrelApp.Environment, path);
+                if (filePath is not null)
+                {
+                    var json = await System.IO.File.ReadAllTextAsync(filePath);
+                    var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
+
+                    root["ArcGISApiKey"] = TestArcGisApiKey;
+                    root["ArcGISPortalItemId"] = TestArcGisPortalItemId;
+
+                    var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
+                    geoBlazor["LicenseKey"] = TestGeoBlazorLicenseKey;
+                    root["GeoBlazor"] = geoBlazor;
+
+                    context.Response.ContentType = "application/json; charset=utf-8";
+                    await context.Response.WriteAsync(root.ToJsonString());
+                    return;
+                }
+            }
+            await next();
+        });
 
         _kestrelApp.UseBlazorFrameworkFiles();
         _kestrelApp.MapStaticAssets();
@@ -347,8 +384,34 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     /// </summary>
     public static void ResetAllRateLimits()
     {
-        RuckR.Server.Controllers.PitchesController.ResetRateLimits();
-        RuckR.Server.Controllers.BattlesController.ResetRateLimits();
-        RuckR.Server.Controllers.CollectionController.ResetRateLimits();
+        // Rate limits are now DB-backed — no in-memory reset needed.
+    }
+
+    /// <summary>
+    /// Resolves the physical path of a client appsettings file,
+    /// matching the logic in <see cref="Program.ResolveClientAppSettingsPath"/>.
+    /// </summary>
+    private static string? ResolveClientAppSettingsPath(IWebHostEnvironment env, string requestPath)
+    {
+        var relativePath = requestPath.TrimStart('/');
+        var configuration = env.IsDevelopment() ? "Debug" : "Release";
+        var candidateRoots = new[]
+        {
+            env.WebRootPath,
+            Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
+            Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "wwwroot"))
+        };
+
+        foreach (var root in candidateRoots)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            var path = Path.Combine(root, relativePath);
+            if (System.IO.File.Exists(path))
+                return path;
+        }
+
+        return null;
     }
 }

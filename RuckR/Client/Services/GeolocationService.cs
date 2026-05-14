@@ -1,18 +1,19 @@
 using Fluxor;
-using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using RuckR.Client.Store.LocationFeature;
 using RuckR.Shared.Models;
+using System.Diagnostics.CodeAnalysis;
 
 namespace RuckR.Client.Services;
 
 public class GeolocationService : IGeolocationService
 {
-    private readonly Microsoft.JSInterop.IGeolocationService _blazorators;
+    private readonly IJSRuntime _jsRuntime;
     private readonly IDispatcher _dispatcher;
     private readonly ILogger<GeolocationService> _logger;
+    private IJSObjectReference? _geoModule;
+    private DotNetObjectReference<GeolocationService>? _dotNetRef;
     private double? _watchId;
-    private TaskCompletionSource<GeoPosition?>? _positionTcs;
     private DateTime? _lastPositionUpdate;
     private GeoPosition? _lastAcceptedPosition;
     private double _emaLat;
@@ -25,12 +26,15 @@ public class GeolocationService : IGeolocationService
 
     public event Action<GeoPosition>? PositionChanged;
 
+    //#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+    [DynamicDependency(nameof(OnPositionFromJs))]
+    [DynamicDependency(nameof(OnErrorFromJs))]
     public GeolocationService(
-        Microsoft.JSInterop.IGeolocationService blazorators,
+        IJSRuntime jsRuntime,
         IDispatcher dispatcher,
         ILogger<GeolocationService> logger)
     {
-        _blazorators = blazorators;
+        _jsRuntime = jsRuntime;
         _dispatcher = dispatcher;
         _logger = logger;
 
@@ -48,166 +52,214 @@ public class GeolocationService : IGeolocationService
         }
     }
 
-    public Task<GeoPosition?> GetCurrentPositionAsync()
+    private async Task<IJSObjectReference> GetGeoModuleAsync()
     {
-        _logger.LogWarning("GetCurrentPositionAsync: starting via blazorators");
-        _positionTcs?.TrySetCanceled();
-        _positionTcs = new TaskCompletionSource<GeoPosition?>();
-
-        var options = new PositionOptions
+        if (_geoModule is null)
         {
-            EnableHighAccuracy = false,
-            Timeout = 8000,
-            MaximumAge = 300000
-        };
-
-        _blazorators.GetCurrentPosition(
-            position =>
-            {
-                _logger.LogWarning("GetCurrentPositionAsync: blazorators success lat={Lat}, lng={Lng}",
-                    position.Coords.Latitude, position.Coords.Longitude);
-                _positionTcs.TrySetResult(new GeoPosition
-                {
-                    Latitude = position.Coords.Latitude,
-                    Longitude = position.Coords.Longitude,
-                    Accuracy = position.Coords.Accuracy,
-                    Timestamp = position.TimestampAsUtcDateTime
-                });
-            },
-            error =>
-            {
-                _logger.LogWarning("GetCurrentPositionAsync: blazorators error code={Code}, msg={Msg}",
-                    error.Code, error.Message);
-                _positionTcs.TrySetResult(null);
-            },
-            options);
-
-        var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        timeoutCts.Token.Register(() =>
-        {
-            if (_positionTcs.TrySetResult(null))
-                _logger.LogWarning("GetCurrentPositionAsync: C# timeout after 10s (browser never called back)");
-        });
-
-        return _positionTcs.Task;
+            _geoModule = await _jsRuntime.InvokeAsync<IJSObjectReference>("import", "./js/geolocation.module.js");
+        }
+        return _geoModule;
     }
 
-    public Task StartWatchAsync()
+    public async Task<GeoPosition?> GetCurrentPositionAsync()
     {
-        var options = new PositionOptions
+        _logger.LogWarning("GetCurrentPositionAsync: starting via JS interop");
+
+        var module = await GetGeoModuleAsync();
+        try
         {
-            EnableHighAccuracy = false,
-            Timeout = 15000,
-            MaximumAge = 5000
-        };
+            var options = new PositionOptions(false, 8000, 300000);
+            var pos = await module.InvokeAsync<GeolocationResult>(
+                "getCurrentPosition", options);
 
-        _watchId = _blazorators.WatchPosition(
-            position =>
+            _logger.LogWarning(
+                "GetCurrentPositionAsync: success lat={Lat}, lng={Lng}",
+                pos.Coords.Latitude, pos.Coords.Longitude);
+
+            return new GeoPosition
             {
-                var now = DateTime.UtcNow;
-                if (_lastPositionUpdate.HasValue && (now - _lastPositionUpdate.Value) < ThrottleInterval)
-                    return;
+                Latitude = pos.Coords.Latitude,
+                Longitude = pos.Coords.Longitude,
+                Accuracy = pos.Coords.Accuracy,
+                Timestamp = pos.TimestampAsUtcDateTime
+            };
+        }
+        catch (JSException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "GetCurrentPositionAsync: JS error msg={Msg}",
+                ex.Message);
+            return null;
+        }
+    }
 
-                _lastPositionUpdate = now;
+    public async Task StartWatchAsync()
+    {
+        var options = new PositionOptions(false, 15000, 5000);
 
-                var accuracy = position.Coords.Accuracy;
-
-                var geoPos = new GeoPosition
-                {
-                    Latitude = position.Coords.Latitude,
-                    Longitude = position.Coords.Longitude,
-                    Accuracy = accuracy,
-                    Timestamp = now
-                };
-
-                if (Math.Abs(geoPos.Latitude) < NullIslandThreshold && Math.Abs(geoPos.Longitude) < NullIslandThreshold)
-                {
-                    _logger.LogWarning(
-                        "WatchPosition: discarding null-island position lat={Lat:F6} lng={Lng:F6}",
-                        geoPos.Latitude, geoPos.Longitude);
-                    return;
-                }
-
-                if (_lastAcceptedPosition is null)
-                {
-                    _logger.LogWarning(
-                        "WatchPosition: ACCEPTED (first) — build={Build} lat={Lat:F6} lng={Lng:F6} accuracy={Accuracy:F0}m",
-                        _buildStamp, geoPos.Latitude, geoPos.Longitude, accuracy);
-
-                    _lastAcceptedPosition = geoPos;
-                    _emaLat = geoPos.Latitude;
-                    _emaLng = geoPos.Longitude;
-
-                    _dispatcher.Dispatch(new UpdatePositionAction(geoPos.Latitude, geoPos.Longitude, accuracy));
-                    PositionChanged?.Invoke(geoPos);
-                    return;
-                }
-
-                if (accuracy > MaxAccuracyMeters)
-                {
-                    _logger.LogDebug(
-                        "WatchPosition: discarding position — accuracy {Accuracy:F0}m exceeds threshold {Threshold:F0}m",
-                        accuracy, MaxAccuracyMeters);
-                    return;
-                }
-
-                var displacement = GeoPosition.HaversineDistance(_lastAcceptedPosition, geoPos);
-                if (displacement < Math.Max(accuracy, MinDisplacementMeters))
-                {
-                    _logger.LogDebug(
-                        "WatchPosition: discarding position — displacement {Displacement:F1}m < threshold {Threshold:F1}m (accuracy={Accuracy:F0}m)",
-                        displacement, Math.Max(accuracy, MinDisplacementMeters), accuracy);
-                    return;
-                }
-
-                _lastAcceptedPosition = geoPos;
-
-                var alpha = 1.0 / (1.0 + Math.Max(accuracy / 10.0, 1.0));
-                _emaLat = alpha * geoPos.Latitude + (1.0 - alpha) * _emaLat;
-                _emaLng = alpha * geoPos.Longitude + (1.0 - alpha) * _emaLng;
-
-                var smoothedPos = new GeoPosition
-                {
-                    Latitude = _emaLat,
-                    Longitude = _emaLng,
-                    Accuracy = accuracy,
-                    Timestamp = now
-                };
-
-                _logger.LogWarning(
-                    "WatchPosition: ACCEPTED — build={Build} raw=({RawLat:F6},{RawLng:F6}) ema=({EmaLat:F6},{EmaLng:F6}) alpha={Alpha:F2} displacement={Displacement:F1}m",
-                    _buildStamp, geoPos.Latitude, geoPos.Longitude,
-                    smoothedPos.Latitude, smoothedPos.Longitude,
-                    alpha, displacement);
-
-                _dispatcher.Dispatch(new UpdatePositionAction(smoothedPos.Latitude, smoothedPos.Longitude, accuracy));
-                PositionChanged?.Invoke(smoothedPos);
-            },
-            error =>
-            {
-                _dispatcher.Dispatch(new LocationErrorAction(error.Message));
-            },
-            options);
+        var module = await GetGeoModuleAsync();
+        _dotNetRef = DotNetObjectReference.Create(this);
+        _watchId = await module.InvokeAsync<double>(
+            "watchPosition", _dotNetRef, options);
 
         _dispatcher.Dispatch(new SetGpsWatchingAction(true));
-        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Called from JS via DotNetObjectReference when a position update arrives.
+    /// </summary>
+    [JSInvokable]
+    public void OnPositionFromJs(GeolocationResult result)
+    {
+        try
+        {
+            var now = DateTime.UtcNow;
+            if (_lastPositionUpdate.HasValue && (now - _lastPositionUpdate.Value) < ThrottleInterval)
+                return;
+
+            _lastPositionUpdate = now;
+
+            var accuracy = result.Coords.Accuracy;
+            var geoPos = new GeoPosition
+            {
+                Latitude = result.Coords.Latitude,
+                Longitude = result.Coords.Longitude,
+                Accuracy = accuracy,
+                Timestamp = now
+            };
+
+            if (Math.Abs(geoPos.Latitude) < NullIslandThreshold && Math.Abs(geoPos.Longitude) < NullIslandThreshold)
+            {
+                _logger.LogWarning(
+                    "WatchPosition: discarding null-island position lat={Lat:F6} lng={Lng:F6}",
+                    geoPos.Latitude, geoPos.Longitude);
+                return;
+            }
+
+            if (_lastAcceptedPosition is null)
+            {
+                _logger.LogWarning(
+                    "WatchPosition: ACCEPTED (first) — build={Build} lat={Lat:F6} lng={Lng:F6} accuracy={Accuracy:F0}m",
+                    _buildStamp, geoPos.Latitude, geoPos.Longitude, accuracy);
+
+                _lastAcceptedPosition = geoPos;
+                _emaLat = geoPos.Latitude;
+                _emaLng = geoPos.Longitude;
+
+                _dispatcher.Dispatch(new UpdatePositionAction(geoPos.Latitude, geoPos.Longitude, accuracy));
+                PositionChanged?.Invoke(geoPos);
+                return;
+            }
+
+            if (accuracy > MaxAccuracyMeters)
+            {
+                _logger.LogDebug(
+                    "WatchPosition: discarding position — accuracy {Accuracy:F0}m exceeds threshold {Threshold:F0}m",
+                    accuracy, MaxAccuracyMeters);
+                return;
+            }
+
+            var displacement = GeoPosition.HaversineDistance(_lastAcceptedPosition, geoPos);
+            if (displacement < Math.Max(accuracy, MinDisplacementMeters))
+            {
+                _logger.LogDebug(
+                    "WatchPosition: discarding position — displacement {Displacement:F1}m < threshold {Threshold:F1}m (accuracy={Accuracy:F0}m)",
+                    displacement, Math.Max(accuracy, MinDisplacementMeters), accuracy);
+                return;
+            }
+
+            _lastAcceptedPosition = geoPos;
+
+            var alpha = 1.0 / (1.0 + Math.Max(accuracy / 10.0, 1.0));
+            _emaLat = alpha * geoPos.Latitude + (1.0 - alpha) * _emaLat;
+            _emaLng = alpha * geoPos.Longitude + (1.0 - alpha) * _emaLng;
+
+            var smoothedPos = new GeoPosition
+            {
+                Latitude = _emaLat,
+                Longitude = _emaLng,
+                Accuracy = accuracy,
+                Timestamp = now
+            };
+
+            _logger.LogWarning(
+                "WatchPosition: ACCEPTED — build={Build} raw=({RawLat:F6},{RawLng:F6}) ema=({EmaLat:F6},{EmaLng:F6}) alpha={Alpha:F2} displacement={Displacement:F1}m",
+                _buildStamp, geoPos.Latitude, geoPos.Longitude,
+                smoothedPos.Latitude, smoothedPos.Longitude,
+                alpha, displacement);
+
+            _dispatcher.Dispatch(new UpdatePositionAction(smoothedPos.Latitude, smoothedPos.Longitude, accuracy));
+            PositionChanged?.Invoke(smoothedPos);
+        }
+        catch (Exception ex)
+        {
+            _dispatcher.Dispatch(new LocationErrorAction(ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Called from JS on geolocation error during watch.
+    /// </summary>
+    [JSInvokable]
+    public void OnErrorFromJs(int code, string message)
+    {
+        _dispatcher.Dispatch(new LocationErrorAction($"Geolocation error {code}: {message}"));
     }
 
     public void StopWatch()
     {
         if (_watchId.HasValue)
         {
-            _blazorators.ClearWatch(_watchId.Value);
+            _geoModule?.InvokeVoidAsync("clearWatch", _watchId.Value);
             _watchId = null;
         }
 
         _lastAcceptedPosition = null;
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         StopWatch();
-        _positionTcs?.TrySetCanceled();
-        return ValueTask.CompletedTask;
+
+        if (_geoModule is not null)
+        {
+            try
+            {
+                await _geoModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        _dotNetRef?.Dispose();
     }
+}
+
+/// <summary>
+/// Mirrors the options object passed to navigator.geolocation methods.
+/// </summary>
+public record PositionOptions(
+    bool EnableHighAccuracy,
+    int Timeout,
+    int MaximumAge);
+
+/// <summary>
+/// Mirrors the result returned from JS geolocation calls.
+/// </summary>
+public class GeolocationResult
+{
+    public GeolocationCoords Coords { get; set; } = null!;
+    public long Timestamp { get; set; }
+
+    public DateTime TimestampAsUtcDateTime =>
+        DateTimeOffset.FromUnixTimeMilliseconds(Timestamp).UtcDateTime;
+}
+
+public class GeolocationCoords
+{
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public double Accuracy { get; set; }
 }

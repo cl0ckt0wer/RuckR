@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace RuckR.Tests.Pages;
 
 /// <summary>
-/// Page Object for the /map page — the full-screen Leaflet.js interactive map
+/// Page Object for the /map page — the GeoBlazor interactive map
 /// with pitch markers, user location marker, onboarding banner, GPS-disabled
 /// state, error state, and pitch detail overlay.
 /// </summary>
@@ -17,29 +17,38 @@ public class MapPage : BasePage
     // ── Map loading ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Wait for Leaflet tiles to finish loading. Returns true if tiles appear
-    /// within the timeout; false otherwise.
+    /// Wait for the GeoBlazor map container to appear in the DOM.
+    /// Returns true if it appears within the timeout; false otherwise.
     /// </summary>
     public async Task<bool> WaitForMapLoadedAsync(int timeoutMs = 15_000)
     {
         try
         {
-            await Page.WaitForSelectorAsync(".leaflet-tile-loaded", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='map-loading']", new PageWaitForSelectorOptions
             {
                 Timeout = timeoutMs,
-                State = WaitForSelectorState.Attached
+                State = WaitForSelectorState.Hidden
+            });
+            await Page.WaitForSelectorAsync("[data-testid='map-container']", new PageWaitForSelectorOptions
+            {
+                Timeout = timeoutMs,
+                State = WaitForSelectorState.Visible
             });
             return true;
         }
         catch (TimeoutException)
         {
+            await ScreenshotAsync("map-load-timeout");
+            var html = await Page.ContentAsync();
+            Directory.CreateDirectory("screenshots");
+            await File.WriteAllTextAsync($"screenshots/map-load-timeout_{DateTime.UtcNow:yyyyMMdd_HHmmss}.html", html);
             return false;
         }
     }
 
     /// <summary>Check whether the map container exists in the DOM.</summary>
     public async Task<bool> IsMapRenderedAsync()
-        => await ExistsAsync(".leaflet-container") || await ExistsAsync("[data-testid='map-container']");
+        => await ExistsAsync("[data-testid='map-container']");
 
     /// <summary>Check whether the loading spinner is currently visible.</summary>
     public async Task<bool> IsLoadingSpinnerVisibleAsync() => await ExistsAsync("[data-testid='map-loading']");
@@ -94,10 +103,12 @@ public class MapPage : BasePage
 
     // ── Pitch markers ─────────────────────────────────────────────────
 
-    /// <summary>Return the total number of pitch marker icons currently on the map.</summary>
+    /// <summary>Return the total number of pitch marker graphics currently on the map.</summary>
+    /// <remarks>GeoBlazor renders markers as SVG elements inside the map container.</remarks>
     public async Task<int> GetPitchMarkerCountAsync()
     {
-        var markers = await Page.Locator(".leaflet-marker-icon").AllAsync();
+        // GeoBlazor SimpleMarkerSymbol renders as SVG <circle> elements inside graphic layers
+        var markers = await Page.Locator("[data-testid='map-container'] svg circle").AllAsync();
         return markers.Count;
     }
 
@@ -107,7 +118,7 @@ public class MapPage : BasePage
     /// </summary>
     public async Task ClickFirstPitchMarkerAsync()
     {
-        var marker = Page.Locator(".leaflet-marker-icon").First;
+        var marker = Page.Locator("[data-testid='map-container'] svg circle").First;
         if (await marker.IsVisibleAsync())
         {
             await marker.ClickAsync();
@@ -124,7 +135,7 @@ public class MapPage : BasePage
     /// </summary>
     public async Task ClickPitchMarkerAsync(int index)
     {
-        var markers = Page.Locator(".leaflet-marker-icon");
+        var markers = Page.Locator("[data-testid='map-container'] svg circle");
         var count = await markers.CountAsync();
         if (index >= 0 && index < count)
         {
@@ -158,18 +169,17 @@ public class MapPage : BasePage
     // ── User location marker ───────────────────────────────────────────
 
     /// <summary>
-    /// Check whether the user's location pulse marker is visible on the map.
+    /// Check whether the user's location marker is visible on the map.
     /// </summary>
-    public async Task<bool> IsUserMarkerVisibleAsync() => await ExistsAsync(".user-location-pulse");
+    public async Task<bool> IsUserMarkerVisibleAsync() => await ExistsAsync("[data-testid='map-container'] svg");
 
-    // ── Map tile / center helpers ──────────────────────────────────────
+    // ── Map center helpers ─────────────────────────────────────────────
 
     /// <summary>
-    /// Verify the map has loaded tiles (Leaflet rendered the tile layer).
+    /// Verify the map container is rendered and present in the DOM.
     /// </summary>
     public async Task<bool> IsCenteredOnLocationAsync()
     {
-        var tiles = await Page.Locator(".leaflet-tile-loaded").AllAsync();
-        return tiles.Count > 0;
+        return await ExistsAsync("[data-testid='map-container']");
     }
 }

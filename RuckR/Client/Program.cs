@@ -1,8 +1,9 @@
+using dymaptic.GeoBlazor.Core;
 using Fluxor;
-using Fluxor.Blazor.Web.ReduxDevTools;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using RuckR.Client;
 using RuckR.Client.Services;
@@ -40,13 +41,14 @@ builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<AuthenticationStateProvider, CookieAuthenticationStateProvider>();
 
-builder.Services.AddFluxor(o => o.ScanAssemblies(typeof(Program).Assembly).UseReduxDevTools());
+builder.Services.AddFluxor(o => o.ScanAssemblies(typeof(Program).Assembly));
 
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<ApiClientService>();
-builder.Services.AddGeolocationServices();
+// builder.Services.AddGeolocationServices(); // Removed — using native JS interop
+builder.Services.AddGeoBlazor(builder.Configuration);
 builder.Services.AddScoped<IGeolocationService, GeolocationService>();
-builder.Services.AddScoped<IMapService, MapService>();
+// IMapService/MapService removed — replaced by GeoBlazor component binding
 builder.Services.AddScoped<SignalRClientService>();
 builder.Services.AddSingleton<BrowserErrorLogger>();
 

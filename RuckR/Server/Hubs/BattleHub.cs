@@ -13,13 +13,13 @@ namespace RuckR.Server.Hubs
     public class BattleHub : Hub
     {
         private const int PitchProximityMeters = 100;
-        private const int MaxPendingChallenges = 3;
-        private static readonly TimeSpan ChallengeExpiryDuration = TimeSpan.FromHours(24);
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILocationTracker _locationTracker;
         private readonly IBattleResolver _battleResolver;
+        private readonly IBattleService _battleService;
+        private readonly IRateLimitService _rateLimitService;
         private readonly IPitchDiscoveryService _pitchDiscoveryService;
 
         public BattleHub(
@@ -27,12 +27,16 @@ namespace RuckR.Server.Hubs
             UserManager<IdentityUser> userManager,
             ILocationTracker locationTracker,
             IBattleResolver battleResolver,
+            IBattleService battleService,
+            IRateLimitService rateLimitService,
             IPitchDiscoveryService pitchDiscoveryService)
         {
             _db = db;
             _userManager = userManager;
             _locationTracker = locationTracker;
             _battleResolver = battleResolver;
+            _battleService = battleService;
+            _rateLimitService = rateLimitService;
             _pitchDiscoveryService = pitchDiscoveryService;
         }
 
@@ -96,7 +100,7 @@ namespace RuckR.Server.Hubs
         /// <summary>
         /// Send a challenge to another user. Creates a pending battle and notifies the opponent.
         /// </summary>
-        public async Task SendChallenge(string opponentUsername, int playerId)
+        public async Task SendChallenge(string opponentUsername, int playerId, string? idempotencyKey = null)
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
@@ -120,16 +124,40 @@ namespace RuckR.Server.Hubs
             if (!playerInCollection)
                 throw new HubException("Selected player is not in your collection.");
 
-            // 3. Check pending challenge count
-            var now = DateTime.UtcNow;
-            var expiryCutoff = now - ChallengeExpiryDuration;
+            // 3. Check pending challenge count (shared limit from IBattleService)
+            var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
+
+            // 0. Idempotency check: prevent duplicate challenges from retries
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+            {
+                var existing = await _db.Battles
+                    .AnyAsync(b => b.IdempotencyKey == idempotencyKey
+                        && b.ChallengerId == userId
+                        && b.CreatedAt > expiryCutoff);
+                if (existing)
+                {
+                    // Return the existing battle instead of creating a duplicate
+                    var existingBattle = await _db.Battles
+                        .FirstAsync(b => b.IdempotencyKey == idempotencyKey
+                            && b.ChallengerId == userId
+                            && b.CreatedAt > expiryCutoff);
+                    await Clients.Caller.SendAsync("ChallengeSent", existingBattle.Id);
+                    return;
+                }
+            }
+
             var pendingCount = await _db.Battles
                 .CountAsync(b => b.ChallengerId == userId
                     && b.Status == BattleStatus.Pending
                     && b.CreatedAt > expiryCutoff);
 
-            if (pendingCount >= MaxPendingChallenges)
+            if (pendingCount >= _battleService.MaxPendingChallenges)
                 throw new HubException("You have too many pending challenges. Wait for them to expire or be resolved.");
+
+            // 4. Rate limit (shared with REST API via IRateLimitService)
+            var allowed = await _rateLimitService.IsAllowedAsync(userId, "challenge", _battleService.MaxChallengesPerHour, TimeSpan.FromHours(1));
+            if (!allowed)
+                throw new HubException($"Rate limit exceeded. You can send up to {_battleService.MaxChallengesPerHour} challenges per hour.");
 
             var battle = new BattleModel
             {
@@ -137,13 +165,14 @@ namespace RuckR.Server.Hubs
                 OpponentId = opponent.Id,
                 ChallengerPlayerId = playerId,
                 Status = BattleStatus.Pending,
-                CreatedAt = now
+                CreatedAt = DateTime.UtcNow,
+                IdempotencyKey = idempotencyKey
             };
 
             _db.Battles.Add(battle);
             await _db.SaveChangesAsync();
 
-            // 4. Notify the opponent with a ChallengeNotification DTO
+            // 5. Notify the opponent with a ChallengeNotification DTO
             var challengerUser = await _userManager.FindByIdAsync(userId);
             var challengerUsername = challengerUser?.UserName ?? "Unknown";
 
@@ -156,7 +185,7 @@ namespace RuckR.Server.Hubs
 
             await Clients.User(opponent.Id).SendAsync("ReceiveChallenge", notification);
 
-            // 5. Confirm success to the caller
+            // 6. Confirm success to the caller
             await Clients.Caller.SendAsync("ChallengeSent", battle.Id);
         }
 
@@ -180,7 +209,7 @@ namespace RuckR.Server.Hubs
                 throw new HubException("Challenge is no longer pending.");
 
             // Lazy-expiry check: if challenge is older than 24h, expire it
-            if (battle.CreatedAt <= DateTime.UtcNow - ChallengeExpiryDuration)
+            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
             {
                 battle.Status = BattleStatus.Expired;
                 battle.ResolvedAt = DateTime.UtcNow;
@@ -214,8 +243,8 @@ namespace RuckR.Server.Hubs
             var challengerUsername = challengerUser?.UserName ?? "Unknown";
             var opponentUsername = opponentUser?.UserName ?? "Unknown";
 
-            // Resolve the battle
-            var result = _battleResolver.Resolve(
+            // Resolve the battle via shared IBattleService
+            var result = await _battleService.ResolveBattlePureAsync(
                 challengerPlayer,
                 opponentPlayer,
                 challengerUsername,
@@ -264,7 +293,7 @@ namespace RuckR.Server.Hubs
                 throw new HubException("Challenge is no longer pending.");
 
             // Lazy-expiry check before declining
-            if (battle.CreatedAt <= DateTime.UtcNow - ChallengeExpiryDuration)
+            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
             {
                 battle.Status = BattleStatus.Expired;
                 battle.ResolvedAt = DateTime.UtcNow;
@@ -294,6 +323,11 @@ namespace RuckR.Server.Hubs
         public async Task LeaveBattleGroup(int battleId)
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, GetBattleGroupName(battleId));
+        }
+
+        public Task<long> Ping()
+        {
+            return Task.FromResult(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
         private string GetCurrentUserId()

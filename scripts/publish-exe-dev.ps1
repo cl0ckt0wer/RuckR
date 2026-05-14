@@ -70,6 +70,31 @@ function Get-PasswordFromConnectionString {
     return $null
 }
 
+function Get-FirstEnvironmentValue {
+    param([string[]]$Names)
+
+    foreach ($name in $Names) {
+        $value = [Environment]::GetEnvironmentVariable($name, "Process")
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    foreach ($name in $Names) {
+        $value = [Environment]::GetEnvironmentVariable($name, "User")
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+
+        $value = [Environment]::GetEnvironmentVariable($name, "Machine")
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    return $null
+}
+
 # ── Step 1: Publish ──
 if (-not $SkipBuild) {
     Write-Step "Publishing framework-dependent linux-x64 build to $publishDir"
@@ -150,7 +175,7 @@ if ($dotnetInstalled -eq "no") {
 }
 
 # ── Step 5: Write secrets to remote VM ──
-Write-Step "Deploying database secrets to $sshHost"
+Write-Step "Deploying database and app secrets to $sshHost"
 $saPassword = $env:RUCKR_DB_PASSWORD
 if (-not $saPassword) {
     $saPassword = Get-UserSecretValue -Key "RUCKR_DB_PASSWORD" -Project $serverProject
@@ -161,6 +186,34 @@ if (-not $saPassword) {
 }
 if (-not $saPassword) {
     throw "RUCKR_DB_PASSWORD env var or user-secret must be set. Fallback also accepts user-secret ConnectionStrings:RuckRDbContext with Password=."
+}
+
+# Resolve map keys (optional — only included if set)
+$arcGisKey = Get-FirstEnvironmentValue -Names @("ARC_GIS_API_KEY", "ArcGISApiKey")
+if (-not $arcGisKey) {
+    Write-Host "  ArcGISApiKey: not set (optional)" -ForegroundColor Yellow
+} else {
+    Write-Host "  ArcGISApiKey: configured (length: $($arcGisKey.Length))" -ForegroundColor Green
+}
+
+$arcGisPortalItemId = Get-FirstEnvironmentValue -Names @("ARC_GIS_PORTAL_ITEM_ID", "ArcGISPortalItemId")
+if (-not $arcGisPortalItemId) {
+    Write-Host "  ArcGISPortalItemId: not set (optional)" -ForegroundColor Yellow
+} else {
+    Write-Host "  ArcGISPortalItemId: configured (length: $($arcGisPortalItemId.Length))" -ForegroundColor Green
+}
+
+$geoBlazorLicenseKey = Get-FirstEnvironmentValue -Names @(
+    "GEOBLAZOR_API",
+    "GEOBLAZOR_LICENSE_KEY",
+    "GEOBLAZOR_REGISTRATION_KEY",
+    "GeoBlazor__LicenseKey",
+    "GeoBlazor__RegistrationKey"
+)
+if (-not $geoBlazorLicenseKey) {
+    Write-Host "  GeoBlazor LicenseKey: not set; map will report missing GeoBlazor key" -ForegroundColor Yellow
+} else {
+    Write-Host "  GeoBlazor LicenseKey: configured (length: $($geoBlazorLicenseKey.Length))" -ForegroundColor Green
 }
 
 $connectionString = "Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=$saPassword;TrustServerCertificate=True;"
@@ -176,6 +229,9 @@ RUCKR_DB_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
 MSSQL_SA_PASSWORD=$(Escape-BashSingleQuotedValue $saPassword)
 ConnectionStrings__RuckRDbContext=$(Escape-BashSingleQuotedValue $connectionString)
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+ArcGISApiKey=$(Escape-BashSingleQuotedValue $arcGisKey)
+ArcGISPortalItemId=$(Escape-BashSingleQuotedValue $arcGisPortalItemId)
+GeoBlazor__LicenseKey=$(Escape-BashSingleQuotedValue $geoBlazorLicenseKey)
 "@
 $appEnvContent | ssh $sshHost "cat > ~/ruckr/app.env && chmod 600 ~/ruckr/app.env"
 Write-Host "  app.env deployed to ~/ruckr/app.env (chmod 600)" -ForegroundColor Green
@@ -234,7 +290,8 @@ SyslogIdentifier=ruckr
 [Install]
 WantedBy=multi-user.target
 "@
-$unitContent | ssh $sshHost "sudo tee /etc/systemd/system/ruckr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ruckr.service > /dev/null"
+$installServiceCommand = "sudo tee /etc/systemd/system/ruckr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ruckr.service > /dev/null"
+$unitContent | ssh $sshHost $installServiceCommand
 Write-Host "  ruckr.service installed" -ForegroundColor Green
 
 # ── Step 9: Deploy files to an immutable release directory ──
@@ -251,7 +308,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Extract on the VM, then atomically switch the current symlink.
-ssh $sshHost "cd $deployDir/releases/$releaseId && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && chmod +x RuckR.Server && ln -sfn $absoluteDeployDir/releases/$releaseId $absoluteDeployDir/current && echo extracted"
+$extractCommand = "cd $deployDir/releases/$releaseId && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && chmod +x RuckR.Server && ln -sfn $absoluteDeployDir/releases/$releaseId $absoluteDeployDir/current && echo extracted"
+ssh $sshHost $extractCommand
 Write-Host "  Deployed and linked current -> releases/$releaseId" -ForegroundColor Green
 
 # Clean up local archive
@@ -276,7 +334,8 @@ if (-not $SkipRestart) {
                 Write-Host "  Server is healthy!" -ForegroundColor Green
 
                 # Quick check if migrations succeeded
-                $seeded = ssh $sshHost "journalctl -u ruckr.service -n 200 --no-pager | grep -c 'Seeded' || true"
+                $seededCommand = "journalctl -u ruckr.service -n 200 --no-pager | grep -c 'Seeded' || true"
+                $seeded = ssh $sshHost $seededCommand
                 if ($seeded -gt 0) {
                     Write-Host "  DB migrations applied, seed data generated" -ForegroundColor Green
                 } else {

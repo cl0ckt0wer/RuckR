@@ -19,24 +19,12 @@ public static class MapReducers
     [ReducerMethod]
     public static MapState ReduceSetEncounters(MapState state, SetEncountersAction action)
     {
-        return state with { VisibleEncounters = action.Encounters };
-    }
-
-    [ReducerMethod]
-    public static MapState ReduceSelectPitch(MapState state, SelectPitchAction action)
-    {
-        return state with { SelectedPitchId = action.PitchId };
-    }
-
-    [ReducerMethod]
-    public static MapState ReduceSelectEncounter(MapState state, SelectEncounterAction action)
-    {
-        return state with { SelectedEncounterId = action.EncounterId };
-    }
-
-    [ReducerMethod]
-    public static MapState ReduceClearSelection(MapState state, ClearSelectionAction action)
-    {
-        return state with { SelectedPitchId = null, SelectedEncounterId = null };
+        // Keep the selected encounter if it's still in the list, otherwise clear it
+        var selectedEncounterId = state.SelectedEncounterId;
+        if (selectedEncounterId.HasValue && !action.Encounters.Any(e => e.EncounterId == selectedEncounterId.Value))
+        {
+            selectedEncounterId = null;
+        }
+        return state with { VisibleEncounters = action.Encounters, SelectedEncounterId = selectedEncounterId };
     }
 }

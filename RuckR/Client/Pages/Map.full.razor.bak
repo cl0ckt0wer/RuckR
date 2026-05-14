@@ -1,0 +1,896 @@
+@page "/map"
+@page "/"
+@using Fluxor
+@using dymaptic.GeoBlazor.Core.Components
+@using dymaptic.GeoBlazor.Core.Events
+@using RuckR.Client.Services
+@using RuckR.Client.Store.LocationFeature
+@using RuckR.Client.Store.MapFeature
+@using RuckR.Shared.Models
+@inject RuckR.Client.Services.IGeolocationService GeolocationService
+@inject ApiClientService ApiClient
+@inject SignalRClientService SignalRClient
+@inject IDispatcher Dispatcher
+@inject IState<LocationState> LocationState
+@inject IState<MapState> MapState
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
+@inject NavigationManager Navigation
+@inject ILogger<Map> Logger
+@implements IAsyncDisposable
+
+@* Onboarding Banner — localStorage via IJSRuntime (kept, minimal usage) *@
+@if (_showOnboarding)
+{
+    <div class="alert alert-info alert-dismissible fade show map-top-banner" role="alert" data-testid="onboarding-banner">
+        <strong>RuckR map is live.</strong>
+        Find nearby pitches, recruit players, and challenge rivals.
+        <button type="button" class="btn-close" data-testid="onboarding-close" @onclick="DismissOnboarding" aria-label="Close"></button>
+    </div>
+}
+
+@* Loading State *@
+@if (_isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center position-absolute top-0 start-0 end-0 bottom-0" style="z-index: 10;" data-testid="map-loading">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading map...</span>
+        </div>
+    </div>
+}
+
+@* Error State *@
+@if (_hasError)
+{
+    <div class="d-flex flex-column justify-content-center align-items-center position-absolute top-0 start-0 end-0 bottom-0" style="z-index: 10;" data-testid="map-error">
+        <div class="alert alert-danger text-center map-error-panel">
+            <p class="mb-1 fw-bold">@ErrorHeading</p>
+            <p class="small text-muted mb-2">@_errorMessage</p>
+            <button class="btn btn-outline-danger" data-testid="map-retry-btn" @onclick="RetryAsync">Retry</button>
+        </div>
+    </div>
+}
+
+@* GPS Disabled Banner *@
+@if (_gpsDisabled && !_isLoading && !_hasError)
+{
+    <div class="alert alert-warning alert-dismissible fade show map-top-banner" role="alert" data-testid="gps-disabled-banner">
+        Enable GPS for the full experience
+        <button class="btn btn-outline-warning btn-sm ms-3" data-testid="gps-enable-btn" @onclick="EnableGpsAsync">Enable</button>
+    </div>
+}
+
+@*
+    GeoBlazor MapView renders a WebMap loaded from an ArcGIS Portal item.
+    GraphicsLayers hold pin/encounter/user Graphics as C# objects (programmatic).
+    OnClick replaces the DotNetObjectReference ping-pong pattern.
+    Strict Path A: MapView -> WebMap -> PortalItem.
+*@
+<div class="@(_isLoading || _hasError ? "invisible" : "")" style="height:100%; width:100%;" data-testid="map-container">
+    <ErrorBoundary>
+        <ChildContent>
+            @if (HasArcGisApiKey && HasPortalItemId)
+            {
+                <MapView @ref="_mapView"
+                         Latitude="@_mapLatitude"
+                         Longitude="@_mapLongitude"
+                         Zoom="@_mapZoom"
+                         OnClick="HandleMapClick"
+                         LoadOnRender="false"
+                         ShowZoomWidget="true"
+                         style="height:100%; width:100%;">
+                    <WebMap>
+                        <PortalItem PortalItemId="@_portalItemId" />
+                    </WebMap>
+                </MapView>
+            }
+            else
+            {
+                <div class="map-unavailable-shell">
+                    <div class="map-unavailable-panel">
+                        <p class="mb-1 fw-bold">Map unavailable</p>
+                        <p class="small text-muted mb-0">Map credentials are not configured for this environment.</p>
+                    </div>
+                </div>
+            }
+        </ChildContent>
+        <ErrorContent Context="mapError">
+            <div class="map-unavailable-shell">
+                <div class="map-unavailable-panel">
+                    <p class="mb-1 fw-bold">Map unavailable</p>
+                    <p class="small text-muted mb-0">The map renderer could not start. Other game actions remain available.</p>
+                </div>
+            </div>
+        </ErrorContent>
+    </ErrorBoundary>
+</div>
+
+@if (_gameProgress is not null && !_isLoading && !_hasError)
+{
+    <div class="map-progress-chip @((_showOnboarding || _gpsDisabled) ? "map-progress-chip--lower" : string.Empty)" data-testid="map-progress-chip">
+        <div class="map-progress-meta">
+            <span class="fw-semibold">Lv @_gameProgress.Level</span>
+            <span class="text-muted">XP @_gameProgress.Experience</span>
+        </div>
+        <div class="map-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@ProgressPercent">
+            <div class="map-progress-fill" style="width: @ProgressPercent%;"></div>
+        </div>
+    </div>
+}
+
+@if (_lastKnownPosition is not null && !_isLoading && !_hasError && _selectedPitch is null && _selectedEncounter is null)
+{
+    <div class="map-center-buttons" data-testid="map-center-buttons">
+        <button class="btn btn-light map-center-btn"
+                type="button"
+                data-testid="center-on-player-btn"
+                title="Center on player"
+                aria-label="Center on player"
+                @onclick="CenterOnPlayerAsync">
+            Me
+        </button>
+        <button class="btn btn-light map-center-btn"
+                type="button"
+                data-testid="center-on-closest-standard-btn"
+                title="Center on closest standard pitch"
+                aria-label="Center on closest standard pitch"
+                @onclick="() => CenterOnClosestPitchAsync(PitchType.Standard)">
+            Std
+        </button>
+        <button class="btn btn-light map-center-btn"
+                type="button"
+                data-testid="center-on-closest-training-btn"
+                title="Center on closest training pitch"
+                aria-label="Center on closest training pitch"
+                @onclick="() => CenterOnClosestPitchAsync(PitchType.Training)">
+            Train
+        </button>
+        <button class="btn btn-light map-center-btn"
+                type="button"
+                data-testid="center-on-closest-stadium-btn"
+                title="Center on closest stadium"
+                aria-label="Center on closest stadium"
+                @onclick="() => CenterOnClosestPitchAsync(PitchType.Stadium)">
+            Stadium
+        </button>
+    </div>
+}
+
+@* Pitch Selection Overlay *@
+@if (_selectedPitch is not null)
+{
+    <div class="map-overlay" data-testid="pitch-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="mb-0" data-testid="pitch-name">@_selectedPitch.Name</h5>
+            <button type="button" class="btn-close" data-testid="pitch-close" @onclick="ClearSelection" aria-label="Close"></button>
+        </div>
+        <div class="mb-2">
+            <span class="badge bg-@PitchTypeBadgeClass(_selectedPitch.Type) me-2">@_selectedPitch.Type</span>
+            <span class="badge bg-secondary">@_selectedPitchDistanceBucket</span>
+        </div>
+        <p class="mb-2">
+            Available Players:
+            @if (_isLoadingEligibility)
+            {
+                <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+            }
+            else
+            {
+                @_nearbyPlayerCount
+            }
+            <span class="text-muted ms-1">(players at this pitch)</span>
+        </p>
+        <p class="small text-muted mb-3" data-testid="capture-status">@CaptureStatusText</p>
+        <div class="d-grid gap-2 d-sm-flex">
+            <button class="btn btn-primary"
+                    data-testid="capture-players-btn"
+                    disabled="@(!CanCaptureSelectedPitch)"
+                    @onclick="NavigateToCapture">
+                Capture Players
+            </button>
+            @if (_nearbyPlayerCount > 0)
+            {
+                <button class="btn btn-outline-primary" data-testid="challenge-nearby-btn" @onclick="NavigateToChallenge">Challenge Nearby Player</button>
+            }
+        </div>
+    </div>
+}
+
+@if (_selectedEncounter is not null)
+{
+    <div class="map-overlay" data-testid="encounter-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
+            <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearSelection" aria-label="Close"></button>
+        </div>
+        <div class="mb-2 d-flex gap-2 flex-wrap">
+            <span class="badge bg-dark">Lv @_selectedEncounter.Level</span>
+            <span class="badge bg-info text-dark">@_selectedEncounter.Position</span>
+            <span class="badge bg-@RarityBadgeClass(_selectedEncounter.Rarity)">@_selectedEncounter.Rarity</span>
+            <span class="badge bg-secondary">@_selectedEncounter.SuccessChancePercent% success</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_recruitmentFeedback))
+        {
+            <p class="small mb-2">@_recruitmentFeedback</p>
+        }
+        <button class="btn btn-success"
+                data-testid="recruit-btn"
+                disabled="@_isRecruiting"
+                @onclick="RecruitAsync">
+            @(_isRecruiting ? "Recruiting..." : "Recruit")
+        </button>
+    </div>
+}
+
+@code {
+    private MapView _mapView = null!;
+    private IJSObjectReference? _graphicsModule;
+
+    // PortalItem / WebMap config (read from appsettings, never hardcoded)
+    private string _apiKey = string.Empty;
+    private string _portalItemId = string.Empty;
+
+    // Map state
+    private double _mapLatitude = 51.5074;
+    private double _mapLongitude = -0.1278;
+    private int _mapZoom = 15;
+    // Existing state fields (kept as-is)
+    private bool _isLoading = true;
+    private bool _hasError;
+    private string _errorMessage = string.Empty;
+    private bool _gpsDisabled;
+    private bool _showOnboarding;
+    private PitchModel? _selectedPitch;
+    private string _selectedPitchDistanceBucket = string.Empty;
+    private int _nearbyPlayerCount;
+    private bool _isLoadingEligibility;
+    private int _lastSelectedPitchId = -1;
+    private bool _subscriptionsActive;
+    private bool _initialCenterPerformed;
+    private int _eligibilityRequestPitchId = -1;
+    private GeoPosition? _lastKnownPosition;
+    private GeoPosition? _lastPitchFetchPosition;
+    private DateTime _lastPitchFetchAtUtc = DateTime.MinValue;
+
+    private const double BrowseThresholdMeters = 500.0;
+    private const double EncounterBrowseRadiusMeters = 5000.0;
+    private const double MinPitchRefreshDistanceMeters = 50.0;
+    private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
+
+    private CaptureEligibilityDto? _captureEligibility;
+    private PlayerEncounterDto? _selectedEncounter;
+    private Guid? _lastSelectedEncounterId;
+    private bool _isRecruiting;
+    private string _recruitmentFeedback = string.Empty;
+    private GameProgressDto? _gameProgress;
+
+    private bool HasArcGisApiKey =>
+        !string.IsNullOrWhiteSpace(Configuration["ArcGISApiKey"]);
+
+    private bool HasPortalItemId =>
+        !string.IsNullOrWhiteSpace(Configuration["ArcGISPortalItemId"]);
+
+    private string ErrorHeading =>
+        !HasArcGisApiKey || !HasPortalItemId ? "Map unavailable" : "Failed to load map";
+
+
+    private int ProgressPercent
+    {
+        get
+        {
+            if (_gameProgress is null)
+                return 0;
+
+            if (_gameProgress.Level >= 100)
+                return 100;
+
+            var levelStartXp = (_gameProgress.Level - 1) * 100;
+            var levelEndXp = _gameProgress.NextLevelExperience;
+            var span = Math.Max(1, levelEndXp - levelStartXp);
+            var intoLevel = Math.Clamp(_gameProgress.Experience - levelStartXp, 0, span);
+            return (int)Math.Round((intoLevel * 100.0) / span);
+        }
+    }
+
+    private bool CanCaptureSelectedPitch => _captureEligibility?.CanCapture == true;
+
+    private string CaptureStatusText
+    {
+        get
+        {
+            if (_selectedPitch is null)
+                return string.Empty;
+
+            if (_isLoadingEligibility)
+                return "Checking capture range...";
+
+            if (_captureEligibility is null)
+                return "Unable to verify capture right now. Try again.";
+
+            return _captureEligibility.Reason switch
+            {
+                "ELIGIBLE" => "In range. You can capture players from this pitch.",
+                "GPS_REQUIRED" => "Enable GPS to capture players from this pitch.",
+                "GPS_INACCURATE" => "Improve GPS accuracy (<= 50m) to capture players.",
+                "TOO_FAR" => "Move closer. Capture unlocks within 100m.",
+                "NO_PLAYERS" => "No available players at this pitch right now.",
+                _ => "Capture is currently unavailable."
+            };
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await InitializeAsync();
+        }
+    }
+
+    private async Task InitializeAsync()
+    {
+        // Clean up previous subscriptions if retrying
+        RemoveSubscriptions();
+        GeolocationService.StopWatch();
+
+        _isLoading = true;
+        _hasError = false;
+        _gpsDisabled = false;
+        _showOnboarding = false;
+        _errorMessage = string.Empty;
+        _selectedPitch = null;
+        _lastSelectedPitchId = -1;
+        _captureEligibility = null;
+        _selectedEncounter = null;
+        _lastSelectedEncounterId = null;
+        _isRecruiting = false;
+        _recruitmentFeedback = string.Empty;
+        _gameProgress = null;
+        _isLoadingEligibility = false;
+        _lastKnownPosition = null;
+        _lastPitchFetchPosition = null;
+        _lastPitchFetchAtUtc = DateTime.MinValue;
+        StateHasChanged();
+
+        _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
+        _portalItemId = Configuration["ArcGISPortalItemId"] ?? string.Empty;
+
+        if (!HasArcGisApiKey || !HasPortalItemId)
+        {
+            _errorMessage = "ArcGIS API key and Portal Item ID are not configured.";
+        }
+
+        try
+        {
+            var lat = LocationState.Value.UserLatitude ?? 51.5074;
+            var lng = LocationState.Value.UserLongitude ?? -0.1278;
+
+            // GeoBlazor MapView initializes automatically when Latitude/Longitude/Zoom
+            // are set — no manual JS module import needed.
+            _mapLatitude = lat;
+            _mapLongitude = lng;
+            _mapZoom = 15;
+
+            // Import JS module for direct ArcGIS graphics management.
+            // Bypasses GeoBlazor's GraphicsLayer/AddLayer which triggers
+            // InvalidChildElementException in Core 4.4.4.
+            try
+            {
+                _graphicsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/arcgis-graphics.module.js");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to load arcgis-graphics JS module; map markers will be unavailable");
+            }
+
+            // Onboarding check via localStorage (kept as IJSRuntime — no package needed for 2 calls)
+            try
+            {
+                var onboarded = await JS.InvokeAsync<string>("localStorage.getItem", "ruckr_onboarded");
+                _showOnboarding = string.IsNullOrEmpty(onboarded);
+            }
+            catch
+            {
+                // localStorage unavailable — skip onboarding
+            }
+
+            // Subscribe to state changes and events before starting GPS
+            MapState.StateChanged += OnMapStateChanged;
+            LocationState.StateChanged += OnLocationStateChanged;
+            GeolocationService.PositionChanged += OnPositionChanged;
+            _subscriptionsActive = true;
+
+            // Start GPS watch (non-critical — map works without GPS)
+            try
+            {
+                await GeolocationService.StartWatchAsync();
+            }
+            catch
+            {
+                _gpsDisabled = true;
+            }
+
+            _isLoading = false;
+
+            try
+            {
+                _gameProgress = await ApiClient.GetGameProgressAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Game progression unavailable (continuing without profile progress)");
+                _gameProgress = null;
+            }
+
+            if (LocationState.Value.UserLatitude is double knownLat && LocationState.Value.UserLongitude is double knownLng)
+            {
+                _lastKnownPosition = new GeoPosition
+                {
+                    Latitude = knownLat,
+                    Longitude = knownLng,
+                    Accuracy = LocationState.Value.AccuracyMeters,
+                    Timestamp = DateTime.UtcNow
+                };
+            }
+
+            _ = BootstrapMapDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _hasError = true;
+            _errorMessage = ex.Message;
+            _isLoading = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task BootstrapMapDataAsync()
+    {
+        var pos = _lastKnownPosition ?? new GeoPosition
+        {
+            Latitude = LocationState.Value.UserLatitude ?? 51.5074,
+            Longitude = LocationState.Value.UserLongitude ?? -0.1278
+        };
+
+        try
+        {
+            var pitches = await ApiClient.GetNearbyPitchesAsync(pos.Latitude, pos.Longitude, BrowseThresholdMeters);
+            await UpdatePitchGraphicsAsync(pitches);
+            Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
+
+            var encounters = await ApiClient.GetEncountersAsync(pos.Latitude, pos.Longitude, EncounterBrowseRadiusMeters);
+            await UpdateEncounterGraphicsAsync(encounters);
+            Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+
+            _lastPitchFetchPosition = pos;
+            _lastPitchFetchAtUtc = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to bootstrap map data");
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnPositionChanged(GeoPosition pos)
+    {
+        try
+        {
+            _lastKnownPosition = pos;
+
+            if (!_initialCenterPerformed)
+            {
+                _initialCenterPerformed = true;
+                _mapLatitude = pos.Latitude;
+                _mapLongitude = pos.Longitude;
+                _mapZoom = 15;
+            }
+
+            await UpdateUserGraphicAsync(pos);
+            await SignalRClient.UpdateLocationAsync(pos.Latitude, pos.Longitude);
+
+            if (ShouldRefreshPitches(pos))
+            {
+                var pitches = await ApiClient.GetNearbyPitchesAsync(pos.Latitude, pos.Longitude, BrowseThresholdMeters);
+                await UpdatePitchGraphicsAsync(pitches);
+                Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
+
+                var encounters = await ApiClient.GetEncountersAsync(pos.Latitude, pos.Longitude, EncounterBrowseRadiusMeters);
+                await UpdateEncounterGraphicsAsync(encounters);
+                Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+
+                _lastPitchFetchPosition = pos;
+                _lastPitchFetchAtUtc = DateTime.UtcNow;
+            }
+
+            if (_selectedPitch is not null)
+            {
+                UpdateSelectedPitchDistance(pos, _selectedPitch);
+                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Transient map/API error in position update");
+        }
+    }
+
+    // ── ArcGIS Graphics helpers (JS interop) ───────────────────
+
+    private async Task UpdatePitchGraphicsAsync(IReadOnlyCollection<PitchModel> pitches)
+    {
+        if (_graphicsModule is null) return;
+        var data = pitches.Select(p => new
+        {
+            id = p.Id,
+            name = p.Name,
+            latitude = p.Latitude,
+            longitude = p.Longitude,
+            type = p.Type.ToString()
+        }).ToArray();
+        await _graphicsModule.InvokeVoidAsync("updatePitchGraphics", (object)data);
+    }
+
+    private async Task UpdateEncounterGraphicsAsync(IReadOnlyCollection<PlayerEncounterDto> encounters)
+    {
+        if (_graphicsModule is null) return;
+        var data = encounters.Select(e => new
+        {
+            encounterId = e.EncounterId,
+            playerId = e.PlayerId,
+            name = e.Name,
+            latitude = e.Latitude,
+            longitude = e.Longitude,
+            level = e.Level,
+            rarity = e.Rarity,
+            position = e.Position,
+            successChancePercent = e.SuccessChancePercent
+        }).ToArray();
+        await _graphicsModule.InvokeVoidAsync("updateEncounterGraphics", (object)data);
+    }
+
+    private async Task UpdateUserGraphicAsync(GeoPosition pos)
+    {
+        if (_graphicsModule is null) return;
+        await _graphicsModule.InvokeVoidAsync("updateUserGraphic", pos.Latitude, pos.Longitude);
+    }
+
+    // ── Click handling (ArcGIS JS hit-test via interop) ────────
+
+    private async Task HandleMapClick(ClickEvent clickEvent)
+    {
+        if (clickEvent?.MapPoint is null || _graphicsModule is null)
+            return;
+
+        var lat = clickEvent.MapPoint.Latitude ?? 0;
+        var lng = clickEvent.MapPoint.Longitude ?? 0;
+
+        try
+        {
+            // Hit-test via JS module — searches the ArcGIS view.graphics collection
+            var result = await _graphicsModule.InvokeAsync<JsonElement?>("findClosestPitchAt", lat, lng, 30.0);
+            if (result is { ValueKind: JsonValueKind.Object } obj)
+            {
+                if (obj.TryGetProperty("pitchId", out var idProp) && idProp.TryGetInt32(out var pitchId))
+                {
+                    Dispatcher.Dispatch(new SelectPitchAction(pitchId));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Map click hit-test failed");
+        }
+    }
+
+    private void OnMapStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<MapState>)sender!).Value;
+        if (state.SelectedPitchId.HasValue && state.SelectedPitchId.Value != _lastSelectedPitchId)
+        {
+            _lastSelectedPitchId = state.SelectedPitchId.Value;
+            _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
+
+            if (_selectedPitch is not null)
+            {
+                if (_lastKnownPosition is not null)
+                    UpdateSelectedPitchDistance(_lastKnownPosition, _selectedPitch);
+
+                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+            }
+
+            _ = InvokeAsync(StateHasChanged);
+        }
+        else if (!state.SelectedPitchId.HasValue && _selectedPitch is not null)
+        {
+            _lastSelectedPitchId = -1;
+            _selectedPitch = null;
+            _nearbyPlayerCount = 0;
+            _selectedPitchDistanceBucket = string.Empty;
+            _captureEligibility = null;
+            _ = InvokeAsync(StateHasChanged);
+        }
+
+        if (state.SelectedEncounterId.HasValue && state.SelectedEncounterId.Value != _lastSelectedEncounterId)
+        {
+            _lastSelectedEncounterId = state.SelectedEncounterId.Value;
+            _selectedEncounter = state.VisibleEncounters.FirstOrDefault(e => e.EncounterId == state.SelectedEncounterId.Value);
+            _recruitmentFeedback = string.Empty;
+            _ = InvokeAsync(StateHasChanged);
+        }
+        else if (!state.SelectedEncounterId.HasValue && _selectedEncounter is not null)
+        {
+            _lastSelectedEncounterId = null;
+            _selectedEncounter = null;
+            _isRecruiting = false;
+            _recruitmentFeedback = string.Empty;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RecruitAsync()
+    {
+        if (_selectedEncounter is null || _isRecruiting)
+            return;
+
+        _isRecruiting = true;
+        _recruitmentFeedback = string.Empty;
+        try
+        {
+            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId);
+            if (result is null)
+            {
+                _recruitmentFeedback = "Recruitment request failed. Try again.";
+                return;
+            }
+
+            _recruitmentFeedback = result.Message;
+
+            if (result.Success && _lastKnownPosition is not null)
+            {
+                var encounters = await ApiClient.GetEncountersAsync(_lastKnownPosition.Latitude, _lastKnownPosition.Longitude, EncounterBrowseRadiusMeters);
+                await UpdateEncounterGraphicsAsync(encounters);
+                Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
+                _gameProgress = await ApiClient.GetGameProgressAsync();
+                Dispatcher.Dispatch(new ClearSelectionAction());
+            }
+        }
+        finally
+        {
+            _isRecruiting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnLocationStateChanged(object? sender, EventArgs e)
+    {
+        var state = ((IState<LocationState>)sender!).Value;
+        if (!string.IsNullOrEmpty(state.ErrorMessage))
+        {
+            _gpsDisabled = true;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RefreshCaptureEligibilityAsync(int pitchId)
+    {
+        if (_isLoadingEligibility && _eligibilityRequestPitchId == pitchId)
+            return;
+
+        _eligibilityRequestPitchId = pitchId;
+        _isLoadingEligibility = true;
+        try
+        {
+            var eligibility = await ApiClient.GetCaptureEligibilityAsync(pitchId);
+            _captureEligibility = eligibility;
+            _nearbyPlayerCount = eligibility?.AvailablePlayerCount ?? 0;
+
+            if (!string.IsNullOrWhiteSpace(eligibility?.DistanceBucket)
+                && Enum.TryParse<DistanceBucket>(eligibility.DistanceBucket, out var bucket))
+            {
+                _selectedPitchDistanceBucket = FormatDistanceBucket(bucket);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to check capture eligibility for pitch {PitchId}", pitchId);
+            _captureEligibility = null;
+            _nearbyPlayerCount = 0;
+        }
+        _isLoadingEligibility = false;
+        _eligibilityRequestPitchId = -1;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DismissOnboarding()
+    {
+        _showOnboarding = false;
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "ruckr_onboarded", "true");
+        }
+        catch
+        {
+            // localStorage unavailable
+        }
+    }
+
+    private async Task RetryAsync()
+    {
+        await InitializeAsync();
+    }
+
+    private async Task EnableGpsAsync()
+    {
+        try
+        {
+            await GeolocationService.StartWatchAsync();
+            _gpsDisabled = false;
+            StateHasChanged();
+        }
+        catch
+        {
+            _gpsDisabled = true;
+        }
+    }
+
+    private async Task CenterOnUserAsync()
+    {
+        if (_lastKnownPosition is null)
+            return;
+
+        _mapLatitude = _lastKnownPosition.Latitude;
+        _mapLongitude = _lastKnownPosition.Longitude;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CenterOnPlayerAsync()
+    {
+        if (_lastKnownPosition is null)
+            return;
+
+        _mapLatitude = _lastKnownPosition.Latitude;
+        _mapLongitude = _lastKnownPosition.Longitude;
+        _mapZoom = 17;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CenterOnClosestPitchAsync(PitchType type)
+    {
+        var closest = GetClosestPitch(type);
+        if (closest is null)
+            return;
+
+        _mapLatitude = closest.Latitude;
+        _mapLongitude = closest.Longitude;
+        _mapZoom = 17;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private PitchModel? GetClosestPitch(PitchType type)
+    {
+        if (_lastKnownPosition is null)
+            return null;
+
+        var userPos = new GeoPosition
+        {
+            Latitude = _lastKnownPosition.Latitude,
+            Longitude = _lastKnownPosition.Longitude
+        };
+
+        PitchModel? closest = null;
+        double closestDist = double.MaxValue;
+
+        foreach (var pitch in MapState.Value.VisiblePitches)
+        {
+            if (pitch.Type != type)
+                continue;
+
+            var pitchPos = new GeoPosition
+            {
+                Latitude = pitch.Latitude,
+                Longitude = pitch.Longitude
+            };
+
+            var dist = GeoPosition.HaversineDistance(userPos, pitchPos);
+            if (dist < closestDist)
+            {
+                closestDist = dist;
+                closest = pitch;
+            }
+        }
+
+        return closest;
+    }
+
+    private void ClearSelection()
+    {
+        Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private void NavigateToCapture()
+    {
+        if (!CanCaptureSelectedPitch || _selectedPitch is null)
+            return;
+
+        Navigation.NavigateTo($"/players/nearby?pitchId={_selectedPitch.Id}");
+    }
+
+    private void NavigateToChallenge()
+    {
+        Navigation.NavigateTo("/battles/new");
+    }
+
+    private void RemoveSubscriptions()
+    {
+        if (!_subscriptionsActive)
+            return;
+
+        GeolocationService.PositionChanged -= OnPositionChanged;
+        MapState.StateChanged -= OnMapStateChanged;
+        LocationState.StateChanged -= OnLocationStateChanged;
+        _subscriptionsActive = false;
+    }
+
+    private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
+    {
+        DistanceBucket.Within50m => "< 50m",
+        DistanceBucket.Within100m => "< 100m",
+        DistanceBucket.Within250m => "< 250m",
+        DistanceBucket.Within500m => "< 500m",
+        DistanceBucket.Beyond => "> 500m",
+        _ => "Unknown"
+    };
+
+    private static string PitchTypeBadgeClass(PitchType type) => type switch
+    {
+        PitchType.Standard => "primary",
+        PitchType.Training => "success",
+        PitchType.Stadium => "warning",
+        _ => "secondary"
+    };
+
+    private static string RarityBadgeClass(string rarity) => rarity switch
+    {
+        "Common" => "secondary",
+        "Uncommon" => "success",
+        "Rare" => "primary",
+        "Epic" => "warning text-dark",
+        "Legendary" => "danger",
+        _ => "dark"
+    };
+
+    private bool ShouldRefreshPitches(GeoPosition currentPosition)
+    {
+        if (_lastPitchFetchPosition is null)
+            return true;
+
+        if ((DateTime.UtcNow - _lastPitchFetchAtUtc) >= PitchRefreshInterval)
+            return true;
+
+        var movedMeters = GeoPosition.HaversineDistance(_lastPitchFetchPosition, currentPosition);
+        return movedMeters >= MinPitchRefreshDistanceMeters;
+    }
+
+    private void UpdateSelectedPitchDistance(GeoPosition userPos, PitchModel pitch)
+    {
+        var pitchPos = new GeoPosition
+        {
+            Latitude = pitch.Latitude,
+            Longitude = pitch.Longitude
+        };
+
+        var dist = GeoPosition.HaversineDistance(userPos, pitchPos);
+        _selectedPitchDistanceBucket = FormatDistanceBucket(GeoPosition.GetDistanceBucket(dist));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        RemoveSubscriptions();
+        GeolocationService.StopWatch();
+    }
+}

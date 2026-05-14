@@ -64,7 +64,7 @@ public class RecruitmentService : IRecruitmentService
                 entry.Id,
                 player.Id,
                 player.Name,
-                player.Position.ToString(),
+                $"{player.SpawnLocation!.Y}, {player.SpawnLocation.X}",
                 player.Rarity.ToString(),
                 player.Level,
                 entry.Latitude,

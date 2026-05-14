@@ -1,0 +1,563 @@
+plan_id: "20260509-leaflet-to-geoblazor-migration"
+objective: >
+  Replace Leaflet.js map rendering with GeoBlazor (dymaptic.GeoBlazor.Core) to eliminate
+  fragile hand-written JS interop. GeoBlazor provides 100% C# map control via the
+  ArcGIS Maps SDK for JavaScript with no custom JS modules required for core functionality.
+
+  In parallel, migrate remaining manual JS interop (connection-status.module.js,
+  client-logging.module.js, localStorage calls) to the Blazorators source generator
+  pattern — eliminating all fragile DotNetObjectReference / IJSObjectReference code.
+
+created_at: "2026-05-09T00:00:00Z"
+created_by: gem-planner
+status: in-progress
+
+progress_summary: >
+  Wave 1 complete (GeoBlazor NuGet added, DI configured, imports added).
+  Wave 2 partially complete — Map.razor fully rewritten with GeoBlazor, connection-status.module.js removed.
+  Wave 3 mostly complete — Leaflet CDN removed, leaflet-map.module.js deleted, IMapService/MapService deleted.
+  Remaining: client-logging.module.js / BrowserErrorLogger deferred (kept as fallback per plan).
+
+research_confidence: high
+
+plan_metrics:
+  wave_1_task_count: 3
+  wave_2_task_count: 3
+  wave_3_task_count: 4
+  total_dependencies: 58
+  risk_score: medium
+
+tldr: >
+  3 waves, 11 tasks.
+  W1 — Setup: GeoBlazor NuGet + Blazorators NuGets + DI.
+  W2 — Rewrite: replace MapService + leaflet-map.module.js with GeoBlazor MapView/GraphicsLayer;
+        replace localStorage calls with IStorageService; replace connection-status.module.js
+        and client-logging.module.js with Blazorators-generated services.
+  W3 — Cleanup: delete all remaining manual JS interop files, remove Leaflet CDN, full build verification.
+
+  Key architectural decisions:
+  - WebTileLayer + OSM UrlTemplate (no ArcGIS API key needed for free tile access)
+  - Blazorators source generator for custom interop (Window online/offline, error logging)
+  - Blazor.LocalStorage.WebAssembly for localStorage (replaces direct IJSRuntime calls)
+  - Keep geolocation.module.js as-is (already on Blazorators)
+
+open_questions:
+  - description: "GeoBlazor 4.4.4 targets net8.0 — will it work with our net10.0 WASM project?"
+    resolution_needed: true
+    hint: "NuGet gallery shows net10.0 as 'computed' compatible. Verify at build time."
+  - description: "Can we use WebTileLayer with OSM tiles without any ArcGIS API key at all?"
+    resolution_needed: false
+    answer: "YES. WebTileLayer is a generic XYZ tile fetcher. No ArcGIS key needed. BasemapStyle with OsmStandard requires ArcGIS styles API; WebTileLayer bypasses it entirely."
+  - description: "Does GeoBlazor's ArcGIS JS SDK add significant bundle size vs Leaflet?"
+    resolution_needed: true
+    hint: "ArcGIS JS SDK ~400KB gzipped vs Leaflet ~40KB. Larger initial load but offset by zero custom interop code and CDN caching."
+  - description: "Blazorators custom interop for window.onerror — does the source generator support event-listener-with-callback patterns?"
+    resolution_needed: true
+    hint: "May need a small hand-written JS shim even with Blazorators. Check Blazor.SourceGenerators docs for callback patterns."
+
+pre_mortem:
+  overall_risk_level: medium
+  critical_failure_modes:
+    - scenario: "GeoBlazor NuGet incompatible with net10.0-wasm target"
+      likelihood: low
+      impact: high
+      mitigation: "Verify at first build. If incompatible, pin to net8.0 TFM for Client project as emergency fallback, or wait for GeoBlazor update."
+    - scenario: "ArcGIS CDN blocked in user's region/corporate firewall"
+      likelihood: low
+      impact: high
+      mitigation: "Provide fallback: keep leaflet-map.module.js archived; toggle via feature flag. Document self-hosting ArcGIS JS SDK option."
+    - scenario: "Visual markers don't match current Leaflet custom HTML/CSS styling"
+      likelihood: medium
+      impact: medium
+      mitigation: "GeoBlazor SimpleMarkerSymbol is less customizable than Leaflet divIcon. Accept visual differences for MVP. Can add custom renderer later via JSModule if needed."
+    - scenario: "Map click hit-testing doesn't identify which Graphic was clicked"
+      likelihood: low
+      impact: medium
+      mitigation: "GeoBlazor MapView.OnClick provides ClickEvent with MapPoint. Use GraphicsLayer.Graphics collection + GeometryEngine.Contains or distance check to identify clicked graphic."
+    - scenario: "Blazorators source generator fails on Window event listener interop"
+      likelihood: medium
+      impact: medium
+      mitigation: "Keep connection-status.module.js and client-logging.module.js as fallbacks. Migrate only localStorage to Blazorators if the custom interop proves problematic."
+
+research_confidence_note: >
+  GeoBlazor Core 4.4.4 was released 2026-01-12. Repository has 138 stars, 24 forks,
+  active development (2569 commits). MIT licensed. Discord community available.
+  WebAssembly deployment is a first-class scenario per docs.
+  Blazor.SourceGenerators v9.0.2 already in use for geolocation (Blazor.Geolocation.WebAssembly).
+
+gaps:
+  - description: "No hands-on testing of GeoBlazor WASM build with net10.0 yet"
+    refinement_requests:
+      - query: "Does 'dotnet add package dymaptic.GeoBlazor.Core' resolve cleanly on net10.0-wasm?"
+        source_hint: "Try it — first build will tell us."
+  - description: "WebTileLayer OSM attribution requirement"
+    refinement_requests:
+      - query: "Does GeoBlazor WebTileLayer automatically include OSM attribution? If not, add it manually."
+        source_hint: "Check GeoBlazor source: WebTileLayer.cs for attribution handling."
+  - description: "Blazorators custom interop for window.onerror event listener"
+    refinement_requests:
+      - query: "Does Blazorators support generating event listener + callback-to-DotNetObjectReference patterns?"
+        source_hint: "Check Blazor.SourceGenerators docs for PureJavaScriptOverrides and callback shim examples."
+
+implementation_specification:
+  code_structure: >
+    RuckR.Client/
+      Pages/
+        Map.razor — REWRITE: replace IMapService + IJSRuntime calls with GeoBlazor
+                    MapView + MapWindow components. Use GraphicsLayer for pitches,
+                    user marker, encounters. OnMapClick replaces DotNetObjectReference.
+                    localStorage calls → IStorageService.
+      Services/
+        MapService.cs — DELETE (replaced by direct GeoBlazor component binding)
+        IMapService.cs — DELETE
+        BrowserErrorLogger.cs — UPDATE: use Blazorators-generated JS interop OR keep
+                                if custom JS shim is simpler
+      Program.cs — ADD: builder.Services.AddGeoBlazor()
+                   ADD: builder.Services.AddLocalStorageServices()
+      _Imports.razor — ADD: @using dymaptic.GeoBlazor.Core.Components etc.
+                        ADD: @using Blazor.LocalStorage
+    RuckR.Client/wwwroot/
+      index.html — REMOVE: Leaflet CSS/JS CDN links
+      js/
+        leaflet-map.module.js — DELETE
+        client-logging.module.js — DELETE (if Blazorators handles it) or KEEP with Blazorators shim
+        connection-status.module.js — DELETE (if Blazorators handles it) or KEEP with Blazorators shim
+    RuckR.Server/
+      Program.cs — NO CHANGES (server unchanged)
+
+  affected_areas:
+    - "RuckR.Client/RuckR.Client.csproj — add dymaptic.GeoBlazor.Core + Blazor.LocalStorage.WebAssembly PackageReferences"
+    - "RuckR.Client/Program.cs — add AddGeoBlazor() + AddLocalStorageServices()"
+    - "RuckR.Client/_Imports.razor — add GeoBlazor usings + Blazor.LocalStorage usings"
+    - "RuckR.Client/Pages/Map.razor — full rewrite of map section + localStorage → IStorageService"
+    - "RuckR.Client/wwwroot/index.html — remove Leaflet CDN"
+    - "RuckR.Client/wwwroot/js/ — delete leaflet-map.module.js; optionally delete client-logging + connection-status"
+    - "RuckR.Client/Services/IMapService.cs — delete"
+    - "RuckR.Client/Services/MapService.cs — delete"
+    - "RuckR.Client/Services/BrowserErrorLogger.cs — update to use Blazorators if viable"
+    - "RuckR.Client/Shared/ConnectionStatus.razor — update to use Blazorators if viable"
+
+  component_details:
+    - component: GeoBlazor MapView
+      responsibility: "Full-screen map rendered via ArcGIS JS SDK. Replaces leaflet-map.module.js initMap()."
+      interfaces: ["Latitude, Longitude, Zoom parameters", "OnClick event (ClickEvent)", "ChildContent for layers"]
+      dependencies: []
+      integration_points: ["Map.razor replaces IMapService calls with direct <MapView> binding"]
+
+    - component: GraphicsLayer
+      responsibility: "Collection of Graphic objects (markers). Replaces addPitchMarkers/addUserMarker JS calls."
+      interfaces: ["Graphics parameter (IReadOnlyCollection<Graphic>)", "Add/Remove methods"]
+      dependencies: []
+      integration_points: ["Map.razor — bind to ObservableCollection<PitchModel> for pitches"]
+
+    - component: Graphic
+      responsibility: "Single map marker. Has Geometry (Point), Symbol (SimpleMarkerSymbol), PopupTemplate."
+      interfaces: ["Geometry (Point with X=longitude, Y=latitude)", "Symbol (SimpleMarkerSymbol/SimpleLineSymbol)", "PopupTemplate"]
+      dependencies: []
+      integration_points: ["Created from PitchModel data in Map.razor code-behind"]
+
+    - component: WebTileLayer
+      responsibility: "OpenStreetMap tile layer. Replaces L.tileLayer() in leaflet-map.module.js."
+      interfaces: ["UrlTemplate (XYZ format), SubDomains"]
+      dependencies: []
+      integration_points: ["Added as child of MapView, before GraphicsLayers"]
+
+    - component: WindowInteropService (Blazorators-generated)
+      responsibility: "Replace connection-status.module.js — wraps window.addEventListener('online'/'offline', ...) via Blazorators source generator."
+      interfaces: ["Window.AddEventListener('online', callback)", "Window.AddEventListener('offline', callback)"]
+      dependencies: [Blazor.SourceGenerators]
+      integration_points: ["ConnectionStatus.razor uses generated IWindowService instead of manual DotNetObjectReference"]
+
+    - component: ErrorLoggerService (Blazorators-generated)
+      responsibility: "Replace client-logging.module.js — wraps window.onerror + onunhandledrejection via Blazorators source generator."
+      interfaces: ["Window.onerror = handler", "Window.onunhandledrejection = handler"]
+      dependencies: [Blazor.SourceGenerators]
+      integration_points: ["BrowserErrorLogger.cs uses generated IWindowService instead of manual DotNetObjectReference"]
+
+    - component: IStorageService (Blazorators/Blazor.LocalStorage.WebAssembly)
+      responsibility: "Replace direct IJSRuntime localStorage calls — get/set items via typed C# API."
+      interfaces: ["GetItem<T>(key)", "SetItem(key, value)"]
+      dependencies: [Blazor.LocalStorage.WebAssembly NuGet]
+      integration_points: ["Map.razor onboarding banner uses IStorageService instead of JS.InvokeAsync"]
+
+contracts:
+  - from_task: T1-01
+    to_task: T2-01
+    interface: "dymaptic.GeoBlazor.Core 4.4.4 + Blazor.LocalStorage.WebAssembly 9.0.1 installed and building"
+    format: "dotnet build succeeds; both packages appear in dotnet list package output"
+
+  - from_task: T1-01
+    to_task: T2-01
+    interface: "DI configured for both GeoBlazor and LocalStorage"
+    format: "builder.Services.AddGeoBlazor() + builder.Services.AddLocalStorageServices() in Program.cs"
+
+  - from_task: T2-01
+    to_task: T3-01
+    interface: "Map.razor fully rewritten with GeoBlazor components"
+    format: "No references to IMapService, MapService, leaflet-map.module.js; localStorage calls use IStorageService"
+
+  - from_task: T2-02
+    to_task: T3-01
+    interface: "Blazorators interop services ready (Window events + error logging)"
+    format: "Generated implementations replace manual DotNetObjectReference in ConnectionStatus.razor + BrowserErrorLogger"
+
+tasks:
+  # ========================================================================
+  # WAVE 1: Setup — Add GeoBlazor + Blazorators NuGets
+  # ========================================================================
+  - id: T1-01
+    title: "Add GeoBlazor Core and Blazor.LocalStorage NuGet packages"
+    description: >
+      Add two NuGet packages to RuckR.Client/RuckR.Client.csproj:
+      (1) dymaptic.GeoBlazor.Core 4.4.4 — for map rendering
+      (2) Blazor.LocalStorage.WebAssembly 9.0.1 — for typed localStorage access
+      
+      Run dotnet restore and verify build succeeds. The Blazor.LocalStorage package
+      is already familiar (same ecosystem as Blazor.Geolocation.WebAssembly we use).
+      
+      NOTE: GeoBlazor package targets net8.0 but NuGet shows net10.0 as compatible.
+      If build fails on net10.0-wasm, try downgrading to latest net8.0-compat patch.
+    wave: 1
+    priority: high
+    status: pending
+    dependencies: []
+    context_files:
+      - path: RuckR/Client/RuckR.Client.csproj
+        description: "Add PackageReferences for GeoBlazor.Core and Blazor.LocalStorage.WebAssembly"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 5
+    tech_stack: [.NET 10, NuGet]
+    verification:
+      - "dotnet restore RuckR.Client.csproj succeeds"
+      - "dotnet build RuckR.Client.csproj succeeds"
+      - "Both packages appear in dotnet list package output"
+      - "No runtime assets missing for browser target"
+    acceptance_criteria:
+      - "dymaptic.GeoBlazor.Core 4.4.4 in Client .csproj"
+      - "Blazor.LocalStorage.WebAssembly 9.0.1 in Client .csproj"
+      - "dotnet build succeeds with 0 errors"
+
+  - id: T1-02
+    title: "Configure DI for GeoBlazor and LocalStorage"
+    description: >
+      Add two service registrations to RuckR.Client/Program.cs:
+      (1) builder.Services.AddGeoBlazor() — registers GeoBlazor JS module loader and services
+      (2) builder.Services.AddLocalStorageServices() — registers IStorageService for localStorage
+      
+      Keep existing builder.Services.AddGeolocationServices() — all three are independent.
+    wave: 1
+    priority: high
+    status: pending
+    dependencies: [T1-01]
+    context_files:
+      - path: RuckR/Client/Program.cs
+        description: "Add AddGeoBlazor() and AddLocalStorageServices() to service configuration"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 3
+    tech_stack: [.NET 10, Blazor WASM]
+    verification:
+      - "build succeeds"
+    acceptance_criteria:
+      - "builder.Services.AddGeoBlazor() added"
+      - "builder.Services.AddLocalStorageServices() added"
+
+  - id: T1-03
+    title: "Update _Imports.razor with GeoBlazor and LocalStorage namespaces"
+    description: >
+      Add using directives to RuckR.Client/_Imports.razor:
+      
+      GeoBlazor:
+      - dymaptic.GeoBlazor.Core.Components
+      - dymaptic.GeoBlazor.Core.Components.Views
+      - dymaptic.GeoBlazor.Core.Components.Layers
+      - dymaptic.GeoBlazor.Core.Components.Geometries
+      - dymaptic.GeoBlazor.Core.Components.Symbols
+      - dymaptic.GeoBlazor.Core.Components.Popups
+      
+      LocalStorage:
+      - Blazor.LocalStorage
+    wave: 1
+    priority: high
+    status: pending
+    dependencies: [T1-01]
+    context_files:
+      - path: RuckR/Client/_Imports.razor
+        description: "Existing imports — add GeoBlazor + LocalStorage usings"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: 9
+    tech_stack: [Blazor, C#]
+    verification:
+      - "dotnet build succeeds"
+    acceptance_criteria:
+      - "Nine @using directives added (6 GeoBlazor + 3 LocalStorage or Blazor.LocalStorage)"
+
+  # ========================================================================
+  # WAVE 2: Rewrite — Replace Leaflet + manual JS interop
+  # ========================================================================
+  - id: T2-01
+    title: "Rewrite Map.razor to use GeoBlazor MapView"
+    description: >
+      Complete rewrite of the map rendering section of Map.razor.
+      
+      REMOVE:
+      - @inject IJSRuntime JS  (only needed for localStorage — replaced below)
+      - All MapService.* calls (InitMapAsync, AddPitchMarkersAsync, AddUserMarkerAsync,
+        CenterOnAsync, ClearMarkersAsync)
+      - All IJSRuntime.InvokeAsync for map operations
+      - localStorage.getItem/setItem calls (replaced in T2-02)
+      
+      ADD:
+      - <MapView> component with Latitude/Longitude/Zoom parameters
+      - <WebTileLayer> for OSM tiles (UrlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png")
+      - <GraphicsLayer @ref="_pitchLayer"> for pitch markers
+      - <GraphicsLayer @ref="_userLayer"> for user position
+      - <GraphicsLayer @ref="_encounterLayer"> for encounter markers  
+      - OnClick="HandleMapClick" event handler
+      
+      KEEP:
+      - @inject IGeolocationService GeolocationService
+      - @inject IStorageService Storage  (new — replaces JS localStorage for onboarding)
+      - @inject ApiClientService ApiClient
+      - @inject SignalRClientService SignalRClient
+      - @inject IDispatcher Dispatcher
+      - @inject IState<LocationState>
+      - @inject IState<MapState>
+      - GPS disabled banner and enable flow
+      - Pitch selection overlay UI
+      - All GameProgress / progress chip UI
+      - Onboarding banner (now uses Storage.GetItemAsync instead of JS)
+      
+      NEW BEHAVIOR:
+      - Pitch click: MapView.OnClick fires with ClickEvent containing MapPoint.
+        Iterate _pitchLayer.Graphics to find closest pitch by distance.
+      - User marker: Add/position Graphic in _userLayer on each position update.
+      - Pitch markers: Synchronize _pitchLayer.Graphics from PitchModel list.
+      - Encounter markers: Synchronize _encounterLayer.Graphics from encounter list.
+      
+      IMPORTANT: NTS Point uses X=longitude, Y=latitude (swapped from GeoPosition).
+    wave: 2
+    priority: high
+    status: pending
+    dependencies: [T1-01, T1-02, T1-03]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "Current Map.razor — entire map section to rewrite"
+      - path: RuckR/Client/Services/IMapService.cs
+        description: "Interface to eliminate"
+      - path: RuckR/Client/Services/MapService.cs
+        description: "Implementation to eliminate"
+    estimated_effort: large
+    estimated_files: 1
+    estimated_lines: 280
+    tech_stack: [.NET 10, GeoBlazor, Fluxor, Blazor WASM]
+    verification:
+      - "Map renders in browser with OSM tiles"
+      - "Pitch markers appear as SimpleMarkerSymbol dots"
+      - "Clicking a pitch marker identifies the pitch and shows overlay"
+      - "User position marker updates on GPS change"
+      - "Map centers on user position"
+      - "Encounter markers render if encounters exist"
+      - "Onboarding banner shows/hides correctly using IStorageService"
+    acceptance_criteria:
+      - "<MapView> component renders with OSM tile layer"
+      - "Pitch Graphics displayed via GraphicsLayer with SimpleMarkerSymbol"
+      - "User location shown as Graphic with distinct symbol (e.g., blue circle)"
+      - "Click on pitch graphic identifies pitch by proximity and dispatches SelectPitchAction"
+      - "Onboarding banner uses IStorageService.GetItemAsync/SetItemAsync"
+      - "GPS integration still works via IGeolocationService"
+      - "Map re-centers to player button works (calls MapView.Center = new Point(lng, lat))"
+      - "No references to MapService or IMapService remain"
+      - "No references to leaflet-map.module.js remain"
+      - "No IJSRuntime.InvokeAsync calls for map operations remain in Map.razor"
+
+  - id: T2-02
+    title: "Replace localStorage IJSRuntime calls with IStorageService"
+    description: >
+      In Map.razor, replace the direct IJSRuntime calls for onboarding:
+      
+      OLD:
+        var onboarded = await JS.InvokeAsync<string>("localStorage.getItem", "ruckr_onboarded");
+        await JS.InvokeVoidAsync("localStorage.setItem", "ruckr_onboarded", "true");
+      
+      NEW (using Blazor.LocalStorage.WebAssembly):
+        var onboarded = await Storage.GetItemAsync<string>("ruckr_onboarded");
+        await Storage.SetItemAsync("ruckr_onboarded", "true");
+      
+      Also check PlayerGrid.razor and PitchCreate.razor for any localStorage usage.
+    wave: 2
+    priority: high
+    status: pending
+    dependencies: [T1-01, T1-02, T1-03]
+    context_files:
+      - path: RuckR/Client/Pages/Map.razor
+        description: "localStorage.getItem/setItem calls to replace (lines 293, 545)"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: -4
+    tech_stack: [.NET 10, Blazor.LocalStorage]
+    verification:
+      - "Build succeeds"
+      - "Onboarding banner still shows/hides correctly"
+    acceptance_criteria:
+      - "No IJSRuntime.InvokeAsync calls for localStorage remain in any .razor file"
+      - "Storage.GetItemAsync<string>(...) replaces localStorage.getItem"
+      - "Storage.SetItemAsync(...) replaces localStorage.setItem"
+      - "IStorageService injected via @inject or [Inject]"
+
+  - id: T2-03
+    title: "Migrate connection-status.module.js to Blazorators pattern"
+    description: >
+      Replace the manual JS interop in connection-status.module.js with a cleaner pattern.
+      
+      OPTION A (preferred if Blazorators supports it):
+      - Create a partial interface IWindowService with event handling methods
+      - Use Blazor.SourceGenerators to generate the implementation
+      - ConnectionStatus.razor uses the generated service via DI
+      
+      OPTION B (simpler, recommended):
+      - Replace the 22-line connection-status.module.js with a minimal inline script in
+        index.html or a new Blazor component that handles online/offline events natively
+        via IJSRuntime.InvokeVoidAsync("addEventListener", ...)
+      - Or use a CircuitHandler-based approach if available
+      
+      The key goal: eliminate the manual IJSObjectReference + DotNetObjectReference
+      lifecycle management that is the source of most interop bugs.
+      
+      NOTE: Keep this as a separate task from the map rewrite — it's independent.
+    wave: 2
+    priority: medium
+    status: pending
+    dependencies: [T1-01, T1-02]
+    context_files:
+      - path: RuckR/Client/wwwroot/js/connection-status.module.js
+        description: "Module to replace"
+      - path: RuckR/Client/Shared/ConnectionStatus.razor
+        description: "Component to update"
+    estimated_effort: medium
+    estimated_files: 2
+    estimated_lines: 60
+    tech_stack: [.NET 10, Blazor Source Generators, Blazor WASM]
+    verification:
+      - "Online/offline detection still works"
+      - "No manual IJSObjectReference lifecycle management"
+    acceptance_criteria:
+      - "ConnectionStatus.razor no longer uses manual IJSRuntime.ImportAsync pattern"
+      - "Online/offline events still fire correctly"
+      - "DotNetObjectReference not used for connection-status interop"
+
+  # ========================================================================
+  # WAVE 3: Cleanup — Remove all Leaflet + manual JS interop artifacts
+  # ========================================================================
+  - id: T3-01
+    title: "Remove Leaflet CDN from index.html"
+    description: >
+      Remove the Leaflet CSS <link> and Leaflet JS <script> from
+      RuckR.Client/wwwroot/index.html. GeoBlazor's JS assets load via
+      _content/dymaptic.GeoBlazor.Core/ automatically.
+    wave: 3
+    priority: medium
+    status: pending
+    dependencies: [T2-01]
+    context_files:
+      - path: RuckR/Client/wwwroot/index.html
+        description: "Remove Leaflet CDN links"
+    estimated_effort: small
+    estimated_files: 1
+    estimated_lines: -3
+    verification:
+      - "index.html no longer contains leaflet references"
+      - "GeoBlazor script auto-loaded by framework"
+    acceptance_criteria:
+      - "Leaflet CSS line removed from <head>"
+      - "Leaflet JS line removed from <body>"
+      - "GeoBlazor script tag present via _content/"
+
+  - id: T3-02
+    title: "Delete leaflet-map.module.js and manual JS interop modules"
+    description: >
+      Delete all manual JS interop modules that have been replaced:
+      - leaflet-map.module.js (replaced by GeoBlazor)
+      - connection-status.module.js (replaced by Blazorators / inline approach)
+      
+      client-logging.module.js may be kept if Blazorators approach for error
+      logging proves too complex — evaluate during T2-03.
+    wave: 3
+    priority: medium
+    status: pending
+    dependencies: [T2-01, T2-03]
+    estimated_effort: small
+    acceptance_criteria:
+      - "leaflet-map.module.js deleted"
+      - "connection-status.module.js deleted"
+      - "client-logging.module.js status documented (kept or deleted)"
+
+  - id: T3-03
+    title: "Delete IMapService.cs and MapService.cs"
+    description: >
+      Delete RuckR.Client/Services/IMapService.cs and MapService.cs.
+      All map operations are now direct GeoBlazor component interactions.
+    wave: 3
+    priority: medium
+    status: pending
+    dependencies: [T2-01]
+    estimated_effort: small
+    acceptance_criteria:
+      - "Both files deleted"
+      - "No references to IMapService or MapService in codebase"
+
+  - id: T3-04
+    title: "Full build verification, static analysis, and test run"
+    description: >
+      Comprehensive verification pass:
+      1. dotnet build RuckR.sln — zero errors, zero warnings
+      2. dotnet test — all tests pass, update any tests referencing deleted services
+      3. grep for all removed artifacts: leaflet, IMapService, MapService,
+         leaflet-map.module, connection-status.module, client-logging.module
+      4. Run linter/typecheck on all modified .razor and .cs files
+      5. Verify app starts and map renders in browser (manual smoke test)
+      6. Verify localStorage onboarding works (manual test)
+      7. Verify online/offline detection works (manual test: toggle network in DevTools)
+    wave: 3
+    priority: high
+    status: pending
+    dependencies: [T1-01, T2-01, T2-02, T2-03, T3-01, T3-02, T3-03]
+    estimated_effort: medium
+    acceptance_criteria:
+      - "dotnet build RuckR.sln — 0 errors, 0 warnings"
+      - "dotnet test — all tests pass"
+      - "grep for 'leaflet' returns 0 hits in .cs/.razor files"
+      - "grep for 'IMapService' returns 0 hits"
+      - "grep for 'MapService' returns 0 hits"
+      - "grep for 'connection-status.module' returns 0 hits"
+      - "grep for 'leaflet-map.module' returns 0 hits"
+      - "Manual smoke test: map renders, tiles load, markers appear, clicks work"
+      - "Manual test: onboarding banner shows/hides with localStorage"
+      - "Manual test: online/offline indicator works"
+
+# ========================================================================
+# DEPENDENCY NOTES
+# ========================================================================
+#
+# This plan depends on the existing PRD plan (20260505-creature-collector-rugby-gps)
+# for model definitions (PlayerModel, PitchModel, GeoPosition) and Fluxor stores.
+# The map rewrite (T2-01) requires the Fluxor state management to already exist
+# (W4 from the main plan) since Map.razor subscribes to LocationState and MapState.
+#
+# TIMELINE:
+# T1 tasks can start immediately (no dependencies on other workstreams).
+# T2 (rewrite) requires T1 + Fluxor stores to be in place.
+# T3 cleanup requires T2 to be deployed and verified.
+#
+# PARALLEL WORK:
+# - T2-01 (GeoBlazor map rewrite) and T2-02 (localStorage) can run in parallel.
+# - T2-03 (connection-status Blazorators migration) is independent of T2-01.
+# - GeolocationService (already using Blazorators) needs no changes.
+#
+# RISK MITIGATION:
+# - Keep a git branch 'leaflet-fallback' with the original Leaflet code for 1 sprint.
+# - If GeoBlazor has issues, revert to the fallback branch.
+# - If Blazorators custom interop proves problematic for error logging,
+#   keep client-logging.module.js and wrap with Blazorators later.

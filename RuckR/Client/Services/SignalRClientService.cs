@@ -5,16 +5,25 @@ using Microsoft.Extensions.Logging;
 using RuckR.Client.Store.BattleFeature;
 using RuckR.Client.Store.GameFeature;
 using RuckR.Shared.Models;
+using System.Diagnostics;
 
 namespace RuckR.Client.Services
 {
     public class SignalRClientService : IAsyncDisposable
     {
+        private const int MaxQueuedActions = 50;
+        private static readonly TimeSpan LatencySampleInterval = TimeSpan.FromSeconds(15);
+        private const string LocationQueueKey = "location";
+
         private HubConnection? _hubConnection;
         private readonly IDispatcher _dispatcher;
+        private readonly IState<GameState> _gameState;
         private readonly NavigationManager _navigation;
         private readonly ILogger<SignalRClientService> _logger;
         private readonly HashSet<int> _activeBattleGroups = new();
+        private readonly List<QueuedHubAction> _outboundQueue = new();
+        private readonly SemaphoreSlim _queueLock = new(1, 1);
+        private CancellationTokenSource? _latencySamplingCts;
 
         public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
         public HubConnectionState ConnectionState => _hubConnection?.State ?? HubConnectionState.Disconnected;
@@ -25,15 +34,35 @@ namespace RuckR.Client.Services
         public event Action<PitchModel>? PitchDiscovered;
         public event Action<List<NearbyPlayerDto>>? NearbyPlayersUpdated;
 
-        public SignalRClientService(IDispatcher dispatcher, NavigationManager navigation, ILogger<SignalRClientService> logger)
+        public SignalRClientService(
+            IDispatcher dispatcher,
+            IState<GameState> gameState,
+            NavigationManager navigation,
+            ILogger<SignalRClientService> logger)
         {
             _dispatcher = dispatcher;
+            _gameState = gameState;
             _navigation = navigation;
             _logger = logger;
         }
 
         public async Task StartAsync()
         {
+            if (_hubConnection?.State == HubConnectionState.Connected)
+            {
+                StartLatencySampling();
+                await ReplayQueuedActionsAsync();
+                return;
+            }
+
+            if (_hubConnection?.State is HubConnectionState.Connecting or HubConnectionState.Reconnecting)
+                return;
+
+            if (_hubConnection is not null)
+            {
+                await _hubConnection.DisposeAsync();
+            }
+
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(_navigation.ToAbsoluteUri("/battlehub"))
                 .WithAutomaticReconnect(new[]
@@ -59,10 +88,14 @@ namespace RuckR.Client.Services
             _logger.LogInformation("SignalR connection established");
             _dispatcher.Dispatch(new SetConnectionStateAction(true, null));
             ConnectionStateChanged?.Invoke(true, null);
+
+            StartLatencySampling();
+            await ReplayQueuedActionsAsync();
         }
 
         public async Task StopAsync()
         {
+            _latencySamplingCts?.Cancel();
             if (_hubConnection is not null)
             {
                 _hubConnection.Reconnecting -= HandleReconnecting;
@@ -74,35 +107,44 @@ namespace RuckR.Client.Services
 
         public async Task UpdateLocationAsync(double lat, double lng)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected)
-                await _hubConnection.SendAsync("UpdateLocation", lat, lng);
+            await SendOrQueueAsync(new QueuedHubAction(
+                "UpdateLocation",
+                hub => hub.SendAsync("UpdateLocation", lat, lng),
+                LocationQueueKey));
         }
 
         public async Task SendChallengeAsync(string opponentUsername, int playerId)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected)
-                await _hubConnection.SendAsync("SendChallenge", opponentUsername, playerId);
+            var idempotencyKey = Guid.NewGuid().ToString("N");
+            await SendOrQueueAsync(new QueuedHubAction(
+                "SendChallenge",
+                hub => hub.SendAsync("SendChallenge", opponentUsername, playerId, idempotencyKey),
+                null));
         }
 
         public async Task AcceptChallengeAsync(int battleId, int playerId)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected)
-                await _hubConnection.SendAsync("AcceptChallenge", battleId, playerId);
+            await SendOrQueueAsync(new QueuedHubAction(
+                "AcceptChallenge",
+                hub => hub.SendAsync("AcceptChallenge", battleId, playerId),
+                null));
         }
 
         public async Task DeclineChallengeAsync(int battleId)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected)
-                await _hubConnection.SendAsync("DeclineChallenge", battleId);
+            await SendOrQueueAsync(new QueuedHubAction(
+                "DeclineChallenge",
+                hub => hub.SendAsync("DeclineChallenge", battleId),
+                null));
         }
 
         public async Task JoinBattleGroupAsync(int battleId)
         {
-            if (_hubConnection?.State == HubConnectionState.Connected)
-            {
-                await _hubConnection.SendAsync("JoinBattleGroup", battleId);
-                _activeBattleGroups.Add(battleId);
-            }
+            _activeBattleGroups.Add(battleId);
+            await SendOrQueueAsync(new QueuedHubAction(
+                "JoinBattleGroup",
+                hub => hub.SendAsync("JoinBattleGroup", battleId),
+                $"battle-group:{battleId}"));
         }
 
         private void HandleReceiveChallenge(ChallengeNotification notification)
@@ -173,24 +215,201 @@ namespace RuckR.Client.Services
                     _activeBattleGroups.Remove(battleId);
                 }
             }
+
+            StartLatencySampling();
+            await ReplayQueuedActionsAsync();
         }
 
         private Task HandleClosed(Exception? ex)
         {
             _logger.LogWarning(ex, "SignalR connection closed");
             _dispatcher.Dispatch(new SetConnectionStateAction(false, "Connection lost"));
+            _dispatcher.Dispatch(new SetConnectionMetricsAction(null, _outboundQueue.Count));
             ConnectionStateChanged?.Invoke(false, "Connection lost");
             return Task.CompletedTask;
         }
 
+        private async Task SendOrQueueAsync(QueuedHubAction action)
+        {
+            if (!CanSend)
+            {
+                await EnqueueActionAsync(action);
+                return;
+            }
+
+            try
+            {
+                await action.SendAsync(_hubConnection!);
+                await ReplayQueuedActionsAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Queueing SignalR action {ActionName} after send failure", action.Name);
+                await EnqueueActionAsync(action);
+            }
+        }
+
+        private async Task EnqueueActionAsync(QueuedHubAction action)
+        {
+            await _queueLock.WaitAsync();
+            try
+            {
+                if (!string.IsNullOrEmpty(action.CoalesceKey))
+                {
+                    var existingIndex = _outboundQueue.FindIndex(q => q.CoalesceKey == action.CoalesceKey);
+                    if (existingIndex >= 0)
+                    {
+                        _outboundQueue[existingIndex] = action;
+                    }
+                    else
+                    {
+                        _outboundQueue.Add(action);
+                    }
+                }
+                else
+                {
+                    _outboundQueue.Add(action);
+                }
+
+                while (_outboundQueue.Count > MaxQueuedActions)
+                {
+                    _outboundQueue.RemoveAt(0);
+                }
+
+                DispatchConnectionMetrics();
+            }
+            finally
+            {
+                _queueLock.Release();
+            }
+        }
+
+        private async Task ReplayQueuedActionsAsync()
+        {
+            if (!CanSend)
+                return;
+
+            while (CanSend)
+            {
+                QueuedHubAction? action;
+
+                await _queueLock.WaitAsync();
+                try
+                {
+                    action = _outboundQueue.Count == 0 ? null : _outboundQueue[0];
+                }
+                finally
+                {
+                    _queueLock.Release();
+                }
+
+                if (action is null)
+                    return;
+
+                try
+                {
+                    await action.SendAsync(_hubConnection!);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Stopping SignalR queue replay after {ActionName} failed", action.Name);
+                    return;
+                }
+
+                await _queueLock.WaitAsync();
+                try
+                {
+                    if (_outboundQueue.Count > 0 && ReferenceEquals(_outboundQueue[0], action))
+                    {
+                        _outboundQueue.RemoveAt(0);
+                    }
+                    else
+                    {
+                        _outboundQueue.Remove(action);
+                    }
+
+                    DispatchConnectionMetrics();
+                }
+                finally
+                {
+                    _queueLock.Release();
+                }
+            }
+        }
+
+        private void StartLatencySampling()
+        {
+            _latencySamplingCts?.Cancel();
+            _latencySamplingCts = new CancellationTokenSource();
+            _ = SampleLatencyUntilStoppedAsync(_latencySamplingCts.Token);
+        }
+
+        private async Task SampleLatencyUntilStoppedAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await SampleLatencyAsync();
+
+                using var timer = new PeriodicTimer(LatencySampleInterval);
+                while (await timer.WaitForNextTickAsync(cancellationToken))
+                {
+                    await SampleLatencyAsync();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        private async Task SampleLatencyAsync()
+        {
+            if (!CanSend)
+            {
+                _dispatcher.Dispatch(new SetConnectionMetricsAction(null, _outboundQueue.Count));
+                return;
+            }
+
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+                await _hubConnection!.InvokeAsync<long>("Ping");
+                stopwatch.Stop();
+
+                _dispatcher.Dispatch(new SetConnectionMetricsAction((int)stopwatch.ElapsedMilliseconds, _outboundQueue.Count));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "SignalR latency sample failed");
+                _dispatcher.Dispatch(new SetConnectionMetricsAction(null, _outboundQueue.Count));
+            }
+        }
+
+        private void DispatchConnectionMetrics()
+        {
+            _dispatcher.Dispatch(new SetConnectionMetricsAction(_gameState.Value.ConnectionLatencyMs, _outboundQueue.Count));
+        }
+
+        private bool CanSend =>
+            _gameState.Value.IsBrowserOnline &&
+            _hubConnection?.State == HubConnectionState.Connected;
+
         public async ValueTask DisposeAsync()
         {
+            _latencySamplingCts?.Cancel();
             await StopAsync();
             if (_hubConnection is not null)
             {
                 await _hubConnection.DisposeAsync();
                 _hubConnection = null;
             }
+
+            _latencySamplingCts?.Dispose();
+            _queueLock.Dispose();
         }
+
+        private sealed record QueuedHubAction(
+            string Name,
+            Func<HubConnection, Task> SendAsync,
+            string? CoalesceKey);
     }
 }
