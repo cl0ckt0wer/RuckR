@@ -126,6 +126,43 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    public void Map_SelectPitch_ClearsEncounterSelection()
+    {
+        var state = new MapState { SelectedEncounterId = Guid.NewGuid() };
+        var next = MapReducers.ReduceSelectPitch(state, new SelectPitchAction(12));
+
+        Assert.Equal(12, next.SelectedPitchId);
+        Assert.Null(next.SelectedEncounterId);
+    }
+
+    [Fact]
+    public void Map_SelectEncounter_ClearsPitchSelection()
+    {
+        var encounterId = Guid.NewGuid();
+        var state = new MapState { SelectedPitchId = 5 };
+        var next = MapReducers.ReduceSelectEncounter(state, new SelectEncounterAction(encounterId));
+
+        Assert.Null(next.SelectedPitchId);
+        Assert.Equal(encounterId, next.SelectedEncounterId);
+    }
+
+    [Fact]
+    public void Map_SetEncounters_ClearsSelectedEncounterWhenItDisappears()
+    {
+        var selectedEncounterId = Guid.NewGuid();
+        var state = new MapState { SelectedEncounterId = selectedEncounterId };
+        var encounters = new List<PlayerEncounterDto>
+        {
+            new(Guid.NewGuid(), 1, "Player", "Wing", "Common", 1, 51.5, -0.1, DateTime.UtcNow.AddMinutes(5), 65)
+        };
+
+        var next = MapReducers.ReduceSetEncounters(state, new SetEncountersAction(encounters));
+
+        Assert.Null(next.SelectedEncounterId);
+        Assert.Single(next.VisibleEncounters);
+    }
+
+    [Fact]
     public void Battle_ChallengeResponded_Completed_MovesToHistory()
     {
         var battle = new BattleModel

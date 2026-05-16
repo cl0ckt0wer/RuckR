@@ -2,76 +2,47 @@
 
 | Detail | Value |
 |---|---|
-| **App URL** | `https://ruckr.exe.xyz` |
-| **SSH** | `ssh ruckr.exe.xyz` |
-| **VM** | `ruckr` (2 CPU, 4 GB RAM, 20 GB disk) |
-| **Region** | us-west-2 |
-| **Image** | `boldsoftware/exeuntu` |
+| App URL | `https://ruckr.exe.xyz` |
+| SSH | `ssh ruckr.exe.xyz` |
+| Deploy root | `/home/exedev/ruckr` |
+| Source checkout | `/home/exedev/ruckr/src` |
+| Releases | `/home/exedev/ruckr/releases/<release-id>` |
+| Active release | `/home/exedev/ruckr/current` |
+| Service | `ruckr.service` |
+| Listen | `http://127.0.0.1:5000` |
+| Health | `https://ruckr.exe.xyz/api/telemetry/health` |
 
-## Server
-
-| Detail | Value |
-|---|---|
-| **Runtime** | Self-contained .NET 10 (linux-x64) |
-| **Publish dir** | `~/ruckr/` |
-| **WebRoot** | `~/ruckr/wwwroot/` |
-| **ContentRoot** | `/home/exedev/ruckr` |
-| **Listen** | `http://0.0.0.0:8000` |
-| **Environment** | `Development` |
-| **OTLP export** | Disabled (empty `OTEL_EXPORTER_OTLP_ENDPOINT`) |
-| **Log file** | `/tmp/ruckr.log` |
-| **HTTPS proxy** | exe.dev → `:8000` |
-
-## Database
-
-| Detail | Value |
-|---|---|
-| **Engine** | SQL Server 2022 (Docker) |
-| **Container** | `ruckr-db` |
-| **Image** | `mcr.microsoft.com/mssql/server:2022-latest` |
-| **Port** | `1433` (Docker host) |
-| **SA Password** | Set via `RUCKR_DB_PASSWORD` |
-| **Database** | `RuckR_Dev` |
-| **Connection string** | Set via `ConnectionStrings__RuckRDbContext` |
-| **Migrations** | Applied (InitialCreate) |
-| **Seed** | Pending — DB exists but seed hasn't run yet (connection string was wrong on first launch) |
-
-## Configuration files
-
-### `~/ruckr/appsettings.json`
-
-```json
-{
-  "ConnectionStrings": {
-    "RuckRDbContext": "Server=localhost,1433;Database=RuckR_Dev;User=sa;Password=<set-via-RUCKR_DB_PASSWORD>;TrustServerCertificate=True;"
-  },
-  "Seed": {
-    "DefaultCenterLat": 51.5074,
-    "DefaultCenterLng": -0.1278,
-    "SeedValue": 42,
-    "PlayerCount": 500,
-    "SpreadRadiusKm": 50.0
-  }
-}
-```
-
-### `~/ruckr/appsettings.Development.json`
-
-```json
-{
-  "ConnectionStrings": {
-    "RuckRDbContext": "Server=localhost,1433;Database=RuckR_Dev;User=sa;Password=<set-via-RUCKR_DB_PASSWORD>;TrustServerCertificate=True;"
-  }
-}
-```
-
-## Startup command
+## Canonical Command
 
 ```bash
-ssh -f ruckr.exe.xyz \
-  'cd ~/ruckr && nohup env \
-    ASPNETCORE_URLS=http://0.0.0.0:8000 \
-    ASPNETCORE_ENVIRONMENT=Development \
-    OTEL_EXPORTER_OTLP_ENDPOINT= \
-    ./RuckR.Server >/tmp/ruckr.log 2>&1 &'
+./scripts/publish-exe-dev.sh
 ```
+
+The deploy script builds on the VM from the current pushed Git commit:
+
+1. Resolve the DB password from `RUCKR_DB_PASSWORD` or `dotnet user-secrets`.
+2. Ensure SSH, .NET 10 SDK/runtime, Docker SQL Server, Jaeger, and systemd service config.
+3. Write `~/ruckr/secrets.env` and `~/ruckr/app.env` with chmod `600`.
+4. Back up `RuckR_Dev` and copy the `.bak` file to `C:\Users\clock\dbbackups` by default.
+5. Fetch/checkout the deploy commit in `~/ruckr/src`.
+6. Run `dotnet publish` on the VM into a new release directory.
+7. Atomically switch `~/ruckr/current`, restart `ruckr.service`, and verify health.
+
+Useful flags:
+
+```bash
+./scripts/publish-exe-dev.sh --yes
+./scripts/publish-exe-dev.sh --ref master
+./scripts/publish-exe-dev.sh --skip-restart
+./scripts/publish-exe-dev.sh --app-only
+```
+
+The PowerShell entrypoint `scripts/publish-exe-dev.ps1` is a thin wrapper around the bash script so both tracked entrypoints use the same deploy logic.
+
+## Operational Notes
+
+- Deploys require committed and pushed code unless `--ref` points at an already fetchable commit/ref.
+- The script intentionally rejects a dirty working tree for default deploys so the VM cannot build something different from local intent.
+- Production secrets must not be committed. Use user-secrets locally and environment files on the VM.
+- Logs: `ssh ruckr.exe.xyz 'journalctl -u ruckr.service -f'`
+- SQL shell: `ssh ruckr.exe.xyz 'docker exec -it ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C'`

@@ -20,6 +20,7 @@
 @inject SignalRClientService SignalRClient
 @inject AuthenticationStateProvider AuthStateProvider
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
 @inject IDispatcher Dispatcher
 @inject IState<MapState> MapState
 @inject IState<LocationState> LocationState
@@ -169,9 +170,30 @@
             <span class="pitch-card__pill">@PitchTypeDescription(_selectedPitch.Type)</span>
             <span class="pitch-card__distance">@PitchDistanceText(_selectedPitch)</span>
         </div>
-        <p class="small text-white-50 mb-0">
-            @_selectedPitch.Latitude.ToString("F4"), @_selectedPitch.Longitude.ToString("F4")
-        </p>
+        <div class="capture-panel" data-testid="capture-panel">
+            <div class="capture-panel__row">
+                <span>Available players</span>
+                @if (_isLoadingEligibility)
+                {
+                    <span class="spinner-border spinner-border-sm text-light" role="status"></span>
+                }
+                else
+                {
+                    <strong data-testid="available-player-count">@_nearbyPlayerCount</strong>
+                }
+            </div>
+            <div class="capture-panel__row">
+                <span>Capture range</span>
+                <strong>@CaptureDistanceText</strong>
+            </div>
+            <p class="capture-panel__status" data-testid="capture-status">@CaptureStatusText</p>
+            <button class="btn btn-sm btn-primary w-100"
+                    data-testid="capture-players-btn"
+                    disabled="@(!CanCaptureSelectedPitch)"
+                    @onclick="NavigateToCapture">
+                Capture Players
+            </button>
+        </div>
     </div>
 }
 
@@ -587,6 +609,31 @@
          background: rgba(15,23,42,0.42);
          color: rgba(226,232,240,0.86);
      }
+     .capture-panel {
+         display: grid;
+         gap: 0.45rem;
+         margin-top: 0.65rem;
+         border-radius: 0.45rem;
+         padding: 0.6rem;
+         background: rgba(15,23,42,0.35);
+         border: 1px solid rgba(255,255,255,0.1);
+     }
+     .capture-panel__row {
+         display: flex;
+         align-items: center;
+         justify-content: space-between;
+         gap: 0.75rem;
+         font-size: 0.82rem;
+     }
+     .capture-panel__row span {
+         color: rgba(226,232,240,0.76);
+     }
+     .capture-panel__status {
+         margin: 0;
+         font-size: 0.8rem;
+         line-height: 1.35;
+         color: rgba(248,250,252,0.84);
+     }
      .map-info-bar {
          position: absolute;
          bottom: 0;
@@ -690,6 +737,10 @@
     private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
     private PitchModel? _selectedPitch;
     private int _lastSelectedPitchId = -1;
+    private CaptureEligibilityDto? _captureEligibility;
+    private bool _isLoadingEligibility;
+    private int _eligibilityRequestPitchId = -1;
+    private int _nearbyPlayerCount;
     private PlayerEncounterDto? _selectedEncounter;
     private GameProgressDto? _gameProgress;
     private int _prevLevelXp;
@@ -772,6 +823,10 @@
             }
 
             UpdateRecruitEligibility();
+            if (_selectedPitch is not null)
+            {
+                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+            }
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -787,12 +842,20 @@
         {
             _lastSelectedPitchId = state.SelectedPitchId.Value;
             _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
+            _captureEligibility = null;
+            _nearbyPlayerCount = 0;
+            if (_selectedPitch is not null)
+            {
+                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+            }
             _ = InvokeAsync(StateHasChanged);
         }
         else if (!state.SelectedPitchId.HasValue && _selectedPitch is not null)
         {
             _lastSelectedPitchId = -1;
             _selectedPitch = null;
+            _captureEligibility = null;
+            _nearbyPlayerCount = 0;
             _ = InvokeAsync(StateHasChanged);
         }
 
@@ -998,6 +1061,101 @@
     private void ClearSelection()
     {
         Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private bool CanCaptureSelectedPitch => _isAuthenticated && _captureEligibility?.CanCapture == true;
+
+    private string CaptureDistanceText =>
+        _captureEligibility is not null
+            ? FormatDistanceBucket(_captureEligibility.DistanceBucket)
+            : _selectedPitch is not null
+                ? PitchDistanceText(_selectedPitch)
+                : "Unknown";
+
+    private string CaptureStatusText
+    {
+        get
+        {
+            if (_selectedPitch is null)
+            {
+                return string.Empty;
+            }
+
+            if (!_isAuthenticated)
+            {
+                return "Log in to capture players from this pitch.";
+            }
+
+            if (_isLoadingEligibility)
+            {
+                return "Checking server-side capture eligibility...";
+            }
+
+            if (_captureEligibility is null)
+            {
+                return "Unable to verify capture eligibility right now.";
+            }
+
+            return _captureEligibility.Reason switch
+            {
+                "ELIGIBLE" => "In range. You can capture players from this pitch.",
+                "GPS_REQUIRED" => "Enable GPS to capture players from this pitch.",
+                "GPS_INACCURATE" => $"Improve GPS accuracy to {MaxRecruitAccuracyMeters:0}m or better.",
+                "TOO_FAR" => "Move closer. Capture unlocks within 100m.",
+                "NO_PLAYERS" => "No uncaptured players are available at this pitch right now.",
+                _ => "Capture is currently unavailable."
+            };
+        }
+    }
+
+    private async Task RefreshCaptureEligibilityAsync(int pitchId)
+    {
+        if (!_isAuthenticated || (_isLoadingEligibility && _eligibilityRequestPitchId == pitchId))
+        {
+            return;
+        }
+
+        _eligibilityRequestPitchId = pitchId;
+        _isLoadingEligibility = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var eligibility = await ApiClient.GetCaptureEligibilityAsync(pitchId);
+            if (_selectedPitch?.Id != pitchId)
+            {
+                return;
+            }
+
+            _captureEligibility = eligibility;
+            _nearbyPlayerCount = eligibility?.AvailablePlayerCount ?? 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to check capture eligibility for pitch {PitchId}", pitchId);
+            _captureEligibility = null;
+            _nearbyPlayerCount = 0;
+        }
+        finally
+        {
+            if (_eligibilityRequestPitchId == pitchId)
+            {
+                _isLoadingEligibility = false;
+                _eligibilityRequestPitchId = -1;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void NavigateToCapture()
+    {
+        if (!CanCaptureSelectedPitch || _selectedPitch is null)
+        {
+            return;
+        }
+
+        Navigation.NavigateTo($"/players/nearby?pitchId={_selectedPitch.Id}");
     }
 
     private void DismissOnboarding()
@@ -1231,6 +1389,31 @@
         return distanceMeters < 1000
             ? $"{Math.Round(distanceMeters)} m"
             : $"{distanceMeters / 1000:0.0} km";
+    }
+
+    private static string FormatDistanceBucket(string? bucket)
+    {
+        if (Enum.TryParse<DistanceBucket>(bucket, out var parsed))
+        {
+            return parsed switch
+            {
+                DistanceBucket.Within50m => "< 50m",
+                DistanceBucket.Within100m => "< 100m",
+                DistanceBucket.Within250m => "< 250m",
+                DistanceBucket.Within500m => "< 500m",
+                _ => "> 500m"
+            };
+        }
+
+        return bucket switch
+        {
+            "<50m" => "< 50m",
+            "<100m" => "< 100m",
+            "<250m" => "< 250m",
+            "<500m" => "< 500m",
+            ">500m" => "> 500m",
+            _ => "Unknown"
+        };
     }
 
     private static string EncounterParkName(PlayerEncounterDto encounter)

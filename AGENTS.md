@@ -59,27 +59,26 @@ Remove-Job -Name RuckRServer
 
 ## Deploy
 
-Publish to the exe.dev production VM via `scripts/publish-exe-dev.sh` (bash v2, recommended) or `scripts/publish-exe-dev.ps1` (PowerShell v1).
+Publish to the exe.dev production VM via `scripts/publish-exe-dev.sh` (bash, canonical) or `scripts/publish-exe-dev.ps1` (PowerShell wrapper).
 
-**v2 (bash) — auto-discovers DB password from user-secrets, single command:**
+**Bash — auto-discovers DB password from user-secrets, builds on the VM from the current pushed Git commit:**
 ```bash
 ./scripts/publish-exe-dev.sh
 ```
 
 With flags:
 ```bash
-./scripts/publish-exe-dev.sh --skip-build       # skip dotnet publish (use existing publish/)
 ./scripts/publish-exe-dev.sh --skip-restart      # skip server restart (deploy files only)
 ./scripts/publish-exe-dev.sh --yes               # non-interactive mode
+./scripts/publish-exe-dev.sh --ref master        # deploy a specific pushed git ref
 ```
 
-**v1 (PowerShell):**
+**PowerShell wrapper:**
 ```powershell
-$env:RUCKR_DB_PASSWORD = "the-real-sa-password"
 .\scripts\publish-exe-dev.ps1
 ```
 
-Both scripts deploy framework-dependent `linux-x64` build, ensure .NET 10 runtime and Docker SQL Server on the VM, atomically switch the release symlink, restart via systemd, and verify the health endpoint. The password is written to `~/ruckr/secrets.env` (chmod 600) on the VM — no password appears in SSH commands.
+The canonical deploy script ensures the .NET 10 SDK/runtime and Docker SQL Server on the VM, checks out the pushed Git commit into `~/ruckr/src`, publishes on the VM into `~/ruckr/releases/<release-id>`, atomically switches the `current` symlink, restarts via systemd, and verifies the health endpoint. The password is written to `~/ruckr/secrets.env` (chmod 600) on the VM.
 
 ### Setting secrets for local dev with Docker SQL Server
 
@@ -172,13 +171,13 @@ When the user says "publish to exe.dev" or similar, run:
 ./scripts/publish-exe-dev.sh
 ```
 
-The v2 bash script auto-discovers the DB password from `dotnet user-secrets` for `RuckR.Server.csproj` — no manual env var setup needed. Steps:
+The bash script auto-discovers the DB password from `dotnet user-secrets` for `RuckR.Server.csproj` — no manual env var setup needed. It requires deployable code to be committed and pushed because the VM builds from Git. Steps:
 
 1. Run `./scripts/publish-exe-dev.sh`
 2. If SSH fails, ask the user to verify credentials/connectivity
 3. Report back: release ID, whether health check passed, and the app URL
 
-Pass `--skip-build` to reuse the existing `publish/` directory, or `--skip-restart` to deploy files without restarting the systemd service.
+Pass `--ref <git-ref>` to deploy a specific pushed ref, or `--skip-restart` to build/link without restarting the systemd service.
 
 ## gstack
 

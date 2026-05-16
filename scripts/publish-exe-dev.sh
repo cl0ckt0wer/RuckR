@@ -1,37 +1,42 @@
 #!/usr/bin/env bash
-# v2 — Native bash, zero manual steps. One command to publish, deploy, and verify.
-# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--skip-build] [--no-restore] [--skip-restart] [--yes]
+# Native bash deploy. Builds on the exe.dev VM from the current pushed Git commit,
+# then atomically switches ~/ruckr/current and verifies health.
+# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--no-restore] [--skip-restart] [--yes] [--ref <git-ref>]
 set -euo pipefail
 
 SSH_HOST="ruckr.exe.xyz"
 DEPLOY_DIR="~/ruckr"
 ABS_DEPLOY_DIR="/home/exedev/ruckr"
+REMOTE_REPO_DIR="$ABS_DEPLOY_DIR/src"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PUBLISH_DIR="$REPO_ROOT/publish"
-ARCHIVE="$REPO_ROOT/publish.tar.gz"
-SERVER_CSPROJ="$REPO_ROOT/RuckR/Server/RuckR.Server.csproj"
+SERVER_CSPROJ_REL="RuckR/Server/RuckR.Server.csproj"
+SERVER_CSPROJ="$REPO_ROOT/$SERVER_CSPROJ_REL"
 LOCAL_BACKUP_DIR="${RUCKR_LOCAL_BACKUP_DIR:-/mnt/c/Users/clock/dbbackups}"
 RELEASE_ID=$(date +%Y%m%d%H%M%S)
 PREV_RELEASE=""
 RELEASES_TO_KEEP=10
+DEPLOY_REF="${RUCKR_DEPLOY_REF:-}"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; MAGENTA='\033[0;35m'; BOLD='\033[1m'; NC='\033[0m'
 
-APP_ONLY=false; SKIP_BUILD=false; NO_RESTORE=false; SKIP_RESTART=false; NONINTERACTIVE=false
-for arg in "$@"; do case "$arg" in --app-only) APP_ONLY=true ;; --skip-build) SKIP_BUILD=true ;; --no-restore) NO_RESTORE=true ;; --skip-restart) SKIP_RESTART=true ;; --yes|-y) NONINTERACTIVE=true ;; *) echo "Unknown: $arg"; exit 1 ;; esac; done
+APP_ONLY=false; NO_RESTORE=false; SKIP_RESTART=false; NONINTERACTIVE=false
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --app-only) APP_ONLY=true; shift ;;
+    --no-restore) NO_RESTORE=true; shift ;;
+    --skip-restart) SKIP_RESTART=true; shift ;;
+    --yes|-y) NONINTERACTIVE=true; shift ;;
+    --ref) DEPLOY_REF="${2:-}"; [ -n "$DEPLOY_REF" ] || { echo "--ref requires a value"; exit 1; }; shift 2 ;;
+    --skip-build) echo "Unknown: --skip-build (remote-build deploy always publishes a fresh release)"; exit 1 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
 
 step()   { echo -e "\n${CYAN}━━━ ${BOLD}$1${NC}"; }
 info()   { echo -e "  ${BOLD}$1${NC} $2"; }
 ok()     { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()   { echo -e "  ${YELLOW}⚠${NC} $1"; }
 fail()   { echo -e "  ${RED}✗${NC} $1"; exit 1; }
-run()    { echo -e "  \$${NC} $*"; "$@"; }
-confirm(){
-  local msg=$1
-  if $NONINTERACTIVE; then return 0; fi
-  read -r -p "  ${YELLOW}?${NC} $msg [Y/n] " reply
-  [[ -z "$reply" || "$reply" =~ ^[Yy] ]] && return 0 || return 1
-}
 
 get_windows_env(){
   local name=$1
@@ -75,18 +80,40 @@ resolve_first_env(){
   done
 }
 
-safe_remove_file(){
-  local path=$1
-  [ -e "$path" ] || return 0
-  chmod u+w "$path" 2>/dev/null || true
-  rm -f "$path" 2>/dev/null || warn "Could not remove $path; remove it manually if the next deploy cannot overwrite it."
+remote_quote(){
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
-cleanup() { safe_remove_file "$ARCHIVE"; rm -rf "$PUBLISH_DIR" 2>/dev/null || true; }
-trap cleanup EXIT
+local_git_clean_check(){
+  if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ] && [ -z "${RUCKR_DEPLOY_ALLOW_DIRTY:-}" ]; then
+    fail "Working tree has uncommitted changes. Commit and push first, or set RUCKR_DEPLOY_ALLOW_DIRTY=1 when deploying an explicit --ref."
+  fi
+}
+
+resolve_deploy_ref(){
+  if [ -n "$DEPLOY_REF" ]; then
+    git -C "$REPO_ROOT" rev-parse --verify "$DEPLOY_REF^{commit}" >/dev/null
+    git -C "$REPO_ROOT" rev-parse "$DEPLOY_REF"
+    return 0
+  else
+    DEPLOY_REF=$(git -C "$REPO_ROOT" rev-parse HEAD)
+    local_git_clean_check
+  fi
+
+  local branch ahead
+  branch=$(git -C "$REPO_ROOT" branch --show-current)
+  if [ -n "$branch" ]; then
+    ahead=$(git -C "$REPO_ROOT" rev-list --count "origin/$branch..$branch" 2>/dev/null || echo 0)
+    if [ "$ahead" != "0" ] && [ -z "${RUCKR_DEPLOY_ALLOW_UNPUSHED:-}" ]; then
+      fail "Current branch has $ahead unpushed commit(s). Push before deploying so the VM can fetch the ref."
+    fi
+  fi
+
+  git -C "$REPO_ROOT" rev-parse "$DEPLOY_REF"
+}
 
 # ── Resolve DB password ──
-step "1/10  Resolving DB password"
+step "1/9  Resolving DB password"
 PASSWORD=$(resolve_first_env RUCKR_DB_PASSWORD)
 if [ -z "$PASSWORD" ]; then
   secrets=$(dotnet user-secrets list --project "$SERVER_CSPROJ" 2>/dev/null || true)
@@ -101,56 +128,37 @@ ok "Password resolved"
 CONNECTION_STRING="Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=${PASSWORD};TrustServerCertificate=True;"
 
 # ── Pre-flight checks ──
-step "2/10  Pre-flight checks"
-for bin in dotnet ssh scp tar curl; do
+step "2/9  Pre-flight checks"
+for bin in dotnet git ssh scp curl; do
   command -v "$bin" >/dev/null || fail "$bin not found on PATH"
 done
-ok "All tools available (dotnet, ssh, scp, tar, curl)"
-dotnet --version | xargs -I{} echo "  .NET SDK: {}"
+ok "Local tools available (dotnet, git, ssh, scp, curl)"
 ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_HOST" "echo ok" 2>/dev/null && ok "SSH to $SSH_HOST" || fail "SSH to $SSH_HOST failed. Check connectivity and credentials."
 
-# ── Publish ──
-step "3/10  Building portable framework-dependent app"
-if $SKIP_BUILD; then
-  warn "Skipping build (--skip-build)"
-else
-  rm -rf "$PUBLISH_DIR"
-  publish_args=(publish "$SERVER_CSPROJ" -c Release -o "$PUBLISH_DIR")
-  if $NO_RESTORE; then
-    publish_args+=(--no-restore)
-  fi
-  run dotnet "${publish_args[@]}"
-  size=$(du -sh "$PUBLISH_DIR" | cut -f1)
-  ok "Published ($size)"
-fi
+GIT_REMOTE_URL=$(git -C "$REPO_ROOT" config --get remote.origin.url)
+[ -n "$GIT_REMOTE_URL" ] || fail "No origin remote configured."
+GIT_COMMIT=$(resolve_deploy_ref)
+ok "Deploy ref resolved to $GIT_COMMIT"
 
-# ── Compress ──
-step "4/10  Compressing artifacts"
-safe_remove_file "$ARCHIVE"
-tar -czf "$ARCHIVE" -C "$PUBLISH_DIR" .
-archive_mb=$(du -h "$ARCHIVE" | cut -f1)
-ok "Compressed ($archive_mb)"
-
-# ── Ensure VM infra (runtime, SQL, Jaeger) ──
-step "5/10  Checking VM infrastructure"
+# ── Ensure VM infra (SDK/runtime, SQL, Jaeger) ──
+step "3/9  Checking VM infrastructure"
 if $APP_ONLY; then
   warn "Skipping VM runtime/container checks (--app-only)"
 else
-  runtime=$(ssh "$SSH_HOST" '/usr/share/dotnet/dotnet --list-runtimes 2>/dev/null | grep -c "ASP.NETCore 10\.0" || true')
-  if [ "$runtime" -eq 0 ]; then
-    info "Installing" ".NET 10 runtime..."
-    ssh "$SSH_HOST" 'wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && chmod +x /tmp/dotnet-install.sh && sudo /tmp/dotnet-install.sh --channel 10.0 --runtime aspnetcore --install-dir /usr/share/dotnet'
-    ok ".NET 10 runtime installed"
+  sdk=$(ssh "$SSH_HOST" '/usr/share/dotnet/dotnet --list-sdks 2>/dev/null | grep -c "^10\." || true')
+  if [ "$sdk" -eq 0 ]; then
+    info "Installing" ".NET 10 SDK..."
+    ssh "$SSH_HOST" 'wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh && chmod +x /tmp/dotnet-install.sh && sudo /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet'
+    ok ".NET 10 SDK installed"
   else
-    ok ".NET 10 runtime present"
+    ok ".NET 10 SDK present"
   fi
 
   sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null')
   if [ -z "$sql" ]; then
     info "Starting" "SQL Server container..."
-    # Data persisted to host volume — survives container recreation
-    ssh "$SSH_HOST" "docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$PASSWORD -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
-    for i in $(seq 1 20); do
+    ssh "$SSH_HOST" "docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD") -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
+    for _ in $(seq 1 20); do
       ready=$(ssh "$SSH_HOST" 'docker logs ruckr-sql 2>&1 | grep -q "SQL Server is now ready" && echo ready || echo waiting')
       [ "$ready" = "ready" ] && break
       sleep 3
@@ -171,52 +179,36 @@ else
 fi
 
 # ── Deploy secrets ──
-step "6/10  Deploying secrets"
-ssh "$SSH_HOST" "cat > $DEPLOY_DIR/secrets.env" <<SECEOF
+step "4/9  Deploying secrets"
+ssh "$SSH_HOST" "mkdir -p $DEPLOY_DIR && cat > $DEPLOY_DIR/secrets.env" <<SECEOF
 RUCKR_DB_PASSWORD=$PASSWORD
 MSSQL_SA_PASSWORD=$PASSWORD
 SECEOF
 ssh "$SSH_HOST" "chmod 600 $DEPLOY_DIR/secrets.env"
 
-esc_pass=$(printf '%s\n' "$PASSWORD" | sed "s/'/'\\\\''/g")
-esc_conn=$(printf '%s\n' "$CONNECTION_STRING" | sed "s/'/'\\\\''/g")
-
-# Resolve map keys (optional — only set if env vars exist)
 ARC_GIS_KEY=$(resolve_first_env ARC_GIS_API_KEY ArcGISApiKey)
 ARC_GIS_PORTAL_ITEM_ID=$(resolve_first_env ARC_GIS_PORTAL_ITEM_ID ArcGISPortalItemId)
 GEOBLAZOR_LICENSE_KEY=$(resolve_first_env GEOBLAZOR_API GEOBLAZOR_LICENSE_KEY GEOBLAZOR_REGISTRATION_KEY GeoBlazor__LicenseKey GeoBlazor__RegistrationKey)
-if [ -n "$ARC_GIS_KEY" ]; then
-  ok "ArcGIS API key resolved (length: ${#ARC_GIS_KEY})"
-else
-  warn "ArcGIS API key not set; map will report missing ArcGIS key"
-fi
-if [ -n "$ARC_GIS_PORTAL_ITEM_ID" ]; then
-  ok "ArcGIS Portal Item ID resolved (length: ${#ARC_GIS_PORTAL_ITEM_ID})"
-else
-  warn "ArcGIS Portal Item ID not set; map will report missing Portal Item ID"
-fi
-if [ -n "$GEOBLAZOR_LICENSE_KEY" ]; then
-  ok "GeoBlazor license key resolved (length: ${#GEOBLAZOR_LICENSE_KEY})"
-else
-  warn "GeoBlazor license key not set; map will report missing GeoBlazor key"
-fi
-esc_geoblazor=$(printf '%s\n' "$GEOBLAZOR_LICENSE_KEY" | sed "s/'/'\\\\''/g")
+
+[ -n "$ARC_GIS_KEY" ] && ok "ArcGIS API key resolved (length: ${#ARC_GIS_KEY})" || warn "ArcGIS API key not set; map will report missing ArcGIS key"
+[ -n "$ARC_GIS_PORTAL_ITEM_ID" ] && ok "ArcGIS Portal Item ID resolved (length: ${#ARC_GIS_PORTAL_ITEM_ID})" || warn "ArcGIS Portal Item ID not set; map will report missing Portal Item ID"
+[ -n "$GEOBLAZOR_LICENSE_KEY" ] && ok "GeoBlazor license key resolved (length: ${#GEOBLAZOR_LICENSE_KEY})" || warn "GeoBlazor license key not set; map will report missing GeoBlazor key"
 
 ssh "$SSH_HOST" "cat > $DEPLOY_DIR/app.env" <<APPEOF
-RUCKR_DB_PASSWORD='$esc_pass'
-MSSQL_SA_PASSWORD='$esc_pass'
-ConnectionStrings__RuckRDbContext='$esc_conn'
+RUCKR_DB_PASSWORD=$(remote_quote "$PASSWORD")
+MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD")
+ConnectionStrings__RuckRDbContext=$(remote_quote "$CONNECTION_STRING")
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
-ArcGISApiKey='$ARC_GIS_KEY'
-ArcGISPortalItemId='$ARC_GIS_PORTAL_ITEM_ID'
-GeoBlazor__LicenseKey='$esc_geoblazor'
-GeoBlazor__RegistrationKey='$esc_geoblazor'
+ArcGISApiKey=$(remote_quote "$ARC_GIS_KEY")
+ArcGISPortalItemId=$(remote_quote "$ARC_GIS_PORTAL_ITEM_ID")
+GeoBlazor__LicenseKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
+GeoBlazor__RegistrationKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
 APPEOF
 ssh "$SSH_HOST" "chmod 600 $DEPLOY_DIR/app.env"
 ok "secrets.env and app.env deployed (chmod 600)"
 
 # ── DB backup before restart ──
-step "6b/10  Backing up database"
+step "5/9  Backing up database"
 backup_output=""
 if backup_output=$(ssh "$SSH_HOST" "bash -se" <<'SSHEOF'
 set -euo pipefail
@@ -238,7 +230,6 @@ echo "BACKUP_FILE=$backup_file"
 echo "STAGED_BACKUP_FILE=$staged_backup_file"
 SSHEOF
 ); then
-  remote_backup_file=$(printf '%s\n' "$backup_output" | sed -n 's/^BACKUP_FILE=//p' | tail -1)
   staged_backup_file=$(printf '%s\n' "$backup_output" | sed -n 's/^STAGED_BACKUP_FILE=//p' | tail -1)
   ok "DB backup created"
   if [ -n "$staged_backup_file" ]; then
@@ -249,15 +240,13 @@ SSHEOF
     else
       warn "DB backup copy to $LOCAL_BACKUP_DIR failed (non-fatal)"
     fi
-  else
-    warn "DB backup path not returned; local copy skipped (non-fatal)"
   fi
 else
   warn "DB backup failed (non-fatal)"
 fi
 
 # ── Install systemd service ──
-step "7/10  Installing systemd service"
+step "6/9  Installing systemd service"
 if $APP_ONLY; then
   warn "Skipping systemd service install (--app-only)"
 else
@@ -288,21 +277,47 @@ UNIT
 ok "ruckr.service installed and enabled"
 fi
 
-# ── Capture current symlink for rollback ──
-step "8/10  Deploying release $RELEASE_ID"
+# ── Remote checkout and publish ──
+step "7/9  Building release $RELEASE_ID on VM"
 PREV_RELEASE=$(ssh "$SSH_HOST" "readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true")
+remote_url_q=$(remote_quote "$GIT_REMOTE_URL")
+commit_q=$(remote_quote "$GIT_COMMIT")
+release_q=$(remote_quote "$ABS_DEPLOY_DIR/releases/$RELEASE_ID")
+repo_q=$(remote_quote "$REMOTE_REPO_DIR")
+no_restore_arg=""
+$NO_RESTORE && no_restore_arg="--no-restore"
 
-ssh "$SSH_HOST" "mkdir -p $DEPLOY_DIR/releases/$RELEASE_ID"
-run scp "$ARCHIVE" "$SSH_HOST:/tmp/publish.tar.gz"
-ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases/$RELEASE_ID && tar -xzf /tmp/publish.tar.gz && rm /tmp/publish.tar.gz && ln -sfn $ABS_DEPLOY_DIR/releases/$RELEASE_ID $ABS_DEPLOY_DIR/current && echo 'extracted and linked'"
-ok "Deployed current → releases/$RELEASE_ID"
+ssh "$SSH_HOST" "bash -se" <<SSHEOF
+set -euo pipefail
+repo=$repo_q
+release_dir=$release_q
+remote_url=$remote_url_q
+commit=$commit_q
 
-step "8b/10  Pruning old releases"
+mkdir -p "$ABS_DEPLOY_DIR/releases"
+if [ -d "\$repo/.git" ]; then
+  git -C "\$repo" remote set-url origin "\$remote_url"
+  git -C "\$repo" fetch --prune origin
+else
+  rm -rf "\$repo"
+  git clone "\$remote_url" "\$repo"
+fi
+
+git -C "\$repo" fetch --prune origin
+git -C "\$repo" checkout --detach "\$commit"
+rm -rf "\$release_dir"
+mkdir -p "\$release_dir"
+/usr/share/dotnet/dotnet publish "\$repo/$SERVER_CSPROJ_REL" -c Release -o "\$release_dir" $no_restore_arg
+ln -sfn "\$release_dir" "$ABS_DEPLOY_DIR/current"
+SSHEOF
+ok "Built and linked current → releases/$RELEASE_ID"
+
+step "7b/9  Pruning old releases"
 ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases && current=\$(readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
 ok "Kept newest $RELEASES_TO_KEEP releases"
 
-# ── Restart & verify ──
-step "9/10  Restarting server"
+# ── Restart and verify ──
+step "8/9  Restarting server"
 if $SKIP_RESTART; then
   warn "Skipping restart (--skip-restart)"
 else
@@ -320,10 +335,9 @@ else
   fi
   ok "systemd restarted (active)"
 
-# ── Verify health endpoint ──
-  step "10/10  Verifying health endpoint"
+  step "9/9  Verifying health endpoint"
   healthy=false
-  for i in $(seq 1 15); do
+  for _ in $(seq 1 15); do
     code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "https://ruckr.exe.xyz/api/telemetry/health" 2>/dev/null || true)
     if [ "$code" = "200" ]; then
       healthy=true
@@ -353,13 +367,13 @@ else
   fi
 fi
 
-# ── Summary ──
 echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  Published to exe.dev${NC}"
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  ${BOLD}App:${NC}  https://ruckr.exe.xyz"
 echo -e "  ${BOLD}Release:${NC}  $RELEASE_ID"
+echo -e "  ${BOLD}Commit:${NC}  $GIT_COMMIT"
 echo -e "  ${BOLD}Log:${NC}  ssh $SSH_HOST 'journalctl -u ruckr.service -f'"
 echo -e "  ${BOLD}SQL:${NC}  ssh $SSH_HOST 'docker exec ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C'"
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
