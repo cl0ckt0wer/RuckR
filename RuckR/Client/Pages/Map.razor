@@ -17,7 +17,9 @@
 @inject ILogger<Map> Logger
 @inject IGeolocationService GeolocationService
 @inject ApiClientService ApiClient
+@inject SignalRClientService SignalRClient
 @inject AuthenticationStateProvider AuthStateProvider
+@inject IJSRuntime JS
 @inject IDispatcher Dispatcher
 @inject IState<MapState> MapState
 @inject IState<LocationState> LocationState
@@ -36,7 +38,7 @@
         </div>
     }
 
-    <div data-testid="map-loading" class="map-loading" style="@(_viewReady ? "display:none" : "")">
+    <div data-testid="map-loading" class="map-loading" style="@(_viewReady || !_hasApiKey ? "display:none" : "")">
         <div class="spinner-border text-light" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
@@ -103,18 +105,55 @@
                 <strong>@PitchCount(PitchType.Training)</strong>
             </div>
         </div>
+
+        @if (ShouldShowGpsNotice)
+        {
+            <div class="gps-readiness" data-testid="gps-readiness">
+                <div>
+                    <div class="gps-readiness__title">@GpsNoticeTitle</div>
+                    <p>@GpsNoticeBody</p>
+                </div>
+                <button class="btn btn-sm btn-outline-light"
+                        type="button"
+                        data-testid="gps-retry-btn"
+                        @onclick="EnableGpsAsync">
+                    Retry GPS
+                </button>
+            </div>
+        }
+
+        @if (_isAuthenticated && _selectedEncounter is null && MapState.Value.VisibleEncounters.Count > 0)
+        {
+            <div class="encounter-radar" data-testid="encounter-radar">
+                <div class="encounter-radar__header">
+                    <span>Recruit board</span>
+                    <strong>@MapState.Value.VisibleEncounters.Count</strong>
+                </div>
+                @if (NearestEncounter is not null)
+                {
+                    <button class="encounter-radar__target"
+                            data-testid="nearest-encounter-btn"
+                            type="button"
+                            @onclick="() => SelectEncounterAsync(NearestEncounter)">
+                        <span>
+                            <strong>@NearestEncounter.Name</strong>
+                            <small>@EncounterParkName(NearestEncounter)</small>
+                        </span>
+                        <span>@EncounterDistanceText(NearestEncounter)</span>
+                    </button>
+                }
+            </div>
+        }
     }
 </div>
 
-@if (_showOnboarding && _hasApiKey)
+@if (_showOnboarding)
 {
     <div class="onboarding-banner" data-testid="onboarding-banner">
         <span class="onboarding-text">Welcome to RuckR! Explore the map to find pitches and recruit players.</span>
         <button class="btn-close btn-close-white" data-testid="onboarding-close" @onclick="DismissOnboarding" aria-label="Dismiss"></button>
     </div>
 }
-
-@if (_selectedPitch is not null)
 
 @if (_selectedPitch is not null)
 {
@@ -140,22 +179,31 @@
 {
     <div class="map-overlay map-overlay--encounter" data-testid="encounter-overlay">
         <div class="d-flex justify-content-between align-items-start mb-2">
-            <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
+            <div>
+                <div class="encounter-card__eyebrow">@EncounterParkName(_selectedEncounter)</div>
+                <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
+            </div>
             <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearEncounterSelection" aria-label="Close"></button>
         </div>
-        <div class="mb-2">
+        <div class="mb-2 d-flex gap-2 flex-wrap">
             <span class="badge bg-@EncounterRarityBadgeClass(_selectedEncounter.Rarity) me-2">@_selectedEncounter.Rarity</span>
             <span class="badge bg-secondary">Level @_selectedEncounter.Level</span>
+            <span class="badge bg-dark">@_selectedEncounter.Position</span>
+            <span class="badge bg-info text-dark">@EncounterExpiresText(_selectedEncounter)</span>
         </div>
-        <p class="small text-success mb-1">
-            Recruit at @EncounterParkName(_selectedEncounter)
-        </p>
-        <p class="small text-muted mb-1">
-            Distance: @DistanceBucketFromPosition(_selectedEncounter.Latitude, _selectedEncounter.Longitude)
-        </p>
-        <p class="small text-muted mb-2">
-            Success chance: @_selectedEncounter.SuccessChancePercent%
-        </p>
+        <div class="encounter-card__route mb-2">
+            <span>@EncounterDistanceText(_selectedEncounter)</span>
+            <strong>@EncounterRouteInstruction(_selectedEncounter)</strong>
+        </div>
+        <div class="encounter-card__chance mb-3"
+             role="progressbar"
+             aria-label="Recruitment success chance"
+             aria-valuemin="0"
+             aria-valuemax="100"
+             aria-valuenow="@_selectedEncounter.SuccessChancePercent">
+            <div style="width:@_selectedEncounter.SuccessChancePercent%"></div>
+            <span>@_selectedEncounter.SuccessChancePercent% chance</span>
+        </div>
         <button class="btn btn-sm btn-@RecruitButtonClass()"
                 data-testid="recruit-btn"
                 disabled="@(!_canRecruit)"
@@ -178,6 +226,14 @@
         {
             <p class="small mt-2 mb-0 text-@_recruitMessageClass">@_recruitMessage</p>
         }
+    </div>
+}
+
+@if (_recruitToastMessage is not null)
+{
+    <div class="recruit-toast recruit-toast--@_recruitToastClass" data-testid="recruit-toast">
+        @_recruitToastMessage
+        <button type="button" class="btn-close btn-close-white" @onclick="DismissRecruitToast" aria-label="Dismiss"></button>
     </div>
 }
 
@@ -242,6 +298,29 @@
      .map-fab:disabled {
          opacity: 0.4;
      }
+     .onboarding-banner {
+         position: fixed;
+         top: 0.75rem;
+         left: 50%;
+         z-index: 1500;
+         display: flex;
+         align-items: center;
+         justify-content: space-between;
+         gap: 0.75rem;
+         width: min(640px, calc(100vw - 1.5rem));
+         transform: translateX(-50%);
+         border: 1px solid rgba(255,255,255,0.16);
+         border-radius: 0.5rem;
+         padding: 0.65rem 0.8rem;
+         background: rgba(15,23,42,0.94);
+         color: #fff;
+         box-shadow: 0 16px 40px rgba(0,0,0,0.28);
+     }
+     .onboarding-text {
+         min-width: 0;
+         font-size: 0.9rem;
+         line-height: 1.35;
+     }
      .pitch-legend {
          position: absolute;
          top: 0.75rem;
@@ -301,6 +380,104 @@
          background: transparent;
          box-shadow: none;
      }
+     .gps-readiness {
+         position: absolute;
+         top: 0.75rem;
+         right: 0.75rem;
+         z-index: 11;
+         display: grid;
+         grid-template-columns: minmax(0, 1fr) auto;
+         align-items: center;
+         gap: 0.75rem;
+         width: min(420px, calc(100vw - 1.5rem));
+         border: 1px solid rgba(250,204,21,0.32);
+         border-radius: 0.5rem;
+         padding: 0.7rem 0.8rem;
+         background: rgba(24, 21, 12, 0.92);
+         color: #fff;
+         box-shadow: 0 16px 40px rgba(0,0,0,0.3);
+         backdrop-filter: blur(8px);
+     }
+     .gps-readiness__title {
+         margin-bottom: 0.15rem;
+         font-size: 0.78rem;
+         font-weight: 800;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+         color: #fde68a;
+     }
+     .gps-readiness p {
+         margin: 0;
+         font-size: 0.82rem;
+         line-height: 1.35;
+         color: rgba(248,250,252,0.86);
+     }
+     .gps-readiness .btn {
+         white-space: nowrap;
+     }
+     .encounter-radar {
+         position: absolute;
+         top: 9rem;
+         left: 0.75rem;
+         z-index: 10;
+         width: min(260px, calc(100vw - 1.5rem));
+         padding: 0.6rem;
+         border: 1px solid rgba(74,222,128,0.22);
+         border-radius: 0.5rem;
+         background: rgba(12, 20, 18, 0.9);
+         color: #f8fafc;
+         box-shadow: 0 16px 36px rgba(0,0,0,0.28);
+         backdrop-filter: blur(8px);
+     }
+     .encounter-radar__header {
+         display: flex;
+         justify-content: space-between;
+         align-items: center;
+         margin-bottom: 0.45rem;
+         font-size: 0.72rem;
+         font-weight: 800;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+         color: rgba(226,232,240,0.78);
+     }
+     .encounter-radar__header strong {
+         display: inline-flex;
+         align-items: center;
+         justify-content: center;
+         min-width: 1.45rem;
+         height: 1.45rem;
+         border-radius: 999px;
+         background: rgba(34,197,94,0.22);
+         color: #bbf7d0;
+     }
+     .encounter-radar__target {
+         display: grid;
+         grid-template-columns: minmax(0, 1fr) auto;
+         align-items: center;
+         gap: 0.6rem;
+         width: 100%;
+         border: 1px solid rgba(255,255,255,0.1);
+         border-radius: 0.4rem;
+         padding: 0.5rem 0.55rem;
+         background: rgba(255,255,255,0.06);
+         color: inherit;
+         text-align: left;
+     }
+     .encounter-radar__target:hover {
+         background: rgba(34,197,94,0.14);
+     }
+     .encounter-radar__target strong,
+     .encounter-radar__target small {
+         display: block;
+         overflow: hidden;
+         text-overflow: ellipsis;
+         white-space: nowrap;
+     }
+     .encounter-radar__target small,
+     .encounter-radar__target > span:last-child {
+         font-size: 0.76rem;
+         color: rgba(226,232,240,0.72);
+     }
 
      .map-overlay {
          position: absolute;
@@ -318,6 +495,56 @@
      }
      .map-overlay--encounter {
          border-color: rgba(74,222,128,0.4);
+     }
+     .encounter-card__eyebrow {
+         margin-bottom: 0.15rem;
+         font-size: 0.72rem;
+         font-weight: 800;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+         color: rgba(187,247,208,0.8);
+     }
+     .encounter-card__route {
+         display: grid;
+         grid-template-columns: auto 1fr;
+         align-items: center;
+         gap: 0.6rem;
+         border-radius: 0.45rem;
+         padding: 0.5rem 0.6rem;
+         background: rgba(34,197,94,0.1);
+     }
+     .encounter-card__route span {
+         color: #bbf7d0;
+         font-weight: 700;
+     }
+     .encounter-card__route strong {
+         min-width: 0;
+         font-size: 0.82rem;
+         color: rgba(248,250,252,0.9);
+     }
+     .encounter-card__chance {
+         position: relative;
+         height: 1.35rem;
+         overflow: hidden;
+         border-radius: 999px;
+         background: rgba(15,23,42,0.55);
+         border: 1px solid rgba(255,255,255,0.1);
+     }
+     .encounter-card__chance div {
+         height: 100%;
+         border-radius: inherit;
+         background: linear-gradient(90deg, #22c55e, #facc15);
+     }
+     .encounter-card__chance span {
+         position: absolute;
+         inset: 0;
+         display: flex;
+         align-items: center;
+         justify-content: center;
+         font-size: 0.75rem;
+         font-weight: 800;
+         color: #fff;
+         text-shadow: 0 1px 2px rgba(0,0,0,0.45);
      }
      .pitch-card {
          overflow: hidden;
@@ -394,6 +621,46 @@
          height: 6px;
          width: 60px;
      }
+     .recruit-toast {
+         position: absolute;
+         left: 50%;
+         bottom: 3.2rem;
+         z-index: 12;
+         display: flex;
+         align-items: center;
+         gap: 0.65rem;
+         width: min(360px, calc(100vw - 1rem));
+         transform: translateX(-50%);
+         border: 1px solid rgba(255,255,255,0.14);
+         border-radius: 0.5rem;
+         padding: 0.65rem 0.8rem;
+         color: #fff;
+         box-shadow: 0 18px 42px rgba(0,0,0,0.34);
+     }
+     .recruit-toast--success {
+         background: rgba(21,128,61,0.94);
+     }
+     .recruit-toast--danger {
+         background: rgba(185,28,28,0.94);
+     }
+
+     @@media (max-width: 640px) {
+         .gps-readiness {
+             top: 4.25rem;
+             left: 0.75rem;
+             right: 0.75rem;
+             grid-template-columns: 1fr;
+             width: auto;
+         }
+         .encounter-radar {
+             top: auto;
+             bottom: 2.35rem;
+         }
+         .map-overlay--encounter + .recruit-toast,
+         .recruit-toast {
+             bottom: 4rem;
+         }
+     }
  </style>
 
 @code {
@@ -432,18 +699,23 @@
     private string _recruitBlockedReason = "Go to the park to recruit.";
     private string? _recruitMessage;
     private string _recruitMessageClass = "success";
+    private string? _recruitToastMessage;
+    private string _recruitToastClass = "success";
     private bool _showOnboarding = true;
 
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
         _hasApiKey = !string.IsNullOrWhiteSpace(_apiKey);
+        _viewReady = !_hasApiKey;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
+            await LoadOnboardingPreferenceAsync();
+
             GeolocationService.PositionChanged += OnPositionChanged;
             MapState.StateChanged += OnMapStateChanged;
             _subscriptionsActive = true;
@@ -475,6 +747,12 @@
         try
         {
             _lastKnownPosition = pos;
+            if (_statusMessage is not null
+                && (_statusMessage.StartsWith("GPS", StringComparison.OrdinalIgnoreCase)
+                    || _statusMessage.StartsWith("Waiting for GPS", StringComparison.OrdinalIgnoreCase)))
+            {
+                _statusMessage = null;
+            }
 
             if (!_initialCenterPerformed)
             {
@@ -486,6 +764,11 @@
             if (ShouldRefreshPitches(pos))
             {
                 await LoadPitchMarkersAsync(pos.Latitude, pos.Longitude);
+            }
+
+            if (_isAuthenticated)
+            {
+                await SignalRClient.UpdateLocationAsync(pos.Latitude, pos.Longitude);
             }
 
             UpdateRecruitEligibility();
@@ -720,12 +1003,82 @@
     private void DismissOnboarding()
     {
         _showOnboarding = false;
+        _ = PersistOnboardingDismissalAsync();
+    }
+
+    private async Task LoadOnboardingPreferenceAsync()
+    {
+        try
+        {
+            var onboarded = await JS.InvokeAsync<string?>("localStorage.getItem", "ruckr_onboarded");
+            _showOnboarding = onboarded != "true";
+        }
+        catch
+        {
+            _showOnboarding = true;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PersistOnboardingDismissalAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", "ruckr_onboarded", "true");
+        }
+        catch
+        {
+            // Browser storage can be unavailable in private or test contexts.
+        }
     }
 
     private void ClearEncounterSelection()
     {
         _selectedEncounter = null;
         Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private void DismissRecruitToast()
+    {
+        _recruitToastMessage = null;
+    }
+
+    private bool ShouldShowGpsNotice =>
+        _hasApiKey
+        && (_lastKnownPosition is null || _lastKnownPosition.Accuracy is > MaxRecruitAccuracyMeters);
+
+    private string GpsNoticeTitle =>
+        _lastKnownPosition is null
+            ? "GPS needed"
+            : "GPS accuracy low";
+
+    private string GpsNoticeBody
+    {
+        get
+        {
+            if (_lastKnownPosition is null)
+            {
+                return "The map is visible, but encounters, distance checks, and recruiting unlock after location access starts.";
+            }
+
+            return $"Recruiting needs GPS accuracy within {MaxRecruitAccuracyMeters:0} m. Current accuracy is about {_lastKnownPosition.Accuracy!.Value:0} m.";
+        }
+    }
+
+    private async Task EnableGpsAsync()
+    {
+        try
+        {
+            _statusMessage = "Waiting for GPS...";
+            await GeolocationService.StartWatchAsync();
+        }
+        catch
+        {
+            _statusMessage = "GPS is blocked or unavailable. Enable location permission in your browser to recruit players.";
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string EncounterRarityBadgeClass(string rarity) => rarity switch
@@ -743,6 +1096,90 @@
         if (_lastKnownPosition is null) return "unknown";
         var d = GeoPosition.HaversineDistance(_lastKnownPosition!, new GeoPosition { Latitude = lat, Longitude = lng });
         return d < 50 ? "<50m" : d < 100 ? "<100m" : d < 250 ? "<250m" : d < 500 ? "<500m" : ">500m";
+    }
+
+    private PlayerEncounterDto? NearestEncounter => MapState.Value.VisibleEncounters
+        .OrderBy(e => EncounterDistanceMeters(e) ?? double.MaxValue)
+        .ThenBy(e => e.ExpiresAtUtc)
+        .FirstOrDefault();
+
+    private async Task SelectEncounterAsync(PlayerEncounterDto? encounter)
+    {
+        if (encounter is null)
+        {
+            return;
+        }
+
+        _selectedEncounter = encounter;
+        _recruitMessage = null;
+        UpdateRecruitEligibility();
+        Dispatcher.Dispatch(new SelectEncounterAction(encounter.EncounterId));
+
+        if (_mapView is not null)
+        {
+            try
+            {
+                await _mapView.SetCenter(new Point(longitude: encounter.Longitude, latitude: encounter.Latitude));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Failed to center on selected encounter");
+            }
+        }
+    }
+
+    private double? EncounterDistanceMeters(PlayerEncounterDto encounter)
+    {
+        if (_lastKnownPosition is null)
+        {
+            return null;
+        }
+
+        return GeoPosition.HaversineDistance(
+            _lastKnownPosition,
+            new GeoPosition { Latitude = encounter.Latitude, Longitude = encounter.Longitude });
+    }
+
+    private string EncounterDistanceText(PlayerEncounterDto encounter)
+    {
+        var distance = EncounterDistanceMeters(encounter);
+        return distance.HasValue ? FormatDistance(distance.Value) : "GPS pending";
+    }
+
+    private string EncounterRouteInstruction(PlayerEncounterDto encounter)
+    {
+        var distance = EncounterDistanceMeters(encounter);
+        if (!distance.HasValue)
+        {
+            return $"Enable GPS and head to {EncounterParkName(encounter)}.";
+        }
+
+        if (_lastKnownPosition?.Accuracy is > MaxRecruitAccuracyMeters)
+        {
+            return $"Hold for better GPS accuracy. Current: {_lastKnownPosition.Accuracy.Value:0} m.";
+        }
+
+        return distance.Value <= RecruitDistanceMeters
+            ? "In range. Make the recruit attempt."
+            : $"Move within {RecruitDistanceMeters:0} m of the park.";
+    }
+
+    private static string EncounterExpiresText(PlayerEncounterDto encounter)
+    {
+        var remaining = encounter.ExpiresAtUtc - DateTime.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return "Expired";
+        }
+
+        if (remaining.TotalMinutes < 1)
+        {
+            return "<1 min left";
+        }
+
+        return remaining.TotalHours >= 1
+            ? $"{(int)remaining.TotalHours}h {remaining.Minutes}m left"
+            : $"{(int)Math.Ceiling(remaining.TotalMinutes)}m left";
     }
 
     private void UpdateRecruitEligibility()
@@ -823,13 +1260,17 @@
             {
                 _recruitMessage = result.Message;
                 _recruitMessageClass = "success";
+                _recruitToastMessage = $"{result.Message} +25 XP";
+                _recruitToastClass = "success";
                 await RefreshGameProgress();
                 await LoadPitchMarkersAsync(_lastKnownPosition?.Latitude ?? _latitude, _lastKnownPosition?.Longitude ?? _longitude);
+                Dispatcher.Dispatch(new ClearSelectionAction());
             }
             else
             {
                 _recruitMessage = result.Message;
                 _recruitMessageClass = "danger";
+                _recruitToastMessage = null;
             }
         }
         catch (Exception ex)
@@ -837,6 +1278,8 @@
             Logger.LogError(ex, "Recruitment attempt failed");
             _recruitMessage = "Recruitment failed. Please try again.";
             _recruitMessageClass = "danger";
+            _recruitToastMessage = "Recruitment failed. Please try again.";
+            _recruitToastClass = "danger";
         }
         finally
         {

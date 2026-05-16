@@ -27,4 +27,34 @@ public static class MapReducers
         }
         return state with { VisibleEncounters = action.Encounters, SelectedEncounterId = selectedEncounterId };
     }
+
+    [ReducerMethod]
+    public static MapState ReduceSelectPitch(MapState state, SelectPitchAction action)
+    {
+        return state with
+        {
+            SelectedPitchId = action.PitchId,
+            SelectedEncounterId = null
+        };
+    }
+
+    [ReducerMethod]
+    public static MapState ReduceSelectEncounter(MapState state, SelectEncounterAction action)
+    {
+        return state with
+        {
+            SelectedPitchId = null,
+            SelectedEncounterId = action.EncounterId
+        };
+    }
+
+    [ReducerMethod]
+    public static MapState ReduceClearSelection(MapState state, ClearSelectionAction action)
+    {
+        return state with
+        {
+            SelectedPitchId = null,
+            SelectedEncounterId = null
+        };
+    }
 }

@@ -35,12 +35,24 @@ confirm(){
 
 get_windows_env(){
   local name=$1
-  local powershell_path="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-  [ -x "$powershell_path" ] || return 0
+  local powershell_path=""
+
+  for candidate in \
+    "powershell.exe" \
+    "pwsh.exe" \
+    "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe" \
+    "/mnt/c/Program Files/PowerShell/7/pwsh.exe"; do
+    if command -v "$candidate" >/dev/null 2>&1 || [ -x "$candidate" ]; then
+      powershell_path="$candidate"
+      break
+    fi
+  done
+
+  [ -n "$powershell_path" ] || return 0
 
   "$powershell_path" -NoProfile -Command \
-    "\$value = [Environment]::GetEnvironmentVariable('$name', 'User'); if (-not \$value) { \$value = [Environment]::GetEnvironmentVariable('$name', 'Machine') }; [Console]::Out.Write(\$value)" \
-    2>/dev/null || true
+    "\$value = [Environment]::GetEnvironmentVariable('$name', 'Process'); if (-not \$value) { \$value = [Environment]::GetEnvironmentVariable('$name', 'User') }; if (-not \$value) { \$value = [Environment]::GetEnvironmentVariable('$name', 'Machine') }; [Console]::Out.Write(\$value)" \
+    2>/dev/null | tr -d '\r' || true
 }
 
 resolve_first_env(){
@@ -63,12 +75,19 @@ resolve_first_env(){
   done
 }
 
-cleanup() { rm -f "$ARCHIVE"; rm -rf "$PUBLISH_DIR"; }
+safe_remove_file(){
+  local path=$1
+  [ -e "$path" ] || return 0
+  chmod u+w "$path" 2>/dev/null || true
+  rm -f "$path" 2>/dev/null || warn "Could not remove $path; remove it manually if the next deploy cannot overwrite it."
+}
+
+cleanup() { safe_remove_file "$ARCHIVE"; rm -rf "$PUBLISH_DIR" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # ── Resolve DB password ──
 step "1/10  Resolving DB password"
-PASSWORD="${RUCKR_DB_PASSWORD:-}"
+PASSWORD=$(resolve_first_env RUCKR_DB_PASSWORD)
 if [ -z "$PASSWORD" ]; then
   secrets=$(dotnet user-secrets list --project "$SERVER_CSPROJ" 2>/dev/null || true)
   conn=$(echo "$secrets" | sed -n 's/^ConnectionStrings:RuckRDbContext = //p')
@@ -107,7 +126,7 @@ fi
 
 # ── Compress ──
 step "4/10  Compressing artifacts"
-rm -f "$ARCHIVE"
+safe_remove_file "$ARCHIVE"
 tar -czf "$ARCHIVE" -C "$PUBLISH_DIR" .
 archive_mb=$(du -h "$ARCHIVE" | cut -f1)
 ok "Compressed ($archive_mb)"

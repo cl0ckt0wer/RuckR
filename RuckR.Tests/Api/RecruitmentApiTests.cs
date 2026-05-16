@@ -227,6 +227,167 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("park", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task AttemptRecruitment_WithoutGpsPosition_ReturnsBadRequest()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.ClearPosition(_userId);
+
+        var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("GPS position required", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AttemptRecruitment_WhenGpsAccuracyIsPoor_ReturnsBadRequest()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.UpdatePosition(_userId, new GeoPosition
+        {
+            Latitude = encounter.Latitude,
+            Longitude = encounter.Longitude,
+            Accuracy = 75,
+            Timestamp = DateTime.UtcNow
+        });
+
+        var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Improve GPS accuracy", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AttemptRecruitment_WhenRateLimitExceeded_ReturnsTooManyRequests()
+    {
+        await SetUserProfileAsync(level: 100, xp: 9900);
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+
+        HttpResponseMessage lastResponse = new(HttpStatusCode.OK);
+        for (var i = 0; i < 65; i++)
+        {
+            lastResponse = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+            if (lastResponse.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, lastResponse.StatusCode);
+        var body = await lastResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Rate limit exceeded", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AttemptRecruitment_InvalidEncounter_ReturnsFailure()
+    {
+        var anchor = await GetAnyPlayerLocationAsync();
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(Guid.NewGuid(), 999999));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(result);
+        Assert.False(result!.Success);
+        Assert.Contains("invalid", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AttemptRecruitment_Success_AddsCollection_AwardsExperience_AndRemovesEncounter()
+    {
+        await SetUserProfileAsync(level: 100, xp: 9900);
+
+        RecruitmentAttemptResultDto? successResult = null;
+        PlayerEncounterDto? successfulEncounter = null;
+        var startXp = 9900;
+
+        for (var i = 0; i < 20 && successResult is null; i++)
+        {
+            var encounter = await CreateEncounterAsync();
+            _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+
+            var response = await _client.PostAsJsonAsync(
+                "/api/recruitment/attempt",
+                new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+            if (result?.Success == true)
+            {
+                successResult = result;
+                successfulEncounter = encounter;
+            }
+        }
+
+        Assert.NotNull(successResult);
+        Assert.NotNull(successfulEncounter);
+        Assert.NotNull(successResult!.Collection);
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var collected = await db.Collections.FirstOrDefaultAsync(c =>
+                c.UserId == _userId && c.PlayerId == successfulEncounter!.PlayerId);
+            Assert.NotNull(collected);
+
+            var encounterStillExists = await db.PlayerEncounters.AnyAsync(e => e.Id == successfulEncounter!.EncounterId);
+            Assert.False(encounterStillExists);
+
+            var profile = await db.UserGameProfiles.FirstOrDefaultAsync(p => p.UserId == _userId);
+            Assert.NotNull(profile);
+            Assert.Equal(startXp + 25, profile!.Experience);
+            Assert.Equal(100, profile.Level);
+        });
+    }
+
+    [Fact]
+    public async Task GetProfile_WithoutExistingRecord_ReturnsDefaultProfile()
+    {
+        var response = await _client.GetAsync("/api/recruitment/profile");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var profile = await response.Content.ReadFromJsonAsync<GameProgressDto>();
+        Assert.NotNull(profile);
+        Assert.Equal(1, profile!.Level);
+        Assert.Equal(0, profile.Experience);
+        Assert.Equal(100, profile.NextLevelExperience);
+    }
+
+    [Fact]
+    public async Task GetProfile_WithExistingRecord_ReturnsCalculatedNextLevelExperience()
+    {
+        await SetUserProfileAsync(level: 7, xp: 650);
+
+        var response = await _client.GetAsync("/api/recruitment/profile");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var profile = await response.Content.ReadFromJsonAsync<GameProgressDto>();
+        Assert.NotNull(profile);
+        Assert.Equal(7, profile!.Level);
+        Assert.Equal(650, profile.Experience);
+        Assert.Equal(700, profile.NextLevelExperience);
+    }
+
+    [Fact]
+    public async Task GetProfile_AtLevelCap_ReturnsCurrentExperienceAsNextLevelExperience()
+    {
+        await SetUserProfileAsync(level: 100, xp: 15000);
+
+        var response = await _client.GetAsync("/api/recruitment/profile");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var profile = await response.Content.ReadFromJsonAsync<GameProgressDto>();
+        Assert.NotNull(profile);
+        Assert.Equal(100, profile!.Level);
+        Assert.Equal(15000, profile.Experience);
+        Assert.Equal(15000, profile.NextLevelExperience);
+    }
+
     private async Task<(double lat, double lng)> GetAnyPlayerLocationAsync()
     {
         double lat = 0;

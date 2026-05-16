@@ -32,6 +32,7 @@ $archiveFile = Join-Path $repoRoot "publish.tar.gz"
 $serverProject = "RuckR/Server/RuckR.Server.csproj"
 $releaseId = Get-Date -Format "yyyyMMddHHmmss"
 $releasesToKeep = 10
+$localBackupDir = if ($env:RUCKR_LOCAL_BACKUP_DIR) { $env:RUCKR_LOCAL_BACKUP_DIR } else { Join-Path $env:USERPROFILE "dbbackups" }
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 
@@ -113,14 +114,35 @@ function Get-FirstEnvironmentValue {
     return $null
 }
 
+function Remove-LocalPathIfExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [switch]$Recurse
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    try {
+        if ($Recurse) {
+            Remove-Item -LiteralPath $Path -Recurse -Force
+        } else {
+            Remove-Item -LiteralPath $Path -Force
+        }
+    } catch {
+        Write-Host "  Could not remove $Path. Close any process using it and retry. $($_.Exception.Message)" -ForegroundColor Red
+        throw
+    }
+}
+
 # ── Step 1: Publish ──
 if (-not $SkipBuild) {
     Write-Step "Publishing portable framework-dependent build to $publishDir"
     Push-Location $repoRoot
 
-    if (Test-Path $publishDir) {
-        Remove-Item -Recurse -Force $publishDir
-    }
+    Remove-LocalPathIfExists -Path $publishDir -Recurse
 
     $publishArgs = @(
         "publish",
@@ -173,9 +195,7 @@ if (-not $sshOk) {
 Write-Step "Compressing publish output to $archiveFile"
 Push-Location $repoRoot
 
-if (Test-Path $archiveFile) {
-    Remove-Item -Force $archiveFile
-}
+Remove-LocalPathIfExists -Path $archiveFile
 
 # tar is available on Linux/WSL/macOS; fall back to Compress-Archive on Windows
 $tarAvailable = Get-Command tar -ErrorAction SilentlyContinue
@@ -207,7 +227,7 @@ if (-not $AppOnly) {
 
 # ── Step 5: Write secrets to remote VM ──
 Write-Step "Deploying database and app secrets to $sshHost"
-$saPassword = $env:RUCKR_DB_PASSWORD
+$saPassword = Get-FirstEnvironmentValue -Names @("RUCKR_DB_PASSWORD")
 if (-not $saPassword) {
     $saPassword = Get-UserSecretValue -Key "RUCKR_DB_PASSWORD" -Project $serverProject
 }
@@ -286,6 +306,45 @@ if (-not $AppOnly) {
         Write-Host "  SQL Server container already running" -ForegroundColor Green
     }
 
+    # ── Step 6b: Backup database before switching releases ──
+    Write-Step "Backing up database on $sshHost"
+    $backupScript = @'
+set -euo pipefail
+set -a
+. /home/exedev/ruckr/app.env
+set +a
+
+backup_dir=/var/opt/mssql/backup
+backup_file="$backup_dir/ruckr_$(date +%Y%m%d_%H%M%S).bak"
+backup_name=$(basename "$backup_file")
+staged_backup_file="/tmp/$backup_name"
+docker exec ruckr-sql mkdir -p "$backup_dir"
+docker exec -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" ruckr-sql \
+  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C \
+  -Q "BACKUP DATABASE [RuckR_Dev] TO DISK = N'${backup_file}' WITH INIT, COMPRESSION;"
+docker cp "ruckr-sql:$backup_file" "$staged_backup_file"
+chmod 600 "$staged_backup_file"
+echo "STAGED_BACKUP_FILE=$staged_backup_file"
+'@
+
+    $backupOutput = $backupScript | ssh $sshHost "bash -se" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  DB backup created" -ForegroundColor Green
+        $stagedBackupFile = ($backupOutput | Where-Object { $_ -like "STAGED_BACKUP_FILE=*" } | Select-Object -Last 1) -replace '^STAGED_BACKUP_FILE=', ''
+        if ($stagedBackupFile) {
+            New-Item -ItemType Directory -Force -Path $localBackupDir | Out-Null
+            scp "${sshHost}:$stagedBackupFile" "$localBackupDir/"
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  DB backup copied to $localBackupDir" -ForegroundColor Green
+                ssh $sshHost "rm -f '$stagedBackupFile'" *> $null
+            } else {
+                Write-Host "  DB backup copy to $localBackupDir failed (non-fatal)" -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host "  DB backup failed (non-fatal)" -ForegroundColor Yellow
+    }
+
     # ── Step 7: Ensure Jaeger on VM ──
     Write-Step "Checking Jaeger on $sshHost"
     $jaegerRunning = ssh $sshHost 'docker ps --filter "name=ruckr-jaeger" --format "{{.Names}}" 2>/dev/null'
@@ -354,7 +413,7 @@ Invoke-Remote -Command $pruneCommand -FailureMessage "RELEASE PRUNE FAILED — d
 Write-Host "  Kept newest $releasesToKeep releases" -ForegroundColor Green
 
 # Clean up local archive
-Remove-Item -Force $archiveFile -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $archiveFile -Force -ErrorAction SilentlyContinue
 
 # ── Step 10: Restart server ──
 if (-not $SkipRestart) {
@@ -411,6 +470,7 @@ Write-Host "━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host "  Published to exe.dev" -ForegroundColor Magenta
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Magenta
 Write-Host "  App:  https://ruckr.exe.xyz" -ForegroundColor Green
+Write-Host "  Release: $releaseId" -ForegroundColor Green
 Write-Host "  Log:  ssh $sshHost 'journalctl -u ruckr.service -f'" -ForegroundColor Green
 Write-Host "  SQL:  ssh $sshHost 'docker exec ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ... -C'" -ForegroundColor Green
 Write-Host "  Publish dir: $publishDir" -ForegroundColor Green

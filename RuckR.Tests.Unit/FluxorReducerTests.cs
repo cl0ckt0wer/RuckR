@@ -53,6 +53,25 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    public void Game_SetBrowserOnlineState_UpdatesOnlineFlag()
+    {
+        var state = new GameState { IsBrowserOnline = true };
+        var next = GameReducers.ReduceSetBrowserOnlineState(state, new SetBrowserOnlineStateAction(false));
+
+        Assert.False(next.IsBrowserOnline);
+    }
+
+    [Fact]
+    public void Game_SetConnectionMetrics_UpdatesLatencyAndQueueCount()
+    {
+        var state = new GameState();
+        var next = GameReducers.ReduceSetConnectionMetrics(state, new SetConnectionMetricsAction(125, 3));
+
+        Assert.Equal(125, next.ConnectionLatencyMs);
+        Assert.Equal(3, next.PendingActionCount);
+    }
+
+    [Fact]
     public void Inventory_FetchResult_SetsPlayersAndLastSynced()
     {
         var state = new InventoryState { IsLoading = true };
