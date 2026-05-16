@@ -154,6 +154,26 @@ else
     ok ".NET 10 SDK present"
   fi
 
+  swap=$(ssh "$SSH_HOST" 'swapon --show --noheadings 2>/dev/null | wc -l')
+  if [ "$swap" -eq 0 ]; then
+    info "Creating" "4G swap file for remote Release publish..."
+    ssh "$SSH_HOST" 'set -euo pipefail
+      if [ ! -f /swapfile ]; then
+        if command -v fallocate >/dev/null 2>&1; then
+          sudo fallocate -l 4G /swapfile
+        else
+          sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
+        fi
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile >/dev/null
+      fi
+      sudo swapon /swapfile
+      grep -q "^/swapfile " /etc/fstab || echo "/swapfile none swap sw 0 0" | sudo tee -a /etc/fstab >/dev/null'
+    ok "Swap enabled"
+  else
+    ok "Swap already enabled"
+  fi
+
   sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null')
   if [ -z "$sql" ]; then
     info "Starting" "SQL Server container..."
