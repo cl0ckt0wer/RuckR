@@ -36,7 +36,7 @@ step()   { echo -e "\n${CYAN}━━━ ${BOLD}$1${NC}"; }
 info()   { echo -e "  ${BOLD}$1${NC} $2"; }
 ok()     { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()   { echo -e "  ${YELLOW}⚠${NC} $1"; }
-fail()   { echo -e "  ${RED}✗${NC} $1"; exit 1; }
+fail()   { echo -e "  ${RED}✗${NC} $1" >&2; exit 1; }
 
 get_windows_env(){
   local name=$1
@@ -85,8 +85,8 @@ remote_quote(){
 }
 
 local_git_clean_check(){
-  if [ -n "$(git -C "$REPO_ROOT" status --porcelain)" ] && [ -z "${RUCKR_DEPLOY_ALLOW_DIRTY:-}" ]; then
-    fail "Working tree has uncommitted changes. Commit and push first, or set RUCKR_DEPLOY_ALLOW_DIRTY=1 when deploying an explicit --ref."
+  if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ] && [ -z "${RUCKR_DEPLOY_ALLOW_DIRTY:-}" ]; then
+    fail "Working tree has tracked uncommitted changes. Commit and push first, or deploy a specific pushed --ref."
   fi
 }
 
