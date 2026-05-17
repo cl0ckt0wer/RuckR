@@ -351,15 +351,27 @@ app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/jaeger"), proxy =>
     });
 });
 
+app.Use(async (context, next) =>
+{
+    if (IsSpaShellRequest(context.Request))
+    {
+        context.Response.OnStarting(() =>
+        {
+            ApplyNoStoreHeaders(context.Response.Headers);
+            return Task.CompletedTask;
+        });
+    }
+
+    await next();
+});
+
 app.UseBlazorFrameworkFiles();
 
 app.UseWhen(ctx => ctx.Request.Path.Equals("/service-worker.js", StringComparison.OrdinalIgnoreCase), serviceWorker =>
 {
     serviceWorker.Use(async (context, next) =>
     {
-        context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-        context.Response.Headers["Pragma"] = "no-cache";
-        context.Response.Headers["Expires"] = "0";
+        ApplyNoStoreHeaders(context.Response.Headers);
         await next();
     });
 });
@@ -370,9 +382,7 @@ app.UseWhen(ctx => IsBlazorBootResource(ctx.Request.Path), framework =>
 {
     framework.Use(async (context, next) =>
     {
-        context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-        context.Response.Headers["Pragma"] = "no-cache";
-        context.Response.Headers["Expires"] = "0";
+        ApplyNoStoreHeaders(context.Response.Headers);
         await next();
     });
 });
@@ -382,22 +392,6 @@ app.UseWhen(ctx => IsBlazorBootResource(ctx.Request.Path), framework =>
 app.UseRouting();
 
 app.UseCookiePolicy();
-
-app.Use(async (context, next) =>
-{
-    if (IsSpaShellRequest(context.Request))
-    {
-        context.Response.OnStarting(() =>
-        {
-            context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-            context.Response.Headers["Pragma"] = "no-cache";
-            context.Response.Headers["Expires"] = "0";
-            return Task.CompletedTask;
-        });
-    }
-
-    await next();
-});
 
 // Security headers — set CSP server-side so browsers respect it for all responses
 // including the /.well-known/webauthn probe that Safari fires on every page.
@@ -514,6 +508,13 @@ static bool IsSpaShellRequest(HttpRequest request)
 
     return request.Headers.Accept.Any(value =>
         value?.Contains("text/html", StringComparison.OrdinalIgnoreCase) == true);
+}
+
+static void ApplyNoStoreHeaders(IHeaderDictionary headers)
+{
+    headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+    headers["Pragma"] = "no-cache";
+    headers["Expires"] = "0";
 }
 
 public partial class Program { }
