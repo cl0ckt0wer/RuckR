@@ -115,8 +115,27 @@ function appCssRulesLoaded() {
     }
 }
 
+function visibleCanvasScore(canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    if (style.display === 'none' || style.visibility === 'hidden' || rect.width <= 0 || rect.height <= 0) {
+        return 0;
+    }
+
+    return rect.width * rect.height;
+}
+
+function getBestCanvas() {
+    const canvases = [...document.querySelectorAll('canvas')];
+    return canvases
+        .map((canvas, index) => ({ canvas, index, score: visibleCanvasScore(canvas) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)[0] ?? null;
+}
+
 function webGlSummary() {
-    const canvas = document.querySelector('canvas');
+    const selected = getBestCanvas();
+    const canvas = selected?.canvas;
     if (!canvas) return { canvas: false, context: false };
 
     const context = canvas.getContext('webgl2') || canvas.getContext('webgl');
@@ -124,6 +143,11 @@ function webGlSummary() {
 
     return {
         canvas: true,
+        selectedCanvasIndex: selected.index,
+        selectedCanvasScore: selected.score,
+        selectedCanvasRect: rectOf(canvas),
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
         context: true,
         drawingBufferWidth: context.drawingBufferWidth,
         drawingBufferHeight: context.drawingBufferHeight,
@@ -151,7 +175,8 @@ function elementStackAtMapCenter() {
 }
 
 function readCanvasVisualSummary() {
-    const canvas = document.querySelector('canvas');
+    const selected = getBestCanvas();
+    const canvas = selected?.canvas;
     if (!canvas) {
         return { present: false };
     }
@@ -159,6 +184,8 @@ function readCanvasVisualSummary() {
     const rect = rectOf(canvas);
     const summary = {
         present: true,
+        selectedCanvasIndex: selected.index,
+        selectedCanvasScore: selected.score,
         rect,
         width: canvas.width,
         height: canvas.height,
@@ -319,10 +346,12 @@ export function collectMapDiagnostics(reason) {
             style: styleOf(document.querySelector('.esri-view')),
             className: document.querySelector('.esri-view')?.className?.toString() ?? null
         },
-        canvases: canvases.map(canvas => ({
+        canvases: canvases.map((canvas, index) => ({
+            index,
             rect: rectOf(canvas),
             width: canvas.width,
             height: canvas.height,
+            visibleScore: visibleCanvasScore(canvas),
             style: styleOf(canvas)
         })),
         controls: {
