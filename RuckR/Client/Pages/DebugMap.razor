@@ -48,7 +48,7 @@
                              Zoom="@Zoom"
                              ShowZoomWidget="true"
                              OnViewInitialized="OnViewInitializedAsync"
-                             style="width:100%; height:100%;">
+                             Style="height: calc(100dvh - 8.5rem); min-height: 520px; width: 100%;">
                         <Map>
                             <Basemap>
                                 <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@ApiKey" />
@@ -68,7 +68,7 @@
                              Zoom="@Zoom"
                              ShowZoomWidget="true"
                              OnViewInitialized="OnViewInitializedAsync"
-                             style="width:100%; height:100%;">
+                             Style="height: calc(100dvh - 8.5rem); min-height: 520px; width: 100%;">
                         <Map>
                             @if (IncludeGraphicsLayer)
                             {
