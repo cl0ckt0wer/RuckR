@@ -55,6 +55,35 @@
     .status-dot.disconnected {
         background-color: #dc3545;
     }
+    @@media (max-width: 640px) {
+        .connection-status {
+            min-height: 2.25rem;
+            padding: 0.3rem 0.65rem;
+            gap: 0.4rem;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            font-size: 0.78rem;
+            background: rgba(58, 6, 71, 0.96);
+            scrollbar-width: none;
+        }
+        .connection-status::-webkit-scrollbar {
+            display: none;
+        }
+        .status-text,
+        .status-detail {
+            white-space: nowrap;
+        }
+        .status-detail {
+            display: none;
+        }
+        .connection-status .btn {
+            margin-left: 0 !important;
+            padding: 0.2rem 0.55rem;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+    }
     @@keyframes pulse {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.3; }

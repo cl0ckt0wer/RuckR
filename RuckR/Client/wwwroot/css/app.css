@@ -364,8 +364,11 @@ a, .btn-link {
 
     .gps-status-chip {
         left: auto;
-        right: 0.75rem;
-        max-width: calc(100vw - 1.5rem);
+        right: 0.5rem;
+        max-width: calc(100vw - 1rem);
+        min-height: 2rem;
+        padding: 0.32rem 0.55rem;
+        font-size: 0.78rem;
     }
 
     .map-center-buttons {

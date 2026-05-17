@@ -770,10 +770,10 @@
          min-width: 80px;
          justify-content: center;
      }
-     .game-progress-chip .progress {
-         height: 6px;
-         width: 60px;
-     }
+    .game-progress-chip .progress {
+        height: 6px;
+        width: 60px;
+    }
      .recruit-toast {
          position: absolute;
          left: 50%;
@@ -799,20 +799,41 @@
 
      @@media (max-width: 640px) {
          .pitch-legend {
+             top: auto;
+             bottom: 2.45rem;
+             left: 0.75rem;
              min-width: 132px;
+             max-width: 160px;
              padding: 0.5rem 0.55rem;
+         }
+         .pitch-legend__title {
+             margin-bottom: 0.2rem;
+             font-size: 0.68rem;
          }
          .pitch-legend__row {
              grid-template-columns: 16px 1fr auto;
              gap: 0.3rem;
-             font-size: 0.74rem;
+             font-size: 0.72rem;
          }
          .gps-readiness {
-             top: 4.25rem;
-             left: 0.75rem;
-             right: 0.75rem;
+             top: 3.55rem;
+             left: 0.5rem;
+             right: 0.5rem;
              grid-template-columns: 1fr;
              width: auto;
+             gap: 0.5rem;
+             padding: 0.58rem 0.65rem;
+         }
+         .gps-readiness__title {
+             font-size: 0.72rem;
+         }
+         .gps-readiness p {
+             font-size: 0.76rem;
+         }
+         .gps-readiness .btn {
+             width: 100%;
+             padding: 0.25rem 0.5rem;
+             font-size: 0.8rem;
          }
          .encounter-radar {
              top: auto;
@@ -930,6 +951,19 @@
                 _statusMessage = "GPS unavailable. Showing pitches near London.";
                 StateHasChanged();
             }
+
+            _ = DismissStaleLoadingIndicatorAsync();
+        }
+    }
+
+    private async Task DismissStaleLoadingIndicatorAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(8));
+        if (!_viewReady && _hasApiKey)
+        {
+            _viewReady = true;
+            _statusMessage ??= "Map is available, but some map services are still settling.";
+            await InvokeAsync(StateHasChanged);
         }
     }
 
