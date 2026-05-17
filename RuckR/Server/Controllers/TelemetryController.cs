@@ -150,6 +150,15 @@ namespace RuckR.Server.Controllers
                 var tags = new ActivityTagsCollection();
 
                 AddStringTag(tags, "map.diagnostics.reason", root, "reason");
+                AddStringTag(tags, "map.page.url", root, "url");
+                AddStringTag(tags, "map.page.path", root, "route", "path");
+                AddStringTag(tags, "map.page.search", root, "route", "search");
+                AddStringTag(tags, "map.debug.mode", root, "route", "debugMode");
+                AddStringTag(tags, "map.flag.basemap", root, "route", "basemap");
+                AddStringTag(tags, "map.flag.map_graphics", root, "route", "mapGraphics");
+                AddStringTag(tags, "map.flag.auto_gps", root, "route", "autoGps");
+                AddStringTag(tags, "map.flag.map_diagnostics", root, "route", "mapDiagnostics");
+                AddStringTag(tags, "map.flag.arcgis_widgets", root, "route", "arcGisWidgets");
                 AddNumberTag(tags, "map.viewport.width", root, "viewport", "width");
                 AddNumberTag(tags, "map.viewport.height", root, "viewport", "height");
                 AddNumberTag(tags, "map.viewport.dpr", root, "viewport", "dpr");

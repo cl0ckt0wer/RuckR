@@ -8,6 +8,9 @@
 @using dymaptic.GeoBlazor.Core.Model
 @inject IConfiguration Configuration
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<DebugMap> Logger
+@implements IAsyncDisposable
 
 <PageTitle>Debug Map</PageTitle>
 
@@ -140,9 +143,11 @@
     ];
 
     private GraphicsLayer? _debugLayer;
+    private IJSObjectReference? _mapDiagnosticsModule;
     private string _viewStatus = "initializing";
     private string _markerStatus = "not requested";
     private bool _markerAdded;
+    private bool _diagnosticsStarted;
 
     private DebugMapMode Mode { get; set; } = DebugMapMode.Baseline;
 
@@ -165,6 +170,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            await StartDiagnosticsAsync();
+            _ = CaptureMapDiagnosticsAfterDelayAsync("first-render", TimeSpan.FromSeconds(2));
+            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
+            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-30s", TimeSpan.FromSeconds(30));
+        }
+
         if ((Mode is DebugMapMode.Marker or DebugMapMode.Overlays) && !_markerAdded && _viewStatus == "initialized")
         {
             await AddDebugMarkerAsync();
@@ -174,6 +187,7 @@
     private async Task OnViewInitializedAsync()
     {
         _viewStatus = "initialized";
+        _ = CaptureMapDiagnosticsAfterDelayAsync("view-initialized", TimeSpan.FromSeconds(1));
         await InvokeAsync(StateHasChanged);
     }
 
@@ -205,6 +219,53 @@
         }
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartDiagnosticsAsync()
+    {
+        try
+        {
+            _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
+            await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+            _diagnosticsStarted = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "DebugMap diagnostics failed to start for {Mode}", Mode);
+        }
+    }
+
+    private async Task CaptureMapDiagnosticsAfterDelayAsync(string reason, TimeSpan delay)
+    {
+        await Task.Delay(delay);
+        await CaptureMapDiagnosticsAsync(reason);
+    }
+
+    private async Task CaptureMapDiagnosticsAsync(string reason)
+    {
+        if (!_diagnosticsStarted || _mapDiagnosticsModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var diagnosticsJson = await _mapDiagnosticsModule.InvokeAsync<string>("collectMapDiagnostics", reason);
+            Logger.LogWarning("MapDiagnostics {Reason}: {DiagnosticsJson}", reason, diagnosticsJson);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "DebugMap diagnostics failed for {Reason}", reason);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_mapDiagnosticsModule is not null)
+        {
+            try { await _mapDiagnosticsModule.InvokeVoidAsync("stopMapDiagnosticsCapture"); } catch { }
+            try { await _mapDiagnosticsModule.DisposeAsync(); } catch { }
+        }
     }
 
     private string ModeLinkClass(DebugMapMode mode) => mode == Mode

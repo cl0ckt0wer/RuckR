@@ -313,6 +313,7 @@ export function collectMapDiagnostics(reason) {
     const controls = [...document.querySelectorAll('.esri-ui .esri-widget, .esri-zoom, calcite-action')];
     const canvases = [...document.querySelectorAll('canvas')];
     const resources = performance.getEntriesByType('resource');
+    const url = new URL(location.href);
     const arcGisResources = resources.filter(entry =>
         entry.name.includes('arcgis')
         || entry.name.includes('GeoBlazor')
@@ -321,6 +322,16 @@ export function collectMapDiagnostics(reason) {
     return JSON.stringify({
         reason,
         url: location.href,
+        route: {
+            path: location.pathname,
+            search: location.search,
+            debugMode: url.searchParams.get('mode'),
+            basemap: url.searchParams.get('basemap'),
+            mapGraphics: url.searchParams.get('mapGraphics'),
+            autoGps: url.searchParams.get('autoGps'),
+            mapDiagnostics: url.searchParams.get('mapDiagnostics'),
+            arcGisWidgets: url.searchParams.get('arcGisWidgets')
+        },
         userAgent: navigator.userAgent,
         viewport: {
             width: window.innerWidth,
