@@ -38,8 +38,8 @@
   </ItemGroup>
 
   <Target Name="InstallPlaywrightBrowsers" AfterTargets="Build" Condition="'$(CI)' == ''">
-    <Message Importance="high" Text="Installing Playwright Chromium browser..." />
-    <Exec Command="pwsh -c &quot;&amp; '$(OutputPath)playwright.ps1' install chromium&quot;" />
+    <Message Importance="high" Text="Ensuring Playwright Chromium browser is installed..." />
+    <Exec Command="pwsh -NoProfile -NonInteractive -Command &quot;$playwrightCacheRoot = if ($env:PLAYWRIGHT_BROWSERS_PATH) { $env:PLAYWRIGHT_BROWSERS_PATH } else { Join-Path $env:USERPROFILE '.cache\\ms-playwright' }; $chromiumInstalled = Get-ChildItem -Path $playwrightCacheRoot -Directory -Filter 'chromium-*' -ErrorAction SilentlyContinue; if (-not $chromiumInstalled) { Write-Host 'Installing Playwright Chromium browser...'; &amp; '$(OutputPath)playwright.ps1' install chromium } else { Write-Host 'Playwright Chromium browser already installed. Skipping install.' }&quot;" />
   </Target>
 
 </Project>
