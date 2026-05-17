@@ -58,20 +58,11 @@
                  OnViewInitialized="OnViewInitializedAsync"
                  ShowZoomWidget="true"
                  style="width:100%; height:100%;">
-            @if (_hasPortalItemId)
-            {
-                <WebMap>
-                    <PortalItem PortalItemId="@_portalItemId" ApiKey="@_apiKey" />
-                </WebMap>
-            }
-            else
-            {
-                <dymaptic.GeoBlazor.Core.Components.Map>
-                    <Basemap>
-                        <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@_apiKey" />
-                    </Basemap>
-                </dymaptic.GeoBlazor.Core.Components.Map>
-            }
+            <dymaptic.GeoBlazor.Core.Components.Map>
+                <Basemap>
+                    <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@_apiKey" />
+                </Basemap>
+            </dymaptic.GeoBlazor.Core.Components.Map>
             <HomeWidget Position="OverlayPosition.TopLeft" Viewpoint="@HomeViewpoint" />
             <CompassWidget Position="OverlayPosition.TopLeft" />
             <LocateWidget Position="OverlayPosition.TopLeft" />
@@ -878,9 +869,7 @@
 
     private MapView? _mapView;
     private string _apiKey = string.Empty;
-    private string _portalItemId = string.Empty;
     private bool _hasApiKey;
-    private bool _hasPortalItemId;
     private double _latitude = 51.5074;
     private double _longitude = -0.1278;
     private int _zoom = 13;
@@ -938,9 +927,7 @@
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
-        _portalItemId = Configuration["ArcGISPortalItemId"] ?? string.Empty;
         _hasApiKey = !ShouldShowMapUnavailableFallback(_apiKey);
-        _hasPortalItemId = !string.IsNullOrWhiteSpace(_portalItemId);
         _viewReady = !_hasApiKey;
     }
 
