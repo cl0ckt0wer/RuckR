@@ -1,47 +1,128 @@
 @page "/debug-map"
 @using dymaptic.GeoBlazor.Core.Components
+@using dymaptic.GeoBlazor.Core.Components.Geometries
+@using dymaptic.GeoBlazor.Core.Components.Layers
+@using dymaptic.GeoBlazor.Core.Components.Symbols
 @using dymaptic.GeoBlazor.Core.Components.Views
 @using dymaptic.GeoBlazor.Core.Enums
+@using dymaptic.GeoBlazor.Core.Model
 @inject IConfiguration Configuration
+@inject NavigationManager Navigation
 
 <PageTitle>Debug Map</PageTitle>
 
 <div class="debug-map-page">
     <div class="debug-map-toolbar">
-        <strong>Debug Map</strong>
-        <span>GeoBlazor sample-style MapView</span>
-        <span>API key: @(HasApiKey ? "configured" : "missing")</span>
-        <span>View: @_viewStatus</span>
+        <div class="debug-map-toolbar__summary">
+            <strong>Debug Map</strong>
+            <span>Mode: @ModeLabel</span>
+            <span>API key: @(HasApiKey ? "configured" : "missing")</span>
+            <span>View: @_viewStatus</span>
+            <span>Marker: @_markerStatus</span>
+        </div>
+        <nav class="debug-map-mode-nav" aria-label="Debug map modes">
+            @foreach (var mode in Modes)
+            {
+                <a class="@ModeLinkClass(mode.Key)" href="@mode.Href">@mode.Label</a>
+            }
+        </nav>
     </div>
 
-    <div class="debug-map-host" data-testid="debug-map-host">
-        @if (HasApiKey)
-        {
-            <MapView Class="debug-map-view"
-                     Latitude="@Latitude"
-                     Longitude="@Longitude"
-                     Zoom="@Zoom"
-                     ShowZoomWidget="true"
-                     OnViewInitialized="OnViewInitializedAsync">
-                <Map>
-                    <Basemap>
-                        <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@ApiKey" />
-                    </Basemap>
-                </Map>
-            </MapView>
-        }
-        else
-        {
-            <MapView Class="debug-map-view"
-                     Latitude="@Latitude"
-                     Longitude="@Longitude"
-                     Zoom="@Zoom"
-                     ShowZoomWidget="true"
-                     OnViewInitialized="OnViewInitializedAsync">
-                <Map></Map>
-            </MapView>
-        }
-    </div>
+    @if (UseGameMapShell)
+    {
+        <div class="debug-map-shell-host" data-testid="debug-map-shell-host">
+            <div class="map-shell" data-testid="debug-game-map-shell">
+                @if (HasApiKey)
+                {
+                    <MapView Class="debug-map-view"
+                             Latitude="@Latitude"
+                             Longitude="@Longitude"
+                             Zoom="@Zoom"
+                             ShowZoomWidget="true"
+                             OnViewInitialized="OnViewInitializedAsync"
+                             style="width:100%; height:100%;">
+                        <Map>
+                            <Basemap>
+                                <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@ApiKey" />
+                            </Basemap>
+                            @if (IncludeGraphicsLayer)
+                            {
+                                <GraphicsLayer @ref="_debugLayer" Title="Debug marker layer" />
+                            }
+                        </Map>
+                    </MapView>
+                }
+                else
+                {
+                    <MapView Class="debug-map-view"
+                             Latitude="@Latitude"
+                             Longitude="@Longitude"
+                             Zoom="@Zoom"
+                             ShowZoomWidget="true"
+                             OnViewInitialized="OnViewInitializedAsync"
+                             style="width:100%; height:100%;">
+                        <Map>
+                            @if (IncludeGraphicsLayer)
+                            {
+                                <GraphicsLayer @ref="_debugLayer" Title="Debug marker layer" />
+                            }
+                        </Map>
+                    </MapView>
+                }
+
+                @if (Mode == DebugMapMode.Overlays)
+                {
+                    <div class="gps-status-chip gps-status-chip--ready" data-testid="debug-gps-status-chip" role="status">
+                        <span class="gps-status-chip__dot" aria-hidden="true"></span>
+                        <span>GPS ready</span>
+                        <small>test</small>
+                    </div>
+                    <div class="pitch-legend" data-testid="debug-pitch-legend">
+                        <div class="pitch-legend__title">Pitches</div>
+                        <div class="pitch-legend__row">
+                            <span class="pitch-legend__marker pitch-legend__marker--standard"></span>
+                            <span>Standard</span>
+                            <strong>1</strong>
+                        </div>
+                    </div>
+                    <div class="map-fab-group" data-testid="debug-map-fabs">
+                        <button class="btn btn-sm btn-outline-light map-fab" title="Nearest pitch" type="button">&#x26BD;</button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="debug-map-host" data-testid="debug-map-host">
+            @if (HasApiKey)
+            {
+                <MapView Class="debug-map-view"
+                         Latitude="@Latitude"
+                         Longitude="@Longitude"
+                         Zoom="@Zoom"
+                         ShowZoomWidget="true"
+                         OnViewInitialized="OnViewInitializedAsync">
+                    <Map>
+                        <Basemap>
+                            <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@ApiKey" />
+                        </Basemap>
+                    </Map>
+                </MapView>
+            }
+            else
+            {
+                <MapView Class="debug-map-view"
+                         Latitude="@Latitude"
+                         Longitude="@Longitude"
+                         Zoom="@Zoom"
+                         ShowZoomWidget="true"
+                         OnViewInitialized="OnViewInitializedAsync">
+                    <Map></Map>
+                </MapView>
+            }
+        </div>
+    }
 </div>
 
 @code {
@@ -49,16 +130,126 @@
     private const double Longitude = -80.1581;
     private const int Zoom = 13;
 
+    private static readonly DebugModeLink[] Modes =
+    [
+        new(DebugMapMode.Baseline, "Baseline", "/debug-map?mode=baseline"),
+        new(DebugMapMode.Shell, "GameMap shell", "/debug-map?mode=shell"),
+        new(DebugMapMode.EmptyLayer, "Empty layer", "/debug-map?mode=empty-layer"),
+        new(DebugMapMode.Marker, "One marker", "/debug-map?mode=marker"),
+        new(DebugMapMode.Overlays, "Overlays", "/debug-map?mode=overlays")
+    ];
+
+    private GraphicsLayer? _debugLayer;
     private string _viewStatus = "initializing";
+    private string _markerStatus = "not requested";
+    private bool _markerAdded;
+
+    private DebugMapMode Mode { get; set; } = DebugMapMode.Baseline;
 
     private string ApiKey => Configuration["ArcGISApiKey"] ?? string.Empty;
 
     private bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey)
         && !string.Equals(ApiKey, "YOUR_ARCGIS_API_KEY", StringComparison.OrdinalIgnoreCase);
 
-    private Task OnViewInitializedAsync()
+    private bool UseGameMapShell => Mode is DebugMapMode.Shell or DebugMapMode.EmptyLayer or DebugMapMode.Marker or DebugMapMode.Overlays;
+
+    private bool IncludeGraphicsLayer => Mode is DebugMapMode.EmptyLayer or DebugMapMode.Marker or DebugMapMode.Overlays;
+
+    private string ModeLabel => Modes.FirstOrDefault(mode => mode.Key == Mode)?.Label ?? "Baseline";
+
+    protected override void OnInitialized()
+    {
+        Mode = ResolveMode(Navigation.Uri);
+        _markerStatus = Mode is DebugMapMode.Marker or DebugMapMode.Overlays ? "pending" : "not requested";
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if ((Mode is DebugMapMode.Marker or DebugMapMode.Overlays) && !_markerAdded && _viewStatus == "initialized")
+        {
+            await AddDebugMarkerAsync();
+        }
+    }
+
+    private async Task OnViewInitializedAsync()
     {
         _viewStatus = "initialized";
-        return InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
+
+    private async Task AddDebugMarkerAsync()
+    {
+        if (_debugLayer is null)
+        {
+            _markerStatus = "layer unavailable";
+            return;
+        }
+
+        try
+        {
+            var marker = new Graphic(
+                geometry: new Point(longitude: Longitude, latitude: Latitude),
+                symbol: new SimpleMarkerSymbol(
+                    outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
+                    color: new MapColor("#DC2626"),
+                    size: new Dimension(18),
+                    style: SimpleMarkerSymbolStyle.Circle));
+
+            await _debugLayer.AddMany(new[] { marker });
+            _markerAdded = true;
+            _markerStatus = "added";
+        }
+        catch (Exception ex)
+        {
+            _markerStatus = ex.GetType().Name;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string ModeLinkClass(DebugMapMode mode) => mode == Mode
+        ? "debug-map-mode-nav__link debug-map-mode-nav__link--active"
+        : "debug-map-mode-nav__link";
+
+    private static DebugMapMode ResolveMode(string currentUri)
+    {
+        var uri = new Uri(currentUri, UriKind.Absolute);
+        var query = uri.Query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return DebugMapMode.Baseline;
+        }
+
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (!string.Equals(Uri.UnescapeDataString(parts[0]), "mode", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = parts.Length == 2 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+            return value.Trim().ToLowerInvariant() switch
+            {
+                "shell" => DebugMapMode.Shell,
+                "empty-layer" => DebugMapMode.EmptyLayer,
+                "marker" => DebugMapMode.Marker,
+                "overlays" => DebugMapMode.Overlays,
+                _ => DebugMapMode.Baseline
+            };
+        }
+
+        return DebugMapMode.Baseline;
+    }
+
+    private enum DebugMapMode
+    {
+        Baseline,
+        Shell,
+        EmptyLayer,
+        Marker,
+        Overlays
+    }
+
+    private sealed record DebugModeLink(DebugMapMode Key, string Label, string Href);
 }
