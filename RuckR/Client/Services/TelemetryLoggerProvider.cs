@@ -5,6 +5,9 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Client.Services;
 
+/// <summary>
+/// Logs warning-or-higher client events to an internal queue and flushes them to the telemetry API.
+/// </summary>
 public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
 {
     private readonly HttpClient _httpClient;
@@ -14,11 +17,20 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
     private readonly SemaphoreSlim _flushLock = new(1, 1);
     private Task? _flushLoop;
 
+    /// <summary>
+    /// Creates a new telemetry logger provider.
+    /// </summary>
+    /// <param name="httpClient">HTTP client used for posting log batches.</param>
     public TelemetryLoggerProvider(HttpClient httpClient)
     {
         _httpClient = httpClient;
     }
 
+    /// <summary>
+    /// Creates a logger for a given category.
+    /// </summary>
+    /// <param name="categoryName">Logger category name.</param>
+    /// <returns>An <see cref="ILogger"/> instance.</returns>
     public ILogger CreateLogger(string categoryName)
         => new TelemetryLogger(categoryName, this);
 
@@ -84,6 +96,10 @@ public class TelemetryLoggerProvider : ILoggerProvider, IAsyncDisposable
         _cts.Cancel();
     }
 
+    /// <summary>
+    /// Cancels background work, waits for flush loop completion, and flushes remaining logs.
+    /// </summary>
+    /// <returns>A task representing asynchronous disposal.</returns>
     public async ValueTask DisposeAsync()
     {
         await _cts.CancelAsync();

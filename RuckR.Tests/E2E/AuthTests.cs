@@ -5,6 +5,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -13,12 +16,20 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""AuthTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public AuthTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -26,6 +37,9 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         _baseUrl = _factory.ServerBaseUrl;
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -33,6 +47,9 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies register New User Can Login And See Navbar.
+    /// </summary>
     public async Task Register_NewUser_CanLoginAndSeeNavbar()
     {
         var username = $"testuser_{Guid.NewGuid():N}@test.com";
@@ -74,6 +91,9 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies root Login Root Logout Completes Successfully.
+    /// </summary>
     public async Task Root_Login_Root_Logout_CompletesSuccessfully()
     {
         var username = $"loginflow_{Guid.NewGuid():N}@test.com";
@@ -108,6 +128,9 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies logout Then Login Uses Normal Navigation Links.
+    /// </summary>
     public async Task Logout_ThenLogin_UsesNormalNavigationLinks()
     {
         var username = $"normalnav_{Guid.NewGuid():N}@test.com";
@@ -149,6 +172,9 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies logout Removes Access To Authenticated Pages.
+    /// </summary>
     public async Task Logout_RemovesAccessToAuthenticatedPages()
     {
         var username = $"logout_{Guid.NewGuid():N}@test.com";
@@ -179,3 +205,5 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
     }
 }
+
+

@@ -9,17 +9,27 @@ using RuckR.Tests.Fixtures;
 namespace RuckR.Tests.Api;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class PitchesApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;
     private string _userId = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""PitchesApiTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
     public PitchesApiTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         var username = $"pitchapi_{Guid.NewGuid():N}";
@@ -27,12 +37,18 @@ public class PitchesApiTests : IAsyncLifetime
         _client = _factory.CreateAuthenticatedClient(_userId, username);
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         _client?.Dispose();
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch Authenticated Returns Created Pitch.
+    /// </summary>
     public async Task CreatePitch_Authenticated_ReturnsCreatedPitch()
     {
         var pitchName = $"TestPitch_{Guid.NewGuid():N}";
@@ -51,6 +67,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch Unauthenticated Returns Unauthorized.
+    /// </summary>
     public async Task CreatePitch_Unauthenticated_ReturnsUnauthorized()
     {
         using var anonymousClient = _factory.CreateClient();
@@ -67,6 +86,9 @@ public class PitchesApiTests : IAsyncLifetime
     [InlineData(51.5074, 181, "Standard", "Longitude")]
     [InlineData(51.5074, -181, "Standard", "Longitude")]
     [InlineData(51.5074, -0.1278, "InvalidType", "Invalid pitch type")]
+    /// <summary>
+    /// Verifies create Pitch Invalid Request Returns Bad Request.
+    /// </summary>
     public async Task CreatePitch_InvalidRequest_ReturnsBadRequest(
         double latitude,
         double longitude,
@@ -83,6 +105,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch Authenticated Persists Location And Metadata.
+    /// </summary>
     public async Task CreatePitch_Authenticated_PersistsLocationAndMetadata()
     {
         var pitchName = $"PersistPitch_{Guid.NewGuid():N}";
@@ -111,6 +136,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch From Candidate Authenticated Persists Source Metadata.
+    /// </summary>
     public async Task CreatePitchFromCandidate_Authenticated_PersistsSourceMetadata()
     {
         var pitchName = $"CandidatePitch_{Guid.NewGuid():N}";
@@ -150,6 +178,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch From Candidate Duplicate Place Id Returns409.
+    /// </summary>
     public async Task CreatePitchFromCandidate_DuplicatePlaceId_Returns409()
     {
         var placeId = $"candidate-place-{Guid.NewGuid():N}";
@@ -177,6 +208,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch From Candidate Near Existing Pitch Returns409.
+    /// </summary>
     public async Task CreatePitchFromCandidate_NearExistingPitch_Returns409()
     {
         var first = new CreatePitchFromCandidateRequest(
@@ -204,6 +238,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies get Pitches Nearby Returns Pitches.
+    /// </summary>
     public async Task GetPitchesNearby_ReturnsPitches()
     {
         var response = await _client.GetAsync("/api/pitches/nearby?lat=51.5074&lng=-0.1278&radius=5000");
@@ -214,6 +251,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch Duplicate Name Anywhere Returns409.
+    /// </summary>
     public async Task CreatePitch_DuplicateNameAnywhere_Returns409()
     {
         var pitchName = $"DupPitch_{Guid.NewGuid():N}";
@@ -231,6 +271,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies create Pitch Rate Limit Exceeded Returns429.
+    /// </summary>
     public async Task CreatePitch_RateLimitExceeded_Returns429()
     {
         // Use a unique user for rate limit test to ensure clean counter
@@ -256,6 +299,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies ensure Nearby Pitches No Stadium Within Thirty Miles Creates Stadium.
+    /// </summary>
     public async Task EnsureNearbyPitches_NoStadiumWithinThirtyMiles_CreatesStadium()
     {
         using var scope = _factory.Services.CreateScope();
@@ -273,6 +319,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies ensure Nearby Pitches Stadium Within Thirty Miles But Not Ten Creates Standard Pitch.
+    /// </summary>
     public async Task EnsureNearbyPitches_StadiumWithinThirtyMilesButNotTen_CreatesStandardPitch()
     {
         await _factory.ExecuteInDbAsync(async db =>
@@ -302,6 +351,9 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies ensure Nearby Pitches No Pitch Within Two Miles Creates Practice Pitch.
+    /// </summary>
     public async Task EnsureNearbyPitches_NoPitchWithinTwoMiles_CreatesPracticePitch()
     {
         await _factory.ExecuteInDbAsync(async db =>
@@ -341,3 +393,5 @@ public class PitchesApiTests : IAsyncLifetime
     private static Point CreatePoint(double latitude, double longitude)
         => new(longitude, latitude) { SRID = 4326 };
 }
+
+

@@ -5,21 +5,33 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Data
 {
+    /// <summary>Defines the server-side class RuckRDbContext.</summary>
     public class RuckRDbContext : IdentityDbContext<IdentityUser>
     {
+        /// <summary>Gets or sets all players in the game.</summary>
         public DbSet<PlayerModel> Players { get; set; }
+        /// <summary>Gets or sets all discovered and created pitches.</summary>
         public DbSet<PitchModel> Pitches { get; set; }
+        /// <summary>Gets or sets all players collected by users.</summary>
         public DbSet<CollectionModel> Collections { get; set; }
+        /// <summary>Gets or sets all battle records.</summary>
         public DbSet<BattleModel> Battles { get; set; }
+        /// <summary>Gets or sets user game progress profiles.</summary>
         public DbSet<UserGameProfileModel> UserGameProfiles { get; set; }
+        /// <summary>Gets or sets active recruitment encounters.</summary>
         public DbSet<PlayerEncounterModel> PlayerEncounters { get; set; }
+        /// <summary>Gets or sets user visible profile records.</summary>
         public DbSet<UserProfileModel> UserProfiles { get; set; }
+        /// <summary>Gets or sets all API rate limit records.</summary>
         public DbSet<RateLimitRecord> RateLimitRecords { get; set; }
+        /// <summary>Gets or sets user consent records.</summary>
         public DbSet<UserConsent> UserConsents { get; set; }
-
-        public RuckRDbContext(DbContextOptions<RuckRDbContext> options) : base(options) { }
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+    /// <summary>Initializes a new instance of <see cref="RuckRDbContext"/>.</summary>
+    /// <param name="options">The EF Core options.</param>
+    public RuckRDbContext(DbContextOptions<RuckRDbContext> options) : base(options) { }
+    /// <summary>Configure entities, indexes, and relationships for the model.</summary>
+    /// <param name="modelBuilder">The model builder.</param>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
@@ -91,3 +103,4 @@ namespace RuckR.Server.Data
         }
     }
 }
+

@@ -3,11 +3,33 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Tests.Fixtures;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public static class TestDataFactory
 {
+    /// <summary>
+    /// Verifies static.
+    /// </summary>
+    /// <param name="lat">The lat to use.</param>
+    /// <param name="lng">The lng to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public static (double lat, double lng) CentralLondon = (51.5074, -0.1278);
+    /// <summary>
+    /// Verifies static.
+    /// </summary>
+    /// <param name="lat">The lat to use.</param>
+    /// <param name="lng">The lng to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public static (double lat, double lng) NearPitch => (51.5075, -0.1277); // ~20m from central
 
+    /// <summary>
+    /// Verifies create Test Pitch.
+    /// </summary>
+    /// <param name="creatorUserId">The creatorUserId to use.</param>
+    /// <param name="lat">The lat to use.</param>
+    /// <param name="lng">The lng to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public static PitchModel CreateTestPitch(string creatorUserId, double lat, double lng)
     {
         return new PitchModel
@@ -20,6 +42,12 @@ public static class TestDataFactory
         };
     }
 
+    /// <summary>
+    /// Verifies create Test Player.
+    /// </summary>
+    /// <param name="lat">The lat to use.</param>
+    /// <param name="lng">The lng to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public static PlayerModel CreateTestPlayer(double lat, double lng)
     {
         return new PlayerModel
@@ -36,3 +64,5 @@ public static class TestDataFactory
         };
     }
 }
+
+

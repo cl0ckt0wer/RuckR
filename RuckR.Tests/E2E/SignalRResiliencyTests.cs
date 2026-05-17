@@ -11,6 +11,9 @@ namespace RuckR.Tests.E2E;
 /// disconnections and verify the ConnectionStatus shared component.
 /// </summary>
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -18,12 +21,20 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     private IBrowserContext _context = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""SignalRResiliencyTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public SignalRResiliencyTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -36,6 +47,9 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
         await page.CloseAsync();
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _context.CloseAsync();
@@ -46,6 +60,9 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// component transitions to Disconnected and shows the Reconnect button.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies connection Status Shows Disconnected And Reconnect Button After Network Loss.
+    /// </summary>
     public async Task ConnectionStatus_ShowsDisconnectedAndReconnectButton_AfterNetworkLoss()
     {
         var page = await _context.NewPageAsync();
@@ -94,6 +111,9 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// restored.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies connection Status Reconnects After Network Restored.
+    /// </summary>
     public async Task ConnectionStatus_ReconnectsAfterNetworkRestored()
     {
         var page = await _context.NewPageAsync();
@@ -134,6 +154,9 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// Connected on a healthy page load (baseline test).
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies connection Status Reports Connected On Healthy Startup.
+    /// </summary>
     public async Task ConnectionStatus_ReportsConnected_OnHealthyStartup()
     {
         var page = await _context.NewPageAsync();
@@ -156,3 +179,5 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
         }
     }
 }
+
+

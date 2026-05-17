@@ -9,6 +9,9 @@ using System.Diagnostics;
 
 namespace RuckR.Client.Services
 {
+    /// <summary>
+    /// Manages SignalR connection lifecycle and dispatches updates into state and event callbacks.
+    /// </summary>
     public class SignalRClientService : IAsyncDisposable
     {
         private const int MaxQueuedActions = 50;
@@ -25,15 +28,48 @@ namespace RuckR.Client.Services
         private readonly SemaphoreSlim _queueLock = new(1, 1);
         private CancellationTokenSource? _latencySamplingCts;
 
+        /// <summary>
+        /// Gets a value indicating whether the hub connection is established.
+        /// </summary>
         public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
+
+        /// <summary>
+        /// Gets the current SignalR connection state.
+        /// </summary>
         public HubConnectionState ConnectionState => _hubConnection?.State ?? HubConnectionState.Disconnected;
 
+        /// <summary>
+        /// Raised whenever the SignalR connection state changes.
+        /// </summary>
         public event Action<bool, string?>? ConnectionStateChanged;
+
+        /// <summary>
+        /// Raised when a challenge notification is received.
+        /// </summary>
         public event Action<ChallengeNotification>? ChallengeReceived;
+
+        /// <summary>
+        /// Raised when a battle result is resolved.
+        /// </summary>
         public event Action<BattleResult>? BattleResolved;
+
+        /// <summary>
+        /// Raised when a pitch is discovered by SignalR gameplay events.
+        /// </summary>
         public event Action<PitchModel>? PitchDiscovered;
+
+        /// <summary>
+        /// Raised when nearby players are refreshed by SignalR.
+        /// </summary>
         public event Action<List<NearbyPlayerDto>>? NearbyPlayersUpdated;
 
+        /// <summary>
+        /// Initializes a new SignalR client service.
+        /// </summary>
+        /// <param name="dispatcher">Dispatcher for Fluxor action notifications.</param>
+        /// <param name="gameState">Current game state used for send eligibility checks.</param>
+        /// <param name="navigation">Navigation manager for building the hub endpoint URI.</param>
+        /// <param name="logger">Logger for connection and dispatch diagnostics.</param>
         public SignalRClientService(
             IDispatcher dispatcher,
             IState<GameState> gameState,
@@ -46,6 +82,10 @@ namespace RuckR.Client.Services
             _logger = logger;
         }
 
+        /// <summary>
+        /// Starts the SignalR connection and replays queued outbound actions.
+        /// </summary>
+        /// <returns>A task representing the asynchronous startup flow.</returns>
         public async Task StartAsync()
         {
             if (_hubConnection?.State == HubConnectionState.Connected)
@@ -93,6 +133,10 @@ namespace RuckR.Client.Services
             await ReplayQueuedActionsAsync();
         }
 
+        /// <summary>
+        /// Stops the SignalR connection and tears down event handlers.
+        /// </summary>
+        /// <returns>A task representing the asynchronous stop flow.</returns>
         public async Task StopAsync()
         {
             _latencySamplingCts?.Cancel();
@@ -105,6 +149,12 @@ namespace RuckR.Client.Services
             }
         }
 
+        /// <summary>
+        /// Sends or queues a location update.
+        /// </summary>
+        /// <param name="lat">Latitude.</param>
+        /// <param name="lng">Longitude.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task UpdateLocationAsync(double lat, double lng)
         {
             await SendOrQueueAsync(new QueuedHubAction(
@@ -113,6 +163,12 @@ namespace RuckR.Client.Services
                 LocationQueueKey));
         }
 
+        /// <summary>
+        /// Sends or queues a new battle challenge request.
+        /// </summary>
+        /// <param name="opponentUsername">Opponent username.</param>
+        /// <param name="playerId">Challenger collection player id.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task SendChallengeAsync(string opponentUsername, int playerId)
         {
             var idempotencyKey = Guid.NewGuid().ToString("N");
@@ -122,6 +178,12 @@ namespace RuckR.Client.Services
                 null));
         }
 
+        /// <summary>
+        /// Sends or queues a battle acceptance action.
+        /// </summary>
+        /// <param name="battleId">Battle identifier.</param>
+        /// <param name="playerId">Selected player id for acceptance.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task AcceptChallengeAsync(int battleId, int playerId)
         {
             await SendOrQueueAsync(new QueuedHubAction(
@@ -130,6 +192,11 @@ namespace RuckR.Client.Services
                 null));
         }
 
+        /// <summary>
+        /// Sends or queues a battle decline action.
+        /// </summary>
+        /// <param name="battleId">Battle identifier.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task DeclineChallengeAsync(int battleId)
         {
             await SendOrQueueAsync(new QueuedHubAction(
@@ -138,6 +205,11 @@ namespace RuckR.Client.Services
                 null));
         }
 
+        /// <summary>
+        /// Joins a battle room/group and tracks active groups.
+        /// </summary>
+        /// <param name="battleId">Battle group identifier.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
         public async Task JoinBattleGroupAsync(int battleId)
         {
             _activeBattleGroups.Add(battleId);
@@ -393,6 +465,10 @@ namespace RuckR.Client.Services
             _gameState.Value.IsBrowserOnline &&
             _hubConnection?.State == HubConnectionState.Connected;
 
+        /// <summary>
+        /// Stops the connection and performs async disposal.
+        /// </summary>
+        /// <returns>A task representing the asynchronous disposal flow.</returns>
         public async ValueTask DisposeAsync()
         {
             _latencySamplingCts?.Cancel();

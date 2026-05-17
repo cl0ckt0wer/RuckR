@@ -5,6 +5,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -13,12 +16,20 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""CatalogTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public CatalogTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -43,6 +54,9 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
             throw new InvalidOperationException("Failed to authenticate test user for Catalog tests");
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -50,6 +64,9 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies catalog Page Loads Shows Player Cards.
+    /// </summary>
     public async Task CatalogPage_Loads_ShowsPlayerCards()
     {
         var catalogPage = new CatalogPage(_page, _baseUrl);
@@ -62,6 +79,9 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies catalog Page Filter By Position.
+    /// </summary>
     public async Task CatalogPage_Filter_ByPosition()
     {
         var catalogPage = new CatalogPage(_page, _baseUrl);
@@ -79,3 +99,5 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(filteredCount > 0, "Should have Props in seed data");
     }
 }
+
+

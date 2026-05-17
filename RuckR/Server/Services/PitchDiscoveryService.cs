@@ -5,6 +5,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side class PitchDiscoveryService.</summary>
     public class PitchDiscoveryService : IPitchDiscoveryService
     {
         private const double MetersPerMile = 1609.344;
@@ -15,12 +16,18 @@ namespace RuckR.Server.Services
         private readonly RuckRDbContext _db;
         private readonly GeometryFactory _geometryFactory =
             NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
-
+        /// <summary>Initializes a new instance of PitchDiscoveryService.</summary>
+        /// <param name="db">The db.</param>
         public PitchDiscoveryService(RuckRDbContext db)
         {
             _db = db;
         }
-
+        /// <summary>E ns ur eN ea rb yP it ch es As yn c.</summary>
+        /// <param name="userId">The userid.</param>
+        /// <param name="userName">The username.</param>
+        /// <param name="latitude">The latitude.</param>
+        /// <param name="longitude">The longitude.</param>
+        /// <returns>The operation result.</returns>
         public async Task<IReadOnlyList<PitchModel>> EnsureNearbyPitchesAsync(
             string userId,
             string userName,
@@ -107,3 +114,4 @@ namespace RuckR.Server.Services
         }
     }
 }
+

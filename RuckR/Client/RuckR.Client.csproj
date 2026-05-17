@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
     <BuildTimestamp>$([System.DateTime]::UtcNow.ToString("yyyyMMddHHmmss"))</BuildTimestamp>
     <WasmEnableHotReload>true</WasmEnableHotReload>

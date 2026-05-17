@@ -539,5 +539,6 @@ static void ApplyNoStoreHeaders(IHeaderDictionary headers)
     headers["Pragma"] = "no-cache";
     headers["Expires"] = "0";
 }
-
+/// <summary>Defines the server-side class Program.</summary>
 public partial class Program { }
+

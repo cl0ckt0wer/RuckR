@@ -2,8 +2,16 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Pages;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class NavMenu : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""NavMenu"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public NavMenu(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>
@@ -28,6 +36,9 @@ public class NavMenu : BasePage
         }
     }
 
+    /// <summary>
+    /// Verifies navigate To Map Async.
+    /// </summary>
     public async Task NavigateToMapAsync()
     {
         await EnsureNavExpandedAsync();
@@ -35,6 +46,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Catalog Async.
+    /// </summary>
     public async Task NavigateToCatalogAsync()
     {
         await EnsureNavExpandedAsync();
@@ -42,6 +56,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Collection Async.
+    /// </summary>
     public async Task NavigateToCollectionAsync()
     {
         await EnsureNavExpandedAsync();
@@ -49,6 +66,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Nearby Players Async.
+    /// </summary>
     public async Task NavigateToNearbyPlayersAsync()
     {
         await EnsureNavExpandedAsync();
@@ -56,6 +76,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Battles Async.
+    /// </summary>
     public async Task NavigateToBattlesAsync()
     {
         await EnsureNavExpandedAsync();
@@ -63,6 +86,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Battle History Async.
+    /// </summary>
     public async Task NavigateToBattleHistoryAsync()
     {
         await EnsureNavExpandedAsync();
@@ -70,6 +96,9 @@ public class NavMenu : BasePage
         await WaitForBlazorAsync();
     }
 
+    /// <summary>
+    /// Verifies navigate To Create Pitch Async.
+    /// </summary>
     public async Task NavigateToCreatePitchAsync()
     {
         await EnsureNavExpandedAsync();
@@ -108,6 +137,9 @@ public class NavMenu : BasePage
         return (false, "");
     }
 
+    /// <summary>
+    /// Verifies click Login Async.
+    /// </summary>
     public async Task ClickLoginAsync()
     {
         await DismissErrorUiAsync();
@@ -116,6 +148,9 @@ public class NavMenu : BasePage
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
     }
 
+    /// <summary>
+    /// Verifies click Logout Async.
+    /// </summary>
     public async Task ClickLogoutAsync()
     {
         await DismissErrorUiAsync();
@@ -138,11 +173,19 @@ public class NavMenu : BasePage
         await DismissErrorUiAsync();
     }
 
+    /// <summary>
+    /// Verifies is Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsVisibleAsync()
     {
         return await ExistsAsync(".navbar");
     }
 
+    /// <summary>
+    /// Verifies get Nav Links Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<string[]> GetNavLinksAsync()
     {
         var links = await Page.QuerySelectorAllAsync(".nav-link");
@@ -156,3 +199,5 @@ public class NavMenu : BasePage
         return texts.ToArray();
     }
 }
+
+

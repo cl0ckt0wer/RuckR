@@ -2,6 +2,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side class BattleResolver.</summary>
     public class BattleResolver : IBattleResolver
     {
         private static readonly Dictionary<(PlayerPosition, PlayerPosition), double> PositionMultipliers = new()
@@ -22,7 +23,13 @@ namespace RuckR.Server.Services
             { PlayerRarity.Epic, 2.0 },
             { PlayerRarity.Legendary, 3.0 },
         };
-
+        /// <summary>R es ol ve.</summary>
+        /// <param name="challengerPlayer">The challengerplayer.</param>
+        /// <param name="opponentPlayer">The opponentplayer.</param>
+        /// <param name="challengerUsername">The challengerusername.</param>
+        /// <param name="opponentUsername">The opponentusername.</param>
+        /// <param name="seed">The seed.</param>
+        /// <returns>The operation result.</returns>
         public BattleResult Resolve(
             PlayerModel challengerPlayer,
             PlayerModel opponentPlayer,
@@ -152,3 +159,4 @@ namespace RuckR.Server.Services
         }
     }
 }
+

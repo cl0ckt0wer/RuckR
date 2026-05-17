@@ -3,9 +3,15 @@ using MapPage = RuckR.Client.Pages.Map;
 
 namespace RuckR.Tests.ComponentTests;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class MapGpsNoticeTests
 {
     [Fact]
+    /// <summary>
+    /// Verifies should Show Gps Notice For State Shows Only When Gps Is Unavailable.
+    /// </summary>
     public void ShouldShowGpsNoticeForState_ShowsOnlyWhenGpsIsUnavailable()
     {
         Assert.True(MapPage.ShouldShowGpsNoticeForState(
@@ -25,6 +31,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies should Show Gps Notice For State Stays Hidden After Dismissal.
+    /// </summary>
     public void ShouldShowGpsNoticeForState_StaysHiddenAfterDismissal()
     {
         Assert.False(MapPage.ShouldShowGpsNoticeForState(
@@ -38,6 +47,9 @@ public class MapGpsNoticeTests
     [InlineData("", true)]
     [InlineData("   ", true)]
     [InlineData("configured-api-key", false)]
+    /// <summary>
+    /// Verifies should Show Map Unavailable Fallback Only When Map Key Is Missing.
+    /// </summary>
     public void ShouldShowMapUnavailableFallback_OnlyWhenMapKeyIsMissing(
         string? apiKey,
         bool expected)
@@ -46,6 +58,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Unavailable Copy Gives Player Next Actions Instead Of Configuration Instructions.
+    /// </summary>
     public void MapUnavailableCopy_GivesPlayerNextActionsInsteadOfConfigurationInstructions()
     {
         Assert.Contains("browse players", MapPage.MapUnavailableBody, StringComparison.OrdinalIgnoreCase);
@@ -54,6 +69,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies build Gps Status When Waiting For Location Returns Searching.
+    /// </summary>
     public void BuildGpsStatus_WhenWaitingForLocation_ReturnsSearching()
     {
         var status = MapPage.BuildGpsStatus(
@@ -69,6 +87,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies build Gps Status When Accuracy Is Good Returns Ready With Accuracy.
+    /// </summary>
     public void BuildGpsStatus_WhenAccuracyIsGood_ReturnsReadyWithAccuracy()
     {
         var status = MapPage.BuildGpsStatus(
@@ -90,6 +111,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies build Gps Status When Accuracy Is Poor Returns Weak With Action Hint.
+    /// </summary>
     public void BuildGpsStatus_WhenAccuracyIsPoor_ReturnsWeakWithActionHint()
     {
         var status = MapPage.BuildGpsStatus(
@@ -111,6 +135,9 @@ public class MapGpsNoticeTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies build Gps Status When Location Errors Returns Blocked.
+    /// </summary>
     public void BuildGpsStatus_WhenLocationErrors_ReturnsBlocked()
     {
         var status = MapPage.BuildGpsStatus(
@@ -128,6 +155,9 @@ public class MapGpsNoticeTests
     [Theory]
     [InlineData(4, false)]
     [InlineData(5, true)]
+    /// <summary>
+    /// Verifies should Dismiss Gps Notice After Retry Hides On Fifth Retry.
+    /// </summary>
     public void ShouldDismissGpsNoticeAfterRetry_HidesOnFifthRetry(
         int retryAttempts,
         bool expected)
@@ -135,3 +165,5 @@ public class MapGpsNoticeTests
         Assert.Equal(expected, MapPage.ShouldDismissGpsNoticeAfterRetry(retryAttempts));
     }
 }
+
+

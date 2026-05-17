@@ -9,6 +9,11 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class PlayerGridPage : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""PlayerGridPage"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public PlayerGridPage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>Navigate to the nearby players grid and wait for Blazor to render.</summary>
@@ -147,3 +152,5 @@ public class PlayerGridPage : BasePage
         return await ExistsAsync("[data-testid='nearby-error']");
     }
 }
+
+

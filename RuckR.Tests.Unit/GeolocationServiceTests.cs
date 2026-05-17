@@ -9,6 +9,9 @@ using Xunit;
 
 namespace RuckR.Tests.Unit;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class GeolocationServiceTests
 {
     private readonly Mock<IJSRuntime> _js = new();
@@ -29,6 +32,9 @@ public class GeolocationServiceTests
     };
 
     [Fact]
+    /// <summary>
+    /// Verifies on Position From Js First Position Dispatches Update And Raises Event.
+    /// </summary>
     public void OnPositionFromJs_FirstPosition_DispatchesUpdateAndRaisesEvent()
     {
         var service = CreateService();
@@ -43,6 +49,9 @@ public class GeolocationServiceTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies on Position From Js Null Island Is Discarded.
+    /// </summary>
     public void OnPositionFromJs_NullIsland_IsDiscarded()
     {
         var service = CreateService();
@@ -53,6 +62,9 @@ public class GeolocationServiceTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies on Position From Js Poor Accuracy After First Fix Is Discarded.
+    /// </summary>
     public void OnPositionFromJs_PoorAccuracyAfterFirstFix_IsDiscarded()
     {
         var service = CreateService();
@@ -64,6 +76,9 @@ public class GeolocationServiceTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies on Position From Js Too Small Displacement Is Discarded.
+    /// </summary>
     public void OnPositionFromJs_TooSmallDisplacement_IsDiscarded()
     {
         var service = CreateService();
@@ -76,6 +91,9 @@ public class GeolocationServiceTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies on Position From Js Throttle Drops Rapid Second Update.
+    /// </summary>
     public void OnPositionFromJs_Throttle_DropsRapidSecondUpdate()
     {
         var service = CreateService();
@@ -87,6 +105,9 @@ public class GeolocationServiceTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies on Error From Js Dispatches Location Error Action.
+    /// </summary>
     public void OnErrorFromJs_DispatchesLocationErrorAction()
     {
         var service = CreateService();
@@ -97,3 +118,5 @@ public class GeolocationServiceTests
             a.ErrorMessage.Contains("Geolocation error 1", StringComparison.Ordinal))), Times.Once);
     }
 }
+
+

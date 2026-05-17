@@ -8,9 +8,15 @@ using Xunit;
 
 namespace RuckR.Tests.Unit;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class FluxorReducerTests
 {
     [Fact]
+    /// <summary>
+    /// Verifies location Update Position Updates Coordinates And Clears Error.
+    /// </summary>
     public void Location_UpdatePosition_UpdatesCoordinatesAndClearsError()
     {
         var state = new LocationState { ErrorMessage = "err" };
@@ -23,6 +29,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies location Error Sets Error And Stops Watching.
+    /// </summary>
     public void Location_Error_SetsErrorAndStopsWatching()
     {
         var state = new LocationState { IsWatching = true };
@@ -33,6 +42,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies game Set Auth Updates Auth State.
+    /// </summary>
     public void Game_SetAuth_UpdatesAuthState()
     {
         var state = new GameState();
@@ -43,6 +55,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies game Set Connection Updates Connection State.
+    /// </summary>
     public void Game_SetConnection_UpdatesConnectionState()
     {
         var state = new GameState();
@@ -53,6 +68,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies game Set Browser Online State Updates Online Flag.
+    /// </summary>
     public void Game_SetBrowserOnlineState_UpdatesOnlineFlag()
     {
         var state = new GameState { IsBrowserOnline = true };
@@ -62,6 +80,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies game Set Connection Metrics Updates Latency And Queue Count.
+    /// </summary>
     public void Game_SetConnectionMetrics_UpdatesLatencyAndQueueCount()
     {
         var state = new GameState();
@@ -72,6 +93,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies inventory Fetch Result Sets Players And Last Synced.
+    /// </summary>
     public void Inventory_FetchResult_SetsPlayersAndLastSynced()
     {
         var state = new InventoryState { IsLoading = true };
@@ -85,6 +109,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies inventory Toggle Favorite Flips Flag.
+    /// </summary>
     public void Inventory_ToggleFavorite_FlipsFlag()
     {
         var state = new InventoryState
@@ -101,6 +128,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Set Pitches Replaces Visible Pitches.
+    /// </summary>
     public void Map_SetPitches_ReplacesVisiblePitches()
     {
         var state = new MapState();
@@ -116,6 +146,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Clear Selection Clears Both Selections.
+    /// </summary>
     public void Map_ClearSelection_ClearsBothSelections()
     {
         var state = new MapState { SelectedPitchId = 5, SelectedEncounterId = Guid.NewGuid() };
@@ -126,6 +159,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Select Pitch Clears Encounter Selection.
+    /// </summary>
     public void Map_SelectPitch_ClearsEncounterSelection()
     {
         var state = new MapState { SelectedEncounterId = Guid.NewGuid() };
@@ -136,6 +172,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Select Encounter Clears Pitch Selection.
+    /// </summary>
     public void Map_SelectEncounter_ClearsPitchSelection()
     {
         var encounterId = Guid.NewGuid();
@@ -147,6 +186,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Set Encounters Clears Selected Encounter When It Disappears.
+    /// </summary>
     public void Map_SetEncounters_ClearsSelectedEncounterWhenItDisappears()
     {
         var selectedEncounterId = Guid.NewGuid();
@@ -163,6 +205,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies battle Challenge Responded Completed Moves To History.
+    /// </summary>
     public void Battle_ChallengeResponded_Completed_MovesToHistory()
     {
         var battle = new BattleModel
@@ -189,6 +234,9 @@ public class FluxorReducerTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies battle Error Sets Error And Stops Loading.
+    /// </summary>
     public void Battle_Error_SetsErrorAndStopsLoading()
     {
         var state = new BattleState { IsLoading = true };
@@ -198,3 +246,5 @@ public class FluxorReducerTests
         Assert.Equal("boom", next.ErrorMessage);
     }
 }
+
+

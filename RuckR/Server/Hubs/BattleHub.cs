@@ -9,7 +9,9 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Hubs
 {
+    /// <summary>SignalR hub for real-time battle and location updates.</summary>
     [Authorize]
+    /// <summary>Defines the server-side class BattleHub.</summary>
     public class BattleHub : Hub
     {
         private const int PitchProximityMeters = 100;
@@ -21,7 +23,14 @@ namespace RuckR.Server.Hubs
         private readonly IBattleService _battleService;
         private readonly IRateLimitService _rateLimitService;
         private readonly IPitchDiscoveryService _pitchDiscoveryService;
-
+    /// <summary>Initializes a new instance of <see cref="BattleHub"/>.</summary>
+    /// <param name="db">The database context.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    /// <param name="locationTracker">The location tracker service.</param>
+    /// <param name="battleResolver">The battle resolver service.</param>
+    /// <param name="battleService">The battle service.</param>
+    /// <param name="rateLimitService">The rate limit service.</param>
+    /// <param name="pitchDiscoveryService">The pitch discovery service.</param>
         public BattleHub(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
@@ -39,13 +48,16 @@ namespace RuckR.Server.Hubs
             _rateLimitService = rateLimitService;
             _pitchDiscoveryService = pitchDiscoveryService;
         }
-
+        /// <summary>Track a new SignalR connection.</summary>
+        /// <returns>The operation result.</returns>
         public override async Task OnConnectedAsync()
         {
             // Client should immediately send their position via UpdateLocation
             await base.OnConnectedAsync();
         }
-
+        /// <summary>Track a disconnected SignalR connection.</summary>
+        /// <param name="exception">The exception.</param>
+        /// <returns>The operation result.</returns>
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             var userId = Context.UserIdentifier;
@@ -55,10 +67,10 @@ namespace RuckR.Server.Hubs
             }
             await base.OnDisconnectedAsync(exception);
         }
-
-        /// <summary>
-        /// Client sends their GPS position. Server stores it and checks for nearby undiscovered pitches.
-        /// </summary>
+        /// <summary>Update the player's location and discover nearby pitches.</summary>
+        /// <param name="latitude">The latitude.</param>
+        /// <param name="longitude">The longitude.</param>
+        /// <returns>The operation result.</returns>
         public async Task UpdateLocation(double latitude, double longitude)
         {
             var userId = Context.UserIdentifier!;
@@ -96,10 +108,11 @@ namespace RuckR.Server.Hubs
                 }
             }
         }
-
-        /// <summary>
-        /// Send a challenge to another user. Creates a pending battle and notifies the opponent.
-        /// </summary>
+        /// <summary>Send a challenge to an opponent.</summary>
+        /// <param name="opponentUsername">The opponent's username.</param>
+        /// <param name="playerId">The selected player identifier.</param>
+        /// <param name="idempotencyKey">Optional idempotency key.</param>
+        /// <returns>The operation result.</returns>
         public async Task SendChallenge(string opponentUsername, int playerId, string? idempotencyKey = null)
         {
             var userId = GetCurrentUserId();
@@ -188,10 +201,10 @@ namespace RuckR.Server.Hubs
             // 6. Confirm success to the caller
             await Clients.Caller.SendAsync("ChallengeSent", battle.Id);
         }
-
-        /// <summary>
-        /// Accept a pending challenge. Resolves the battle via BattleResolver and notifies both users.
-        /// </summary>
+        /// <summary>Accept a challenge and resolve it with the selected player.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <param name="playerId">The selected player identifier.</param>
+        /// <returns>The operation result.</returns>
         public async Task AcceptChallenge(int battleId, int playerId)
         {
             var userId = GetCurrentUserId();
@@ -272,10 +285,9 @@ namespace RuckR.Server.Hubs
             await Clients.User(battle.ChallengerId).SendAsync("BattleResolved", result);
             await Clients.Caller.SendAsync("BattleResolved", result);
         }
-
-        /// <summary>
-        /// Decline a pending challenge. Updates status and notifies the challenger.
-        /// </summary>
+        /// <summary>Decline a pending challenge.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <returns>The operation result.</returns>
         public async Task DeclineChallenge(int battleId)
         {
             var userId = GetCurrentUserId();
@@ -308,23 +320,22 @@ namespace RuckR.Server.Hubs
             // Notify the challenger
             await Clients.User(battle.ChallengerId).SendAsync("ChallengeDeclined", battle.Id);
         }
-
-        /// <summary>
-        /// Join a battle group to receive real-time updates for a specific battle.
-        /// </summary>
+        /// <summary>Join the live group for a battle.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <returns>The operation result.</returns>
         public async Task JoinBattleGroup(int battleId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, GetBattleGroupName(battleId));
         }
-
-        /// <summary>
-        /// Leave a battle group.
-        /// </summary>
+        /// <summary>Leave the live group for a battle.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <returns>The operation result.</returns>
         public async Task LeaveBattleGroup(int battleId)
         {
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, GetBattleGroupName(battleId));
         }
-
+        /// <summary>Ping the hub and return the current Unix timestamp in milliseconds.</summary>
+        /// <returns>The operation result.</returns>
         public Task<long> Ping()
         {
             return Task.FromResult(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -341,3 +352,4 @@ namespace RuckR.Server.Hubs
         }
     }
 }
+

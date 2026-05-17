@@ -6,6 +6,9 @@ using RuckR.Tests.Fixtures;
 namespace RuckR.Tests.Api;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class BattlesApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -25,11 +28,18 @@ public class BattlesApiTests : IAsyncLifetime
     private int _playerIdB;
     private int _pitchId;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""BattlesApiTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
     public BattlesApiTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         // Create test users
@@ -66,6 +76,9 @@ public class BattlesApiTests : IAsyncLifetime
         await _factory.SeedCollectionAsync(_userIdD, _playerIdA, _pitchId);
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         _clientA?.Dispose();
@@ -78,6 +91,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/challenge creates a pending challenge (User A challenges User B).
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies challenge Creates Pending Challenge.
+    /// </summary>
     public async Task Challenge_CreatesPendingChallenge()
     {
         // Arrange
@@ -101,6 +117,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/challenge with self returns 400 Bad Request.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies challenge Self Returns400.
+    /// </summary>
     public async Task Challenge_Self_Returns400()
     {
         // Arrange: try to challenge yourself
@@ -119,6 +138,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/challenge with 4th pending returns 400 (max 3 pending).
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies challenge Fourth Pending Returns400.
+    /// </summary>
     public async Task Challenge_FourthPending_Returns400()
     {
         // Arrange: create 3 pending challenges from User A
@@ -152,6 +174,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/{id}/accept transitions to Accepted.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies accept Transitions To Accepted.
+    /// </summary>
     public async Task Accept_TransitionsToAccepted()
     {
         // Arrange: User A challenges User B
@@ -177,6 +202,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/{id}/decline transitions to Declined.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies decline Transitions To Declined.
+    /// </summary>
     public async Task Decline_TransitionsToDeclined()
     {
         // Arrange: User A challenges User B
@@ -207,6 +235,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// User A (challenger) sees outgoing; User B (opponent) sees incoming.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies get Pending Returns Pending Challenges.
+    /// </summary>
     public async Task GetPending_ReturnsPendingChallenges()
     {
         // Arrange: User A challenges User B
@@ -235,6 +266,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// GET /battles/history returns completed (non-pending) battles.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies get History Returns Completed Battles.
+    /// </summary>
     public async Task GetHistory_ReturnsCompletedBattles()
     {
         // Arrange: create a challenge, then decline it to move it to history
@@ -266,6 +300,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// one success and one conflict (race condition guard via RowVersion).
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies concurrent Accept Returns Conflict For Second.
+    /// </summary>
     public async Task ConcurrentAccept_ReturnsConflictForSecond()
     {
         // Arrange: User A challenges User B
@@ -296,6 +333,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// should return the existing battle instead of creating a duplicate.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies challenge With Idempotency Key Deduplicates.
+    /// </summary>
     public async Task Challenge_WithIdempotencyKey_Deduplicates()
     {
         var idempotencyKey = Guid.NewGuid().ToString("N");
@@ -324,6 +364,9 @@ public class BattlesApiTests : IAsyncLifetime
     /// POST /battles/{id}/accept with RowVersion mismatch returns 409.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies accept Concurrency Conflict Returns409.
+    /// </summary>
     public async Task Accept_ConcurrencyConflict_Returns409()
     {
         // Arrange: create and accept a challenge
@@ -351,3 +394,5 @@ public class BattlesApiTests : IAsyncLifetime
                     accept2.StatusCode == HttpStatusCode.Conflict);
     }
 }
+
+

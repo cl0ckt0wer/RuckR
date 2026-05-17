@@ -5,27 +5,44 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class PvpTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""PvpTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public PvpTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public Task InitializeAsync()
     {
         _baseUrl = _factory.GetServerAddress();
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
+    /// <summary>
+    /// Verifies two Users Challenge And Accept Both See Result.
+    /// </summary>
     public async Task TwoUsers_ChallengeAndAccept_BothSeeResult()
     {
         // ── Create two isolated browser contexts for User A and User B ──
@@ -99,3 +116,5 @@ public class PvpTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await pageB.CloseAsync();
     }
 }
+
+

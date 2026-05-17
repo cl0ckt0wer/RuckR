@@ -5,9 +5,15 @@ using RuckR.Client.Services;
 
 namespace RuckR.Tests.ComponentTests;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class CookieAuthenticationStateProviderTests
 {
     [Fact]
+    /// <summary>
+    /// Verifies get Authentication State Async With Empty Json String Returns Anonymous User.
+    /// </summary>
     public async Task GetAuthenticationStateAsync_WithEmptyJsonString_ReturnsAnonymousUser()
     {
         var provider = CreateProvider(string.Empty);
@@ -18,6 +24,9 @@ public class CookieAuthenticationStateProviderTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies get Authentication State Async With Username Json String Returns Authenticated User.
+    /// </summary>
     public async Task GetAuthenticationStateAsync_WithUsernameJsonString_ReturnsAuthenticatedUser()
     {
         var provider = CreateProvider("test@example.com");
@@ -43,6 +52,11 @@ public class CookieAuthenticationStateProviderTests
     {
         private readonly string _content;
 
+    /// <summary>
+    /// Verifies stub Http Message Handler.
+    /// </summary>
+    /// <param name="content">The content to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
         public StubHttpMessageHandler(string content)
         {
             _content = content;
@@ -59,3 +73,5 @@ public class CookieAuthenticationStateProviderTests
         }
     }
 }
+
+

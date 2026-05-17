@@ -9,17 +9,23 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
+    /// <summary>API endpoints for player lookup and nearby player queries.</summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    /// <summary>Defines the server-side class PlayersController.</summary>
     public class PlayersController : ControllerBase
     {
         private readonly RuckRDbContext _db;
         private readonly ILogger<PlayersController> _logger;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IRateLimitService _rateLimitService;
-
-        public PlayersController(
+    /// <summary>Initializes a new instance of <see cref="PlayersController"/>.</summary>
+    /// <param name="db">The database context.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    /// <param name="rateLimitService">The rate limit service.</param>
+    public PlayersController(
             RuckRDbContext db,
             ILogger<PlayersController> logger,
             UserManager<IdentityUser> userManager,
@@ -32,6 +38,11 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpGet]
+        /// <summary>Get players with optional filtering by position, rarity, or name.</summary>
+        /// <param name="position">The position.</param>
+        /// <param name="rarity">The rarity.</param>
+        /// <param name="name">The name.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<List<PlayerModel>>> GetPlayers(
             [FromQuery] string? position = null,
             [FromQuery] string? rarity = null,
@@ -60,6 +71,9 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpGet("{id}")]
+        /// <summary>Get a player by identifier.</summary>
+        /// <param name="id">The id.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<PlayerModel>> GetPlayer(int id)
         {
             var player = await _db.Players.FindAsync(id);
@@ -77,6 +91,11 @@ namespace RuckR.Server.Controllers
         /// Does NOT expose OwnerUsername to prevent location triangulation.
         /// </summary>
         [HttpGet("nearby")]
+        /// <summary>Get nearby players by GPS coordinate and radius.</summary>
+        /// <param name="lat">The lat.</param>
+        /// <param name="lng">The lng.</param>
+        /// <param name="radius">The radius.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<List<NearbyPlayerDto>>> GetNearbyPlayers(
             [FromQuery] double lat,
             [FromQuery] double lng,
@@ -127,3 +146,4 @@ namespace RuckR.Server.Controllers
         }
     }
 }
+

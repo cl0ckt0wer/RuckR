@@ -1,14 +1,15 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace RuckR.Server.RuckR.Server.Data.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the server-side class AddUserProfileAndRateLimit.</summary>
     public partial class AddUserProfileAndRateLimit : Migration
     {
-        /// <inheritdoc />
+        /// <summary>Add game profile and rate-limit tables.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
@@ -47,8 +48,8 @@ namespace RuckR.Server.RuckR.Server.Data.Migrations
                 table: "RateLimitRecords",
                 columns: new[] { "UserId", "Action", "TimestampUtc" });
         }
-
-        /// <inheritdoc />
+        /// <summary>Revert user profile and rate-limit table changes.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
@@ -59,3 +60,4 @@ namespace RuckR.Server.RuckR.Server.Data.Migrations
         }
     }
 }
+

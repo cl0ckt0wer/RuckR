@@ -3,6 +3,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side class PlayerGeneratorService.</summary>
     public class PlayerGeneratorService
     {
         private readonly Random _random;
@@ -37,13 +38,19 @@ namespace RuckR.Server.Services
         };
 
         private static readonly int PositionCount = Enum.GetValues<PlayerPosition>().Length;
-
+        /// <summary>Initializes a new instance of PlayerGeneratorService.</summary>
+        /// <param name="seed">The seed.</param>
         public PlayerGeneratorService(int? seed = null)
         {
             _random = seed.HasValue ? new Random(seed.Value) : new Random();
             _geometryFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(4326);
         }
-
+        /// <summary>G en er at eP la ye rs.</summary>
+        /// <param name="count">The count.</param>
+        /// <param name="centerLat">The centerlat.</param>
+        /// <param name="centerLng">The centerlng.</param>
+        /// <param name="spreadRadiusKm">The spreadradiuskm.</param>
+        /// <returns>The operation result.</returns>
         public List<PlayerModel> GeneratePlayers(int count, double centerLat, double centerLng, double spreadRadiusKm = 50.0)
         {
             var players = new List<PlayerModel>(count);
@@ -232,3 +239,4 @@ namespace RuckR.Server.Services
         }
     }
 }
+

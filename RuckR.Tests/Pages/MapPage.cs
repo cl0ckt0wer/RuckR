@@ -9,6 +9,11 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class MapPage : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""MapPage"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public MapPage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>Navigate to the map page and wait for Blazor + map container.</summary>
@@ -183,3 +188,5 @@ public class MapPage : BasePage
         return await ExistsAsync("[data-testid='map-container']");
     }
 }
+
+

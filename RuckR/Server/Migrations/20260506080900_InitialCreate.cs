@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 using NetTopologySuite.Geometries;
 
@@ -6,10 +6,11 @@ using NetTopologySuite.Geometries;
 
 namespace RuckR.Server.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the server-side class InitialCreate.</summary>
     public partial class InitialCreate : Migration
     {
-        /// <inheritdoc />
+        /// <summary>Apply the initial database schema.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
@@ -328,8 +329,8 @@ namespace RuckR.Server.Migrations
                 WITH (CELLS_PER_OBJECT = 16);
             ");
         }
-
-        /// <inheritdoc />
+        /// <summary>Remove all schema objects created by the initial migration.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(@"DROP INDEX IF EXISTS [IX_Players_SpawnLocation] ON [Players];");
@@ -370,3 +371,4 @@ namespace RuckR.Server.Migrations
         }
     }
 }
+

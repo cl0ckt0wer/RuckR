@@ -3,6 +3,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side interface IBattleService.</summary>
     public interface IBattleService
     {
         int MaxChallengesPerHour { get; }

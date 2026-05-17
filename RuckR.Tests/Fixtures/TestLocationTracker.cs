@@ -56,6 +56,12 @@ public class TestLocationTracker : ILocationTracker
         _positions.Clear();
     }
 
+    /// <summary>
+    /// Verifies c.
+    /// </summary>
+    /// <param name="Position">The Position to use.</param>
+    /// <param name="Timestamp">The Timestamp to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public (GeoPosition Position, DateTime Timestamp)? TryGetPosition(string userId, TimeSpan? maxAge = null)
     {
         var effectiveMaxAge = maxAge ?? TimeSpan.FromSeconds(60);
@@ -71,6 +77,11 @@ public class TestLocationTracker : ILocationTracker
         return null;
     }
 
+    /// <summary>
+    /// Verifies update Position.
+    /// </summary>
+    /// <param name="userId">The userId to use.</param>
+    /// <param name="position">The position to use.</param>
     public void UpdatePosition(string userId, GeoPosition position)
     {
         _positions.AddOrUpdate(userId,
@@ -78,8 +89,14 @@ public class TestLocationTracker : ILocationTracker
             (_, _) => (position, DateTime.UtcNow));
     }
 
+    /// <summary>
+    /// Verifies remove User.
+    /// </summary>
+    /// <param name="userId">The userId to use.</param>
     public void RemoveUser(string userId)
     {
         _positions.TryRemove(userId, out _);
     }
 }
+
+

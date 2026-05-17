@@ -3,17 +3,29 @@ using Microsoft.AspNetCore.Components.Authorization;
 
 namespace RuckR.Tests.ComponentTests;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class TestAuthProvider : AuthenticationStateProvider
 {
     private readonly bool _authenticated;
     private readonly string _username;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""TestAuthProvider"""/> class.
+    /// </summary>
+    /// <param name="authenticated">The authenticated to use.</param>
+    /// <param name="username">The username to use.</param>
     public TestAuthProvider(bool authenticated, string? username = null)
     {
         _authenticated = authenticated;
         _username = username ?? "TestUser";
     }
 
+    /// <summary>
+    /// Verifies get Authentication State Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public override Task<AuthenticationState> GetAuthenticationStateAsync()
     {
         if (!_authenticated)
@@ -54,3 +66,5 @@ public class TestAuthProvider : AuthenticationStateProvider
         }
     }
 }
+
+

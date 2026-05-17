@@ -4,6 +4,9 @@ using RuckR.Tests.Fixtures;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -12,12 +15,20 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""BlazorWasmLoadTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public BlazorWasmLoadTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -25,6 +36,9 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
         _baseUrl = _factory.ServerBaseUrl;
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -32,6 +46,9 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies blazor App Initial Load Framework Assets Load Without404.
+    /// </summary>
     public async Task BlazorApp_InitialLoad_FrameworkAssetsLoadWithout404()
     {
         // Collect all 404 responses for _framework/** paths
@@ -75,6 +92,9 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies blazor App Framework Files Are Accessible.
+    /// </summary>
     public async Task BlazorApp_FrameworkFiles_AreAccessible()
     {
         // Navigate first to establish the page context and load all framework files
@@ -122,6 +142,9 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies blazor App Reload After Build No Cache Corruption.
+    /// </summary>
     public async Task BlazorApp_ReloadAfterBuild_NoCacheCorruption()
     {
         // Initial load — wait for Blazor to render or error UI
@@ -189,3 +212,5 @@ public class BlazorWasmLoadTests : IClassFixture<PlaywrightFixture>, IAsyncLifet
         Assert.Empty(reload404s);
     }
 }
+
+

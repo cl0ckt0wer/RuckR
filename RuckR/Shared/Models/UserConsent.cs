@@ -10,10 +10,12 @@ namespace RuckR.Shared.Models
     public class UserConsent
     {
         [Key]
+        /// <summary>Primary key.</summary>
         public int Id { get; set; }
 
         [Required]
         [MaxLength(450)]
+        /// <summary>User identifier associated with this consent.</summary>
         public string UserId { get; set; } = string.Empty;
 
         /// <summary>
@@ -23,6 +25,9 @@ namespace RuckR.Shared.Models
         [MaxLength(100)]
         public string Purpose { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Timestamp in UTC when consent was granted.
+        /// </summary>
         public DateTime ConsentGivenAtUtc { get; set; } = DateTime.UtcNow;
 
         /// <summary>

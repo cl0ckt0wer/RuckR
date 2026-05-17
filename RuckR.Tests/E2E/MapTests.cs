@@ -5,6 +5,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -13,12 +16,20 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""MapTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public MapTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync(grantGeolocation: true, latitude: 51.5074, longitude: -0.1278);
@@ -26,6 +37,9 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         _baseUrl = _factory.ServerBaseUrl;
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -33,6 +47,9 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Page Loads Shows Geo Blazor Map.
+    /// </summary>
     public async Task MapPage_Loads_ShowsGeoBlazorMap()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -48,6 +65,9 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Page Shows Onboarding Banner Can Dismiss.
+    /// </summary>
     public async Task MapPage_ShowsOnboardingBanner_CanDismiss()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -72,3 +92,5 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.False(hasOnboardingAfterReload, "Onboarding banner should not reappear after reload");
     }
 }
+
+

@@ -27,6 +27,9 @@ using Testcontainers.MsSql;
 
 namespace RuckR.Tests.Fixtures;
 
+    /// <summary>
+    /// Provides access to web Application Factory<Program>,.
+    /// </summary>
 public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly MsSqlContainer _dbContainer;
@@ -40,6 +43,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         private const string TestArcGisPortalItemId = "test-portal-item-id-for-e2e";
         private const string TestGeoBlazorLicenseKey = "test-geoblazor-license-key-for-e2e";
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""CustomWebApplicationFactory"""/> class.
+    /// </summary>
     public CustomWebApplicationFactory()
     {
         _dbContainer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest")
@@ -47,8 +53,14 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             .Build();
     }
 
+    /// <summary>
+    /// Provides access to =>.
+    /// </summary>
     public TestLocationTracker LocationTracker => _locationTracker;
 
+    /// <summary>
+    /// Provides access to =>.
+    /// </summary>
     public TestRealWorldParkService ParkService => _parkService;
 
     /// <summary>
@@ -62,6 +74,9 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     /// </summary>
     public string GetServerAddress() => ServerBaseUrl;
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         await _dbContainer.StartAsync();
@@ -327,6 +342,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         builder.UseContentRoot(serverAssemblyDir);
     }
 
+    /// <summary>
+    /// Verifies create Authenticated Client.
+    /// </summary>
+    /// <param name="userId">The userId to use.</param>
+    /// <param name="username">The username to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public HttpClient CreateAuthenticatedClient(string userId, string? username = null)
     {
         var client = CreateClient();
@@ -336,6 +357,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         return client;
     }
 
+    /// <summary>
+    /// Verifies create Test User Async.
+    /// </summary>
+    /// <param name="username">The username to use.</param>
+    /// <param name="password">The password to use.</param>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<string> CreateTestUserAsync(string username, string password)
     {
         using var scope = Services.CreateScope();
@@ -360,6 +387,12 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         return user.Id;
     }
 
+    /// <summary>
+    /// Verifies seed Collection Async.
+    /// </summary>
+    /// <param name="userId">The userId to use.</param>
+    /// <param name="playerId">The playerId to use.</param>
+    /// <param name="pitchId">The pitchId to use.</param>
     public async Task SeedCollectionAsync(string userId, int playerId, int pitchId)
     {
         using var scope = Services.CreateScope();
@@ -380,6 +413,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         }
     }
 
+    /// <summary>
+    /// Verifies execute In Db Async.
+    /// </summary>
+    /// <param name="RuckRDbContext">The RuckRDbContext to use.</param>
+    /// <param name="action">The action to use.</param>
     public async Task ExecuteInDbAsync(Func<RuckRDbContext, Task> action)
     {
         using var scope = Services.CreateScope();
@@ -425,11 +463,17 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     }
 }
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public sealed class TestRealWorldParkService : IRealWorldParkService
 {
     private readonly object _syncRoot = new();
     private IReadOnlyList<RealWorldPark>? _parks;
 
+    /// <summary>
+    /// Verifies use Default Park.
+    /// </summary>
     public void UseDefaultPark()
     {
         lock (_syncRoot)
@@ -438,6 +482,9 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         }
     }
 
+    /// <summary>
+    /// Verifies use No Parks.
+    /// </summary>
     public void UseNoParks()
     {
         lock (_syncRoot)
@@ -446,6 +493,10 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         }
     }
 
+    /// <summary>
+    /// Verifies use Parks.
+    /// </summary>
+    /// <param name="parks">The parks to use.</param>
     public void UseParks(params RealWorldPark[] parks)
     {
         lock (_syncRoot)
@@ -454,6 +505,10 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         }
     }
 
+    /// <summary>
+    /// Verifies find Nearby Parks Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public Task<IReadOnlyList<RealWorldPark>> FindNearbyParksAsync(
         double latitude,
         double longitude,
@@ -478,6 +533,10 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         return Task.FromResult(parks);
     }
 
+    /// <summary>
+    /// Verifies find Nearby Pitch Candidate Places Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public Task<IReadOnlyList<PitchCandidatePlaceDto>> FindNearbyPitchCandidatePlacesAsync(
         double latitude,
         double longitude,
@@ -488,3 +547,5 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         return Task.FromResult(candidates);
     }
 }
+
+

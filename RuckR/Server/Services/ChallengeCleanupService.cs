@@ -3,20 +3,24 @@ using RuckR.Server.Data;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
-
+/// <summary>Defines the server-side class ChallengeCleanupService.</summary>
 public sealed class ChallengeCleanupService : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ChallengeCleanupService> _logger;
-
+    /// <summary>Initializes a new instance of ChallengeCleanupService.</summary>
+    /// <param name="scopeFactory">The scopefactory.</param>
+    /// <param name="logger">The logger.</param>
     public ChallengeCleanupService(IServiceScopeFactory scopeFactory, ILogger<ChallengeCleanupService> logger)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
-
+    /// <summary>E xe cu te As yn c.</summary>
+    /// <param name="stoppingToken">The stoppingtoken.</param>
+    /// <returns>The operation result.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -71,3 +75,4 @@ public sealed class ChallengeCleanupService : BackgroundService
         }
     }
 }
+

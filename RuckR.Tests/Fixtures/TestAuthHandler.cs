@@ -12,8 +12,14 @@ namespace RuckR.Tests.Fixtures;
 /// </summary>
 public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
+    /// <summary>
+    /// Provides access to =.
+    /// </summary>
     public const string TestScheme = "Test";
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""TestAuthHandler"""/> class.
+    /// </summary>
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory logger,
@@ -45,3 +51,5 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
 }
+
+

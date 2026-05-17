@@ -8,8 +8,13 @@ namespace RuckR.Tests.Infrastructure;
 /// </summary>
 public class TestNavigationManager : NavigationManager
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""TestNavigationManager"""/> class.
+    /// </summary>
     public TestNavigationManager()
     {
         Initialize("http://localhost/", "http://localhost/");
     }
 }
+
+

@@ -6,8 +6,14 @@ using RuckR.Client.Store.LocationFeature;
 
 namespace RuckR.Tests.ComponentTests;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class FluxorIntegrationTests : TestContext
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""FluxorIntegrationTests"""/> class.
+    /// </summary>
     public FluxorIntegrationTests()
     {
         Services.AddFluxor(o =>
@@ -22,6 +28,9 @@ public class FluxorIntegrationTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies fluxor Store Initializes Without Error.
+    /// </summary>
     public async Task FluxorStore_InitializesWithoutError()
     {
         var store = Services.GetRequiredService<IStore>();
@@ -32,6 +41,9 @@ public class FluxorIntegrationTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies fluxor Store Has Expected Feature States.
+    /// </summary>
     public async Task FluxorStore_HasExpectedFeatureStates()
     {
         var store = Services.GetRequiredService<IStore>();
@@ -52,6 +64,9 @@ public class FluxorIntegrationTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies fluxor Dispatch Does Not Throw.
+    /// </summary>
     public async Task FluxorDispatch_DoesNotThrow()
     {
         var store = Services.GetRequiredService<IStore>();
@@ -69,3 +84,5 @@ public class FluxorIntegrationTests : TestContext
         Assert.Null(ex);
     }
 }
+
+

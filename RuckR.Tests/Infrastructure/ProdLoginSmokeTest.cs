@@ -3,9 +3,15 @@ using Xunit;
 
 namespace RuckR.Tests.Infrastructure;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class ProdLoginSmokeTest
 {
     [Fact]
+    /// <summary>
+    /// Verifies seed User Can Login.
+    /// </summary>
     public async Task SeedUser_CanLogin()
     {
         var password = Environment.GetEnvironmentVariable("RUCKR_PROD_SMOKE_PASSWORD");
@@ -48,3 +54,5 @@ public class ProdLoginSmokeTest
         Assert.True(logoutVisible, $"Logout link should be visible after login. Final URL: {page.Url}");
     }
 }
+
+

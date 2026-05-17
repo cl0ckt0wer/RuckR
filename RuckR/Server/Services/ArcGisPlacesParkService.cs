@@ -4,7 +4,7 @@ using Microsoft.Extensions.Caching.Memory;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
-
+/// <summary>Defines the server-side class ArcGisPlacesParkService.</summary>
 public sealed class ArcGisPlacesParkService : IRealWorldParkService
 {
     private const string PlacesBaseUrl = "https://places-api.arcgis.com/arcgis/rest/services/places-service/v1";
@@ -32,7 +32,11 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _cache;
     private readonly ILogger<ArcGisPlacesParkService> _logger;
-
+    /// <summary>Initializes a new instance of ArcGisPlacesParkService.</summary>
+    /// <param name="httpClient">The httpclient.</param>
+    /// <param name="configuration">The configuration.</param>
+    /// <param name="cache">The cache.</param>
+    /// <param name="logger">The logger.</param>
     public ArcGisPlacesParkService(
         HttpClient httpClient,
         IConfiguration configuration,
@@ -44,7 +48,12 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
         _cache = cache;
         _logger = logger;
     }
-
+    /// <summary>F in dN ea rb yP ar ks As yn c.</summary>
+    /// <param name="latitude">The latitude.</param>
+    /// <param name="longitude">The longitude.</param>
+    /// <param name="radiusMeters">The radiusmeters.</param>
+    /// <param name="cancellationToken">The cancellationtoken.</param>
+    /// <returns>The operation result.</returns>
     public async Task<IReadOnlyList<RealWorldPark>> FindNearbyParksAsync(
         double latitude,
         double longitude,
@@ -71,7 +80,12 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
 
         return cached ?? Array.Empty<RealWorldPark>();
     }
-
+    /// <summary>F in dN ea rb yP it ch Ca nd id at eP la ce sA sy nc.</summary>
+    /// <param name="latitude">The latitude.</param>
+    /// <param name="longitude">The longitude.</param>
+    /// <param name="radiusMeters">The radiusmeters.</param>
+    /// <param name="cancellationToken">The cancellationtoken.</param>
+    /// <returns>The operation result.</returns>
     public async Task<IReadOnlyList<PitchCandidatePlaceDto>> FindNearbyPitchCandidatePlacesAsync(
         double latitude,
         double longitude,
@@ -819,3 +833,4 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
         return await _httpClient.SendAsync(request, cancellationToken);
     }
 }
+

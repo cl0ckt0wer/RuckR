@@ -8,6 +8,11 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class BattlePage : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""BattlePage"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public BattlePage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>
@@ -197,3 +202,5 @@ public class BattlePage : BasePage
         return await ExistsAsync("[data-testid='battle-error']");
     }
 }
+
+

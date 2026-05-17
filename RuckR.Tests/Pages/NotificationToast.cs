@@ -8,6 +8,11 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class NotificationToast : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""NotificationToast"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public NotificationToast(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     // ── Challenge toast ────────────────────────────────────────────────
@@ -109,3 +114,5 @@ public class NotificationToast : BasePage
         }
     }
 }
+
+

@@ -5,12 +5,20 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class CollectionTests : IClassFixture<PlaywrightFixture>
 {
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
     private readonly string _baseUrl;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""CollectionTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public CollectionTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
@@ -23,6 +31,9 @@ public class CollectionTests : IClassFixture<PlaywrightFixture>
     /// to the ASP.NET Core Identity login page.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies unauthenticated Redirects To Login.
+    /// </summary>
     public async Task Unauthenticated_RedirectsToLogin()
     {
         // Arrange
@@ -55,6 +66,9 @@ public class CollectionTests : IClassFixture<PlaywrightFixture>
     /// should see the empty state with the "Explore Map" CTA.
     /// </summary>
     [Fact]
+    /// <summary>
+    /// Verifies authenticated Shows Empty State.
+    /// </summary>
     public async Task Authenticated_ShowsEmptyState()
     {
         // Arrange
@@ -84,3 +98,5 @@ public class CollectionTests : IClassFixture<PlaywrightFixture>
         Assert.True(isExploreVisible, "Explore Map CTA button should be visible in empty state.");
     }
 }
+
+

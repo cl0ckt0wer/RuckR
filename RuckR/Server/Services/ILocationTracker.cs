@@ -2,6 +2,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side interface ILocationTracker.</summary>
     public interface ILocationTracker
     {
         /// <summary>
@@ -27,3 +28,4 @@ namespace RuckR.Server.Services
         void RemoveUser(string userId);
     }
 }
+

@@ -6,11 +6,15 @@ using RuckR.Server.Services;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
-
+/// <summary>Defines the server-side class BattleService.</summary>
 public class BattleService : IBattleService
 {
+    /// <summary>Gets or sets the M ax Ch al le ng es Pe rH ou r.</summary>
     public int MaxChallengesPerHour => 10;
+    /// <summary>Gets or sets the M ax Pe nd in gC ha ll en ge s.</summary>
     public int MaxPendingChallenges => 3;
+    /// <summary>T im eS pa n.F ro mH ou rs.</summary>
+    /// <returns>The operation result.</returns>
     public TimeSpan ChallengeExpiryDuration => TimeSpan.FromHours(24);
 
     // In-memory rate limit for high-frequency checks (supplements DB records)
@@ -18,13 +22,18 @@ public class BattleService : IBattleService
 
     private readonly RuckRDbContext _db;
     private readonly IRateLimitService _rateLimitService;
-
+    /// <summary>Initializes a new instance of BattleService.</summary>
+    /// <param name="db">The db.</param>
+    /// <param name="rateLimitService">The ratelimitservice.</param>
     public BattleService(RuckRDbContext db, IRateLimitService rateLimitService)
     {
         _db = db;
         _rateLimitService = rateLimitService;
     }
-
+    /// <summary>C an Ch al le ng e.</summary>
+    /// <param name="userId">The userid.</param>
+    /// <param name="pendingBattles">The pendingbattles.</param>
+    /// <returns>The operation result.</returns>
     public bool CanChallenge(string userId, List<BattleModel> pendingBattles)
     {
         var now = DateTime.UtcNow;
@@ -36,7 +45,12 @@ public class BattleService : IBattleService
 
         return activePending < MaxPendingChallenges;
     }
-
+    /// <summary>R es ol ve Ba tt le As yn c.</summary>
+    /// <param name="challengerPlayer">The challengerplayer.</param>
+    /// <param name="opponentPlayer">The opponentplayer.</param>
+    /// <param name="challengerUsername">The challengerusername.</param>
+    /// <param name="opponentUsername">The opponentusername.</param>
+    /// <returns>The operation result.</returns>
     public async Task<BattleResult> ResolveBattleAsync(
         PlayerModel challengerPlayer,
         PlayerModel opponentPlayer,
@@ -46,11 +60,12 @@ public class BattleService : IBattleService
         // Delegate to the pure synchronous resolver — kept for backward compatibility
         return await Task.Run(() => ResolveBattlePure(challengerPlayer, opponentPlayer, challengerUsername, opponentUsername));
     }
-
-    /// <summary>
-    /// Pure, synchronous battle resolution — no database access, safe to call
-    /// from async contexts without blocking.
-    /// </summary>
+    /// <summary>R es ol ve Ba tt le Pu re.</summary>
+    /// <param name="challengerPlayer">The challengerplayer.</param>
+    /// <param name="opponentPlayer">The opponentplayer.</param>
+    /// <param name="challengerUsername">The challengerusername.</param>
+    /// <param name="opponentUsername">The opponentusername.</param>
+    /// <returns>The operation result.</returns>
     public BattleResult ResolveBattlePure(
         PlayerModel challengerPlayer,
         PlayerModel opponentPlayer,

@@ -2,6 +2,9 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Helpers;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public static class BlazorWaitHelper
 {
     /// <summary>
@@ -99,3 +102,5 @@ public static class BlazorWaitHelper
             throw new TimeoutException($"Toast with text '{text}' not found within {timeoutMs}ms");
     }
 }
+
+

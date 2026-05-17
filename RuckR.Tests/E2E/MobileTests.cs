@@ -5,6 +5,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -13,12 +16,20 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""MobileTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public MobileTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _baseUrl = _factory.GetServerAddress();
@@ -26,6 +37,9 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         _page = await _context.NewPageAsync();
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -33,6 +47,9 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies map Page On Pixel5 Should Be Responsive.
+    /// </summary>
     public async Task MapPage_OnPixel5_ShouldBeResponsive()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -51,6 +68,9 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies player Grid On Pixel5 Should Render Cards.
+    /// </summary>
     public async Task PlayerGrid_OnPixel5_ShouldRenderCards()
     {
         // Register a test user first so we can access the players grid
@@ -74,3 +94,5 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
             "Player grid on mobile should either show cards or empty-state message");
     }
 }
+
+

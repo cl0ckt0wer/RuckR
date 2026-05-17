@@ -8,6 +8,11 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class ConnectionStatus : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""ConnectionStatus"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public ConnectionStatus(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     // ── Connection state text ──────────────────────────────────────────
@@ -92,3 +97,5 @@ public class ConnectionStatus : BasePage
         }
     }
 }
+
+

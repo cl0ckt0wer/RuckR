@@ -7,6 +7,9 @@ using Xunit;
 
 namespace RuckR.Tests.Unit;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public class BattleResolverTests
 {
     private readonly IBattleResolver _resolver = new BattleResolver();
@@ -14,6 +17,9 @@ public class BattleResolverTests
     // ── Edge-case stat combinations ──
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve All Stats At Min Lower Stat Loses.
+    /// </summary>
     public void Resolve_AllStatsAtMin_LowerStatLoses()
     {
         var low = CreatePlayer("Low", 1, 1, 1, 1);
@@ -26,6 +32,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve All Stats At Max All99 Beats All1.
+    /// </summary>
     public void Resolve_AllStatsAtMax_All99BeatsAll1()
     {
         var all99 = CreatePlayer("Max", 99, 99, 99, 99);
@@ -37,6 +46,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Identical Stats And Position Winner Is Non Deterministic.
+    /// </summary>
     public void Resolve_IdenticalStatsAndPosition_WinnerIsNonDeterministic()
     {
         var a = CreatePlayer("A", 50, 50, 50, 50);
@@ -50,6 +62,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Identical Stats Different Seeds Can Yield Different Winners.
+    /// </summary>
     public void Resolve_IdenticalStatsDifferentSeeds_CanYieldDifferentWinners()
     {
         var a = CreatePlayer("A", 50, 50, 50, 50);
@@ -72,6 +87,9 @@ public class BattleResolverTests
     [Theory]
     [InlineData(PlayerPosition.Prop, PlayerPosition.Wing, 1.2)]
     [InlineData(PlayerPosition.FlyHalf, PlayerPosition.ScrumHalf, 1.15)]
+    /// <summary>
+    /// Verifies resolve Advantageous Position Multiplier Gives Advantage.
+    /// </summary>
     public void Resolve_AdvantageousPositionMultiplier_GivesAdvantage(
         PlayerPosition attacker, PlayerPosition defender, double expectedMult)
     {
@@ -90,6 +108,9 @@ public class BattleResolverTests
 
     [Theory]
     [InlineData(PlayerPosition.Wing, PlayerPosition.Prop, 0.85)]
+    /// <summary>
+    /// Verifies resolve Disadvantageous Position Multiplier Loses More.
+    /// </summary>
     public void Resolve_DisadvantageousPositionMultiplier_LosesMore(
         PlayerPosition attacker, PlayerPosition defender, double expectedMult)
     {
@@ -109,6 +130,9 @@ public class BattleResolverTests
     [Theory]
     [InlineData(PlayerPosition.Prop, PlayerPosition.Prop)]
     [InlineData(PlayerPosition.Wing, PlayerPosition.Lock)]
+    /// <summary>
+    /// Verifies resolve Neutral Position Multiplier Is Random.
+    /// </summary>
     public void Resolve_NeutralPositionMultiplier_IsRandom(
         PlayerPosition attacker, PlayerPosition defender)
     {
@@ -132,6 +156,11 @@ public class BattleResolverTests
     [InlineData(PlayerRarity.Common, PlayerRarity.Legendary)]
     [InlineData(PlayerRarity.Uncommon, PlayerRarity.Legendary)]
     [InlineData(PlayerRarity.Rare, PlayerRarity.Legendary)]
+    /// <summary>
+    /// Verifies resolve Higher Rarity Wins Over Lower.
+    /// </summary>
+    /// <param name="lower">The lower to use.</param>
+    /// <param name="higher">The higher to use.</param>
     public void Resolve_HigherRarity_WinsOverLower(PlayerRarity lower, PlayerRarity higher)
     {
         // Non-adjacent rarity tiers ensure multiplier gap eliminates random overlap
@@ -149,6 +178,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Adjacent Rarity Higher Wins More Often.
+    /// </summary>
     public void Resolve_AdjacentRarity_HigherWinsMoreOften()
     {
         // Adjacent rarities (Common vs Uncommon) overlap due to random factor
@@ -168,6 +200,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Same Rarity Same Stats Is Random.
+    /// </summary>
     public void Resolve_SameRarity_SameStats_IsRandom()
     {
         var a = CreatePlayer("A", 50, 50, 50, 50, rarity: PlayerRarity.Common);
@@ -190,6 +225,11 @@ public class BattleResolverTests
     [InlineData(PlayerRarity.Common, PlayerRarity.Legendary)]
     [InlineData(PlayerRarity.Uncommon, PlayerRarity.Legendary)]
     [InlineData(PlayerRarity.Rare, PlayerRarity.Legendary)]
+    /// <summary>
+    /// Verifies resolve Non Adjacent Higher Rarity Always Wins.
+    /// </summary>
+    /// <param name="lower">The lower to use.</param>
+    /// <param name="higher">The higher to use.</param>
     public void Resolve_NonAdjacentHigherRarity_AlwaysWins(PlayerRarity lower, PlayerRarity higher)
     {
         var low = CreatePlayer("Low", 50, 50, 50, 50, rarity: lower);
@@ -206,6 +246,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Adjacent Rarity Higher Wins Significantly More.
+    /// </summary>
     public void Resolve_AdjacentRarity_HigherWinsSignificantlyMore()
     {
         // Adjacent rarities (Common=1.0 vs Uncommon=1.2) with identical stats still produce
@@ -227,6 +270,9 @@ public class BattleResolverTests
     // ── DetermineMethod tests ──
 
 [Fact]
+    /// <summary>
+    /// Verifies resolve High Speed Difference Returns Speed Advantage.
+    /// </summary>
     public void Resolve_HighSpeedDifference_ReturnsSpeedAdvantage()
     {
         // Ensure strength/agility/kicking are close so speed is the deciding diff
@@ -239,6 +285,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve High Strength Prop Returns Power Overwhelming.
+    /// </summary>
     public void Resolve_HighStrengthProp_ReturnsPowerOverwhelming()
     {
         // Strength diff >15, winner is Prop, keep speed/agility/kicking diffs ≤15
@@ -251,6 +300,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve High Strength Non Pack Returns Strength Dominance.
+    /// </summary>
     public void Resolve_HighStrengthNonPack_ReturnsStrengthDominance()
     {
         // Strength diff >15, winner is Wing (not pack), keep speed/agility/kicking diffs ≤15
@@ -263,6 +315,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve High Kicking Returns Kicking Mastery.
+    /// </summary>
     public void Resolve_HighKicking_ReturnsKickingMastery()
     {
         // Keep other stats close so kicking diff is the deciding factor
@@ -275,6 +330,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve High Agility Returns Agility Outplay.
+    /// </summary>
     public void Resolve_HighAgility_ReturnsAgilityOutplay()
     {
         // Keep other stats close so agility diff is the deciding factor
@@ -287,6 +345,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Higher Rarity Returns Rarity Advantage When Stats Equal.
+    /// </summary>
     public void Resolve_HigherRarity_ReturnsRarityAdvantage_WhenStatsEqual()
     {
         var epic = CreatePlayer("Epic", 50, 50, 50, 50, rarity: PlayerRarity.Epic);
@@ -300,6 +361,9 @@ public class BattleResolverTests
     // ── BattleResult content validation ──
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Result Contains Both Usernames And Names.
+    /// </summary>
     public void Resolve_ResultContainsBothUsernamesAndNames()
     {
         var a = CreatePlayer("Alpha", 99, 99, 99, 99);
@@ -316,6 +380,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Result Method Is Never Null Or Empty.
+    /// </summary>
     public void Resolve_ResultMethodIsNeverNullOrEmpty()
     {
         var a = CreatePlayer("A", 50, 50, 50, 50);
@@ -331,6 +398,9 @@ public class BattleResolverTests
     // ── Typos / regression guards ──
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Fly Half Vs Scrum Half Fly Half Advantaged.
+    /// </summary>
     public void Resolve_FlyHalfVsScrumHalf_FlyHalfAdvantaged()
     {
         // Regression test: ensure the typo "(FlyHalf, ScrumHalf): 1.15" is correctly ordered
@@ -348,6 +418,9 @@ public class BattleResolverTests
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies resolve Tiebreaker Selects One Winner Does Not Crash.
+    /// </summary>
     public void Resolve_TiebreakerSelectsOneWinner_DoesNotCrash()
     {
         // Same stats, same rarity, same position — pure tiebreaker
@@ -387,3 +460,4 @@ public class BattleResolverTests
         };
     }
 }
+

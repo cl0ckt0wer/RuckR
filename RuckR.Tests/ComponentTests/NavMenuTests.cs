@@ -6,8 +6,14 @@ using RuckR.Client.Shared;
 
 namespace RuckR.Tests.ComponentTests;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class NavMenuTests : TestContext
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""NavMenuTests"""/> class.
+    /// </summary>
     public NavMenuTests()
     {
         Services.AddAuthorizationCore();
@@ -16,6 +22,9 @@ public class NavMenuTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies nav Menu Renders All Nav Links When Unauthenticated.
+    /// </summary>
     public void NavMenu_RendersAllNavLinks_WhenUnauthenticated()
     {
         var authProvider = new TestAuthProvider(authenticated: false);
@@ -35,6 +44,9 @@ public class NavMenuTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies nav Menu Renders Logout When Authenticated.
+    /// </summary>
     public void NavMenu_RendersLogout_WhenAuthenticated()
     {
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");
@@ -51,6 +63,9 @@ public class NavMenuTests : TestContext
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies nav Menu Contains All Expected Routes.
+    /// </summary>
     public void NavMenu_ContainsAllExpectedRoutes()
     {
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");
@@ -71,3 +86,5 @@ public class NavMenuTests : TestContext
         }
     }
 }
+
+

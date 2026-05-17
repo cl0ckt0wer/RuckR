@@ -4,17 +4,28 @@ using System.Security.Claims;
 
 namespace RuckR.Client.Services;
 
+/// <summary>
+/// AuthenticationStateProvider implementation that checks the server cookie-backed identity endpoint.
+/// </summary>
 public class CookieAuthenticationStateProvider : AuthenticationStateProvider
 {
     private readonly HttpClient _http;
     private bool _initialized;
     private ClaimsPrincipal _currentUser = new(new ClaimsIdentity());
 
+    /// <summary>
+    /// Creates a new <see cref="CookieAuthenticationStateProvider"/>.
+    /// </summary>
+    /// <param name="http">HTTP client used to call user identity endpoint.</param>
     public CookieAuthenticationStateProvider(HttpClient http)
     {
         _http = http;
     }
 
+    /// <summary>
+    /// Resolves the current authentication state from the server cookie.
+    /// </summary>
+    /// <returns>The current principal wrapped in <see cref="AuthenticationState"/>.</returns>
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
         if (!_initialized)
@@ -47,6 +58,9 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
         return new AuthenticationState(_currentUser);
     }
 
+    /// <summary>
+    /// Clears cached state and notifies subscribers that authentication state should be recalculated.
+    /// </summary>
     public void NotifyAuthenticationStateChanged()
     {
         _initialized = false;

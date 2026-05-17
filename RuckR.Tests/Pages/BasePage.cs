@@ -2,6 +2,9 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Pages;
 
+    /// <summary>
+    /// Provides access to class.
+    /// </summary>
 public abstract class BasePage
 {
     protected readonly IPage Page;
@@ -150,3 +153,5 @@ public abstract class BasePage
         return element != null;
     }
 }
+
+

@@ -1,13 +1,14 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace RuckR.Server.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the server-side class AddPitchSourceMetadata.</summary>
     public partial class AddPitchSourceMetadata : Migration
     {
-        /// <inheritdoc />
+        /// <summary>Add source metadata columns to pitches.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -52,8 +53,8 @@ namespace RuckR.Server.Migrations
                 unique: true,
                 filter: "[ExternalPlaceId] IS NOT NULL");
         }
-
-        /// <inheritdoc />
+        /// <summary>Remove pitch source metadata columns.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
@@ -82,3 +83,4 @@ namespace RuckR.Server.Migrations
         }
     }
 }
+

@@ -1,14 +1,15 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace RuckR.Server.RuckR.Server.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the server-side class AddIdempotencyKeyAndUserConsent.</summary>
     public partial class AddIdempotencyKeyAndUserConsent : Migration
     {
-        /// <inheritdoc />
+        /// <summary>Add idempotency support and consent tracking.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<string>(
@@ -34,8 +35,8 @@ namespace RuckR.Server.RuckR.Server.Migrations
                     table.PrimaryKey("PK_UserConsents", x => x.Id);
                 });
         }
-
-        /// <inheritdoc />
+        /// <summary>Revert idempotency and consent tracking changes.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(

@@ -10,15 +10,19 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
+    /// <summary>Privacy and consent endpoints for user data handling.</summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    /// <summary>Defines the server-side class PrivacyController.</summary>
     public class PrivacyController : ControllerBase
     {
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
-
-        public PrivacyController(RuckRDbContext db, UserManager<IdentityUser> userManager)
+    /// <summary>Initializes a new instance of <see cref="PrivacyController"/>.</summary>
+    /// <param name="db">The database context.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    public PrivacyController(RuckRDbContext db, UserManager<IdentityUser> userManager)
         {
             _db = db;
             _userManager = userManager;
@@ -29,6 +33,9 @@ namespace RuckR.Server.Controllers
         /// Must be called before GPS tracking begins.
         /// </summary>
         [HttpPost("consent")]
+        /// <summary>Record explicit user consent for telemetry or GPS processing.</summary>
+        /// <param name="request">The request.</param>
+        /// <returns>The operation result.</returns>
         public async Task<IActionResult> GiveConsent([FromBody] ConsentRequest request)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -55,6 +62,9 @@ namespace RuckR.Server.Controllers
         /// GET /api/privacy/consent — checks whether the user has consented to the given purpose.
         /// </summary>
         [HttpGet("consent")]
+        /// <summary>Check whether the user has consented for a specific purpose.</summary>
+        /// <param name="purpose">The purpose.</param>
+        /// <returns>The operation result.</returns>
         public async Task<IActionResult> HasConsent([FromQuery] string purpose)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -77,6 +87,8 @@ namespace RuckR.Server.Controllers
         /// Cascades across collections, battles, encounters, profiles, consents, and rate limits.
         /// </summary>
         [HttpDelete("me/data")]
+        /// <summary>Delete all data associated with the authenticated user.</summary>
+        /// <returns>The operation result.</returns>
         public async Task<IActionResult> DeleteMyData()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -124,6 +136,6 @@ namespace RuckR.Server.Controllers
             return Ok(new { deleted = true, timestamp = DateTime.UtcNow });
         }
     }
-
+    /// <summary>Defines the server-side record ConsentRequest.</summary>
     public sealed record ConsentRequest([Required, MaxLength(100)] string Purpose);
 }

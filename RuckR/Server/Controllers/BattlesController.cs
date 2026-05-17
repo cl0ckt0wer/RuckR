@@ -8,17 +8,23 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
+    /// <summary>API endpoints for creating and managing player battles.</summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    /// <summary>Defines the server-side class BattlesController.</summary>
     public class BattlesController : ControllerBase
     {
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IBattleService _battleService;
         private readonly IRateLimitService _rateLimitService;
-
-        public BattlesController(
+    /// <summary>Initializes a new instance of <see cref="BattlesController"/>.</summary>
+    /// <param name="db">The database context.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    /// <param name="battleService">The battle business service.</param>
+    /// <param name="rateLimitService">The rate limit service.</param>
+    public BattlesController(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
             IBattleService battleService,
@@ -35,6 +41,10 @@ namespace RuckR.Server.Controllers
         /// Validates: not self, opponent exists, player owned, ≤3 pending, rate limit, idempotency.
         /// </summary>
         [HttpPost("challenge")]
+        /// <summary>Send a battle challenge to another user.</summary>
+        /// <param name="request">The request.</param>
+        /// <param name="idempotencyKey">The idempotencykey.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<BattleModel>> Challenge(
             [FromBody] ChallengeRequest request,
             [FromQuery] string? idempotencyKey = null)
@@ -109,6 +119,10 @@ namespace RuckR.Server.Controllers
         /// Optimistic concurrency: DbUpdateConcurrencyException → 409 Conflict.
         /// </summary>
         [HttpPost("{id}/accept")]
+        /// <summary>Accept a pending battle challenge.</summary>
+        /// <param name="id">The id.</param>
+        /// <param name="request">The request.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<BattleModel>> Accept(int id, [FromBody] AcceptChallengeRequest request)
         {
             var userId = GetCurrentUserId();
@@ -168,6 +182,9 @@ namespace RuckR.Server.Controllers
         /// Lazy-expiry: challenges older than 24h are expired on access.
         /// </summary>
         [HttpPost("{id}/decline")]
+        /// <summary>Decline a pending battle challenge.</summary>
+        /// <param name="id">The id.</param>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult> Decline(int id)
         {
             var userId = GetCurrentUserId();
@@ -207,6 +224,8 @@ namespace RuckR.Server.Controllers
         /// Lazy-expiry: challenges older than 24h are expired on access and persisted.
         /// </summary>
         [HttpGet("pending")]
+        /// <summary>Get pending challenges for the current user.</summary>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<List<BattleModel>>> GetPending()
         {
             var userId = GetCurrentUserId();
@@ -241,6 +260,8 @@ namespace RuckR.Server.Controllers
         /// Sorted by ResolvedAt descending (falls back to CreatedAt if not resolved).
         /// </summary>
         [HttpGet("history")]
+        /// <summary>Get completed, declined, or expired battle history.</summary>
+        /// <returns>The operation result.</returns>
         public async Task<ActionResult<List<BattleModel>>> GetHistory()
         {
             var userId = GetCurrentUserId();
@@ -262,3 +283,4 @@ namespace RuckR.Server.Controllers
         }
     }
 }
+

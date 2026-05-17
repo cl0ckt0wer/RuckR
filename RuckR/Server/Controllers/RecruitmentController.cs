@@ -8,9 +8,11 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers;
 
+/// <summary>API endpoints for encounter generation and recruitment attempts.</summary>
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+/// <summary>Defines the server-side class RecruitmentController.</summary>
 public class RecruitmentController : ControllerBase
 {
     private const double MaxCaptureAccuracyMeters = 50.0;
@@ -20,7 +22,12 @@ public class RecruitmentController : ControllerBase
     private readonly UserManager<IdentityUser> _userManager;
     private readonly RuckRDbContext _db;
     private readonly IRateLimitService _rateLimitService;
-
+    /// <summary>Initializes a new instance of <see cref="RecruitmentController"/>.</summary>
+    /// <param name="recruitmentService">The recruitment service.</param>
+    /// <param name="locationTracker">The location tracker.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    /// <param name="db">The database context.</param>
+    /// <param name="rateLimitService">The rate limit service.</param>
     public RecruitmentController(
         IRecruitmentService recruitmentService,
         ILocationTracker locationTracker,
@@ -36,6 +43,8 @@ public class RecruitmentController : ControllerBase
     }
 
     [HttpGet("profile")]
+    /// <summary>Get the current user's game progress profile.</summary>
+    /// <returns>The operation result.</returns>
     public async Task<ActionResult<GameProgressDto>> GetProfile()
     {
         var userId = _userManager.GetUserId(User);
@@ -53,6 +62,9 @@ public class RecruitmentController : ControllerBase
     }
 
     [HttpPost("attempt")]
+    /// <summary>Attempt to recruit a player from an encounter.</summary>
+    /// <param name="request">The request.</param>
+    /// <returns>The operation result.</returns>
     public async Task<ActionResult<RecruitmentAttemptResultDto>> Attempt([FromBody] RecruitmentAttemptRequest request)
     {
         var userId = _userManager.GetUserId(User);
@@ -74,3 +86,4 @@ public class RecruitmentController : ControllerBase
         return Ok(result);
     }
 }
+

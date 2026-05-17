@@ -8,8 +8,10 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
+    /// <summary>API for ingesting and summarizing client telemetry logs.</summary>
     [ApiController]
     [Route("api/[controller]")]
+    /// <summary>Defines the server-side class TelemetryController.</summary>
     public class TelemetryController : ControllerBase
     {
         private readonly ILogger<TelemetryController> _logger;
@@ -22,14 +24,19 @@ namespace RuckR.Server.Controllers
         private static readonly Regex GpsDiscardedRegex = new(
             @"discarding position.*displacement\s+(?<disp>\d+\.?\d*)m.*threshold\s+(?<thresh>\d+\.?\d*)m.*accuracy=(?<acc>\d+)m",
             RegexOptions.Compiled);
-
-        public TelemetryController(ILogger<TelemetryController> logger, RuckRDbContext db)
+    /// <summary>Initializes a new instance of <see cref="TelemetryController"/>.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="db">The database context.</param>
+    public TelemetryController(ILogger<TelemetryController> logger, RuckRDbContext db)
         {
             _logger = logger;
             _db = db;
         }
 
         [HttpPost]
+        /// <summary>Persist a telemetry batch from the client.</summary>
+        /// <param name="batch">The batch.</param>
+        /// <returns>The operation result.</returns>
         public IActionResult Post([FromBody] ClientLogBatch batch)
         {
             if (batch.Entries.Count == 0)
@@ -134,6 +141,43 @@ namespace RuckR.Server.Controllers
                 AddBooleanTag(tags, "map.webgl.context", root, "webGl", "context");
                 AddNumberTag(tags, "map.webgl.buffer_height", root, "webGl", "drawingBufferHeight");
                 AddNumberTag(tags, "map.resources.arcgis_geoblazor", root, "resources", "arcGisOrGeoBlazor");
+                AddBooleanTag(tags, "map.visual.canvas_present", root, "visual", "canvas", "present");
+                AddStringTag(tags, "map.visual.canvas_method", root, "visual", "canvas", "method");
+                AddStringTag(tags, "map.visual.canvas_error", root, "visual", "canvas", "error");
+                AddNumberTag(tags, "map.visual.canvas_samples", root, "visual", "canvas", "samples");
+                AddNumberTag(tags, "map.visual.canvas_transparent_ratio", root, "visual", "canvas", "transparentRatio");
+                AddNumberTag(tags, "map.visual.canvas_white_ratio", root, "visual", "canvas", "whiteRatio");
+                AddNumberTag(tags, "map.visual.canvas_dark_ratio", root, "visual", "canvas", "darkRatio");
+                AddNumberTag(tags, "map.visual.canvas_varied_ratio", root, "visual", "canvas", "variedRatio");
+                AddNumberTag(tags, "map.visual.canvas_center_r", root, "visual", "canvas", "center", "r");
+                AddNumberTag(tags, "map.visual.canvas_center_g", root, "visual", "canvas", "center", "g");
+                AddNumberTag(tags, "map.visual.canvas_center_b", root, "visual", "canvas", "center", "b");
+                AddNumberTag(tags, "map.visual.canvas_center_a", root, "visual", "canvas", "center", "a");
+                AddStringTag(tags, "map.visual.top_element_tag", root, 0, "visual", "elementStackAtCenter", "tag");
+                AddStringTag(tags, "map.visual.top_element_class", root, 0, "visual", "elementStackAtCenter", "className");
+                AddStringTag(tags, "map.visual.top_element_testid", root, 0, "visual", "elementStackAtCenter", "testId");
+                AddBooleanTag(tags, "map.arcgis.present", root, "arcgis", "present");
+                AddBooleanTag(tags, "map.arcgis.ready", root, "arcgis", "ready");
+                AddBooleanTag(tags, "map.arcgis.updating", root, "arcgis", "updating");
+                AddBooleanTag(tags, "map.arcgis.stationary", root, "arcgis", "stationary");
+                AddBooleanTag(tags, "map.arcgis.suspended", root, "arcgis", "suspended");
+                AddNumberTag(tags, "map.arcgis.view_width", root, "arcgis", "width");
+                AddNumberTag(tags, "map.arcgis.view_height", root, "arcgis", "height");
+                AddNumberTag(tags, "map.arcgis.zoom", root, "arcgis", "zoom");
+                AddNumberTag(tags, "map.arcgis.scale", root, "arcgis", "scale");
+                AddNumberTag(tags, "map.arcgis.center_lat", root, "arcgis", "center", "latitude");
+                AddNumberTag(tags, "map.arcgis.center_lng", root, "arcgis", "center", "longitude");
+                AddStringTag(tags, "map.arcgis.map_load_status", root, "arcgis", "map", "loadStatus");
+                AddStringTag(tags, "map.arcgis.basemap_id", root, "arcgis", "map", "basemapId");
+                AddStringTag(tags, "map.arcgis.basemap_title", root, "arcgis", "map", "basemapTitle");
+                AddBooleanTag(tags, "map.arcgis.map_loaded", root, "arcgis", "map", "loaded");
+                AddBooleanTag(tags, "map.arcgis.basemap_loaded", root, "arcgis", "map", "basemapLoaded");
+                AddNumberTag(tags, "map.arcgis.layers", root, "arcgis", "map", "layers");
+                AddNumberTag(tags, "map.arcgis.all_layers", root, "arcgis", "map", "allLayers");
+                AddNumberTag(tags, "map.arcgis.layer_views", root, "arcgis", "layerViews");
+                AddNumberTag(tags, "map.console.recent_count", root, "console", "recent");
+                AddNumberTag(tags, "map.console.error_count", root, "console", "recent", "error");
+                AddNumberTag(tags, "map.console.warn_count", root, "console", "recent", "warn");
 
                 activity.AddEvent(new ActivityEvent("map.diagnostics", tags: tags));
             }
@@ -148,6 +192,22 @@ namespace RuckR.Server.Controllers
             if (TryGetElement(root, out var element, path) && element.ValueKind == JsonValueKind.String)
             {
                 tags.Add(tagName, element.GetString());
+            }
+        }
+
+        private static void AddStringTag(ActivityTagsCollection tags, string tagName, JsonElement root, int arrayIndex, params string[] path)
+        {
+            if (TryGetArrayItem(root, out var item, arrayIndex, path) && item.ValueKind == JsonValueKind.String)
+            {
+                tags.Add(tagName, item.GetString());
+            }
+            else if (path.Length > 0
+                && TryGetArrayItem(root, out item, arrayIndex, path[..^1])
+                && item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty(path[^1], out var property)
+                && property.ValueKind == JsonValueKind.String)
+            {
+                tags.Add(tagName, property.GetString());
             }
         }
 
@@ -166,6 +226,28 @@ namespace RuckR.Server.Controllers
             {
                 tags.Add(tagName, element.GetDouble());
             }
+            else if (TryGetElement(root, out element, path) && element.ValueKind == JsonValueKind.Array)
+            {
+                tags.Add(tagName, element.GetArrayLength());
+            }
+            else if (path.Length > 0
+                && TryGetElement(root, out element, path[..^1])
+                && element.ValueKind == JsonValueKind.Array)
+            {
+                var count = 0;
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.Object
+                        && item.TryGetProperty("level", out var level)
+                        && level.ValueKind == JsonValueKind.String
+                        && string.Equals(level.GetString(), path[^1], StringComparison.OrdinalIgnoreCase))
+                    {
+                        count++;
+                    }
+                }
+
+                tags.Add(tagName, count);
+            }
         }
 
         private static bool TryGetElement(JsonElement root, out JsonElement element, params string[] path)
@@ -182,7 +264,37 @@ namespace RuckR.Server.Controllers
             return true;
         }
 
+        private static bool TryGetArrayItem(JsonElement root, out JsonElement item, int arrayIndex, params string[] path)
+        {
+            item = default;
+            if (!TryGetElement(root, out var array, path) || array.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            if (arrayIndex < 0 || arrayIndex >= array.GetArrayLength())
+            {
+                return false;
+            }
+
+            var currentIndex = 0;
+            foreach (var currentItem in array.EnumerateArray())
+            {
+                if (currentIndex == arrayIndex)
+                {
+                    item = currentItem;
+                    return true;
+                }
+
+                currentIndex++;
+            }
+
+            return false;
+        }
+
         [HttpGet("health")]
+        /// <summary>Check database health and app runtime status.</summary>
+        /// <returns>The operation result.</returns>
         public async Task<IActionResult> Health()
         {
             // Verify DB connectivity with a lightweight query
@@ -205,6 +317,8 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpGet("status")]
+        /// <summary>Get service and telemetry status details.</summary>
+        /// <returns>The operation result.</returns>
         public async Task<IActionResult> Status()
         {
             // Basic OTEL status — what's running
@@ -222,3 +336,4 @@ namespace RuckR.Server.Controllers
         }
     }
 }
+

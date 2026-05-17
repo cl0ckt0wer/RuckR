@@ -6,16 +6,26 @@ using RuckR.Tests.Fixtures;
 namespace RuckR.Tests.Api;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class TelemetryApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""TelemetryApiTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
     public TelemetryApiTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         // Telemetry endpoint is unauthenticated — use plain client
@@ -23,12 +33,18 @@ public class TelemetryApiTests : IAsyncLifetime
         await Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         _client?.Dispose();
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies post Telemetry Valid Batch Returns200.
+    /// </summary>
     public async Task PostTelemetry_ValidBatch_Returns200()
     {
         var batch = new ClientLogBatch
@@ -52,6 +68,9 @@ public class TelemetryApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies post Telemetry Empty Batch Returns200.
+    /// </summary>
     public async Task PostTelemetry_EmptyBatch_Returns200()
     {
         var batch = new ClientLogBatch
@@ -65,6 +84,9 @@ public class TelemetryApiTests : IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies post Telemetry Multiple Entries Returns200.
+    /// </summary>
     public async Task PostTelemetry_MultipleEntries_Returns200()
     {
         var batch = new ClientLogBatch
@@ -82,3 +104,5 @@ public class TelemetryApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 }
+
+

@@ -2,10 +2,21 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Pages;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class CollectionPage : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""CollectionPage"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public CollectionPage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
+    /// <summary>
+    /// Verifies go To Async.
+    /// </summary>
     public async Task GoToAsync() => await NavigateToAsync("/collection");
 
     // ── Page loading ───────────────────────────────────────────────────
@@ -121,18 +132,32 @@ public class CollectionPage : BasePage
 
     // ── State checks ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// Verifies is Empty State Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsEmptyStateVisibleAsync()
     {
         return await ExistsAsync("[data-testid='empty-state']");
     }
 
+    /// <summary>
+    /// Verifies is Loading Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsLoadingVisibleAsync()
     {
         return await ExistsAsync("[data-testid='collection-loading']");
     }
 
+    /// <summary>
+    /// Verifies is Error Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsErrorVisibleAsync()
     {
         return await ExistsAsync("[data-testid='collection-error']");
     }
 }
+
+

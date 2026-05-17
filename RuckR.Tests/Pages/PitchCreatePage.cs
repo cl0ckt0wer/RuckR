@@ -2,10 +2,21 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Pages;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class PitchCreatePage : BasePage
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""PitchCreatePage"""/> class.
+    /// </summary>
+    /// <param name="page">The page to use.</param>
+    /// <param name="baseUrl">The baseUrl to use.</param>
     public PitchCreatePage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
+    /// <summary>
+    /// Verifies go To Async.
+    /// </summary>
     public async Task GoToAsync() => await NavigateToAsync("/pitches/create");
 
     /// <summary>
@@ -81,13 +92,23 @@ public class PitchCreatePage : BasePage
 
     // ── State checks ────────────────────────────────────────────────
 
+    /// <summary>
+    /// Verifies is Loading Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsLoadingVisibleAsync()
     {
         return await ExistsAsync(".spinner-border");
     }
 
+    /// <summary>
+    /// Verifies is Error Visible Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<bool> IsErrorVisibleAsync()
     {
         return await ExistsAsync("[data-testid='pitch-error']");
     }
 }
+
+

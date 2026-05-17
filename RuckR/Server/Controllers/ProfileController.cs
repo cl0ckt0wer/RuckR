@@ -6,16 +6,21 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
+    /// <summary>API for reading and updating the authenticated user's profile.</summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
+    /// <summary>Defines the server-side class ProfileController.</summary>
     public class ProfileController : ControllerBase
     {
         private readonly IProfileService _profileService;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILogger<ProfileController> _logger;
-
-        public ProfileController(
+    /// <summary>Initializes a new instance of <see cref="ProfileController"/>.</summary>
+    /// <param name="profileService">The profile service.</param>
+    /// <param name="userManager">The identity user manager.</param>
+    /// <param name="logger">The logger.</param>
+    public ProfileController(
             IProfileService profileService,
             UserManager<IdentityUser> userManager,
             ILogger<ProfileController> logger)
@@ -26,7 +31,9 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<UserProfileModel>> Get()
+    /// <summary>Get the current user's profile.</summary>
+    /// <returns>The operation result.</returns>
+    public async Task<ActionResult<UserProfileModel>> Get()
         {
             var userId = _userManager.GetUserId(User);
             if (string.IsNullOrWhiteSpace(userId))
@@ -42,7 +49,10 @@ namespace RuckR.Server.Controllers
         }
 
         [HttpPut]
-        public async Task<IActionResult> Put([FromBody] UserProfileModel updatedProfile)
+    /// <summary>Update or create the current user's profile.</summary>
+    /// <param name="updatedProfile">The profile values to persist.</param>
+    /// <returns>The operation result.</returns>
+    public async Task<IActionResult> Put([FromBody] UserProfileModel updatedProfile)
         {
             var userId = _userManager.GetUserId(User);
             if (string.IsNullOrWhiteSpace(userId))
@@ -56,3 +66,4 @@ namespace RuckR.Server.Controllers
         }
     }
 }
+

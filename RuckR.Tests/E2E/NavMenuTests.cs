@@ -5,6 +5,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -13,12 +16,20 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     private IPage _page = null!;
     private string _baseUrl = null!;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""NavMenuTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public NavMenuTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -44,6 +55,9 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
             throw new InvalidOperationException("Failed to authenticate test user for NavMenu tests");
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _page.CloseAsync();
@@ -51,6 +65,9 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies nav Menu All Links Should Navigate Correctly.
+    /// </summary>
     public async Task NavMenu_AllLinks_ShouldNavigateCorrectly()
     {
         var nav = new NavMenu(_page, _baseUrl);
@@ -86,3 +103,5 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(await _page.QuerySelectorAsync(".navbar-brand") != null, "Navbar brand should be visible on Create Pitch");
     }
 }
+
+

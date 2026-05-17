@@ -4,7 +4,7 @@ using RuckR.Server.Data;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
-
+/// <summary>Defines the server-side class RecruitmentService.</summary>
 public class RecruitmentService : IRecruitmentService
 {
     private const double RecruitDistanceMeters = 75.0;
@@ -15,13 +15,20 @@ public class RecruitmentService : IRecruitmentService
 
     private readonly RuckRDbContext _db;
     private readonly IRealWorldParkService _parkService;
-
+    /// <summary>Initializes a new instance of RecruitmentService.</summary>
+    /// <param name="db">The db.</param>
+    /// <param name="parkService">The parkservice.</param>
     public RecruitmentService(RuckRDbContext db, IRealWorldParkService parkService)
     {
         _db = db;
         _parkService = parkService;
     }
-
+    /// <summary>Get active recruitment encounters for a user in a radius.</summary>
+    /// <param name="userId">The user identifier.</param>
+    /// <param name="lat">The lat.</param>
+    /// <param name="lng">The lng.</param>
+    /// <param name="radiusMeters">The search radius in meters.</param>
+    /// <returns>The operation result.</returns>
     public async Task<IReadOnlyList<PlayerEncounterDto>> GetEncountersAsync(string userId, double lat, double lng, double radiusMeters)
     {
         var now = DateTime.UtcNow;
@@ -81,7 +88,11 @@ public class RecruitmentService : IRecruitmentService
 
         return encounters;
     }
-
+    /// <summary>Attempt recruitment for a specific encounter.</summary>
+    /// <param name="userId">The user identifier.</param>
+    /// <param name="request">The request.</param>
+    /// <param name="userPosition">The current user position.</param>
+    /// <returns>The operation result.</returns>
     public async Task<RecruitmentAttemptResultDto> AttemptRecruitmentAsync(string userId, RecruitmentAttemptRequest request, GeoPosition userPosition)
     {
         var now = DateTime.UtcNow;
@@ -298,3 +309,4 @@ public class RecruitmentService : IRecruitmentService
         return Task.CompletedTask;
     }
 }
+

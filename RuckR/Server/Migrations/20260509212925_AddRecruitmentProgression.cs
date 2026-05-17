@@ -1,14 +1,15 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace RuckR.Server.Migrations
 {
-    /// <inheritdoc />
+    /// <summary>Defines the server-side class AddRecruitmentProgression.</summary>
     public partial class AddRecruitmentProgression : Migration
     {
-        /// <inheritdoc />
+        /// <summary>Apply recruitment and encounter schema additions.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<int>(
@@ -70,8 +71,8 @@ namespace RuckR.Server.Migrations
                 table: "PlayerEncounters",
                 columns: new[] { "UserId", "PlayerId" });
         }
-
-        /// <inheritdoc />
+        /// <summary>Revert recruitment and encounter schema additions.</summary>
+        /// <param name="migrationBuilder">The migration builder.</param>
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
@@ -86,3 +87,4 @@ namespace RuckR.Server.Migrations
         }
     }
 }
+

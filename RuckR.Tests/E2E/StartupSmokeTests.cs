@@ -10,6 +10,9 @@ using RuckR.Tests.Pages;
 namespace RuckR.Tests.E2E;
 
 [Collection(nameof(TestCollection))]
+    /// <summary>
+    /// Provides access to i Class Fixture<Playwright Fixture>,.
+    /// </summary>
 public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -31,12 +34,20 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         "404 (Not Found)",     // Expected: static assets that may not exist
     };
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="""StartupSmokeTests"""/> class.
+    /// </summary>
+    /// <param name="factory">The factory to use.</param>
+    /// <param name="playwright">The playwright to use.</param>
     public StartupSmokeTests(CustomWebApplicationFactory factory, PlaywrightFixture playwright)
     {
         _factory = factory;
         _playwright = playwright;
     }
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         _context = await _playwright.NewContextAsync();
@@ -44,6 +55,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         _kestrelClient = new HttpClient { BaseAddress = new Uri(_baseUrl) };
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         await _context.CloseAsync();
@@ -55,6 +69,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
+    /// <summary>
+    /// Verifies server Startup Health Endpoint Returns Healthy.
+    /// </summary>
     public async Task Server_Startup_HealthEndpointReturnsHealthy()
     {
         var response = await _kestrelClient.GetAsync("/api/telemetry/health");
@@ -65,6 +82,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies server Startup O Tel Status Reports All Signals.
+    /// </summary>
     public async Task Server_Startup_OTelStatusReportsAllSignals()
     {
         var response = await _kestrelClient.GetAsync("/api/telemetry/status");
@@ -78,6 +98,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies server Startup O Tel Tracer Provider Is Registered.
+    /// </summary>
     public async Task Server_Startup_OTelTracerProviderIsRegistered()
     {
         var tracerProvider = _factory.Services.GetService<TracerProvider>();
@@ -85,6 +108,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     }
 
     [Fact]
+    /// <summary>
+    /// Verifies server Startup O Tel Meter Provider Is Registered.
+    /// </summary>
     public async Task Server_Startup_OTelMeterProviderIsRegistered()
     {
         var meterProvider = _factory.Services.GetService<MeterProvider>();
@@ -96,6 +122,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
+    /// <summary>
+    /// Verifies wASM Startup Loads Without Errors.
+    /// </summary>
     public async Task WASM_Startup_LoadsWithoutErrors()
     {
         var page = await _context.NewPageAsync();
@@ -165,6 +194,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
+    /// <summary>
+    /// Verifies wASM Startup Blazor Renders Content.
+    /// </summary>
     public async Task WASM_Startup_BlazorRendersContent()
     {
         var page = await _context.NewPageAsync();
@@ -210,6 +242,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
+    /// <summary>
+    /// Verifies wASM Startup Telemetry Bridge Is Active.
+    /// </summary>
     public async Task WASM_Startup_TelemetryBridgeIsActive()
     {
         var page = await _context.NewPageAsync();
@@ -240,6 +275,9 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
+    /// <summary>
+    /// Verifies full Startup All Systems Healthy.
+    /// </summary>
     public async Task FullStartup_AllSystemsHealthy()
     {
         // 1.  API level: server health + OTel status
@@ -361,3 +399,5 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
             new PageWaitForLoadStateOptions { Timeout = 30000 });
     }
 }
+
+

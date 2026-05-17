@@ -8,15 +8,21 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
+    /// <summary>Defines the server-side class SeedOptions.</summary>
     public class SeedOptions
     {
+        /// <summary>Gets or sets the D ef au lt Ce nt er La t.</summary>
         public double DefaultCenterLat { get; set; } = 51.5074;
+        /// <summary>Gets or sets the D ef au lt Ce nt er Ln g.</summary>
         public double DefaultCenterLng { get; set; } = -0.1278;
+        /// <summary>Gets or sets the S ee dV al ue.</summary>
         public int SeedValue { get; set; } = 42;
+        /// <summary>Gets or sets the P la ye rC ou nt.</summary>
         public int PlayerCount { get; set; } = 500;
+        /// <summary>Gets or sets the S pr ea dR ad iu sK m.</summary>
         public double SpreadRadiusKm { get; set; } = 50.0;
     }
-
+    /// <summary>Defines the server-side class SeedService.</summary>
     public class SeedService
     {
         private readonly RuckRDbContext _db;
@@ -26,7 +32,13 @@ namespace RuckR.Server.Services
         private readonly GeometryFactory _geometryFactory;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IWebHostEnvironment _env;
-
+        /// <summary>Initializes a new instance of SeedService.</summary>
+        /// <param name="db">The db.</param>
+        /// <param name="generator">The generator.</param>
+        /// <param name="options">The options.</param>
+        /// <param name="logger">The logger.</param>
+        /// <param name="userManager">The usermanager.</param>
+        /// <param name="env">The env.</param>
         public SeedService(
             RuckRDbContext db,
             PlayerGeneratorService generator,
@@ -43,7 +55,8 @@ namespace RuckR.Server.Services
             _env = env;
             _geometryFactory = NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(4326);
         }
-
+        /// <summary>S ee dI fE mp ty As yn c.</summary>
+        /// <returns>The operation result.</returns>
         public async Task SeedIfEmptyAsync()
         {
             // Always seed the default pitch if none exist.
@@ -239,3 +252,4 @@ namespace RuckR.Server.Services
         private sealed record SeedUser(string Username, string Email);
     }
 }
+

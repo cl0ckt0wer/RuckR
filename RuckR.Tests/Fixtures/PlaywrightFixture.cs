@@ -2,11 +2,23 @@ using Microsoft.Playwright;
 
 namespace RuckR.Tests.Fixtures;
 
+    /// <summary>
+    /// Provides access to :.
+    /// </summary>
 public class PlaywrightFixture : IAsyncLifetime
 {
+    /// <summary>
+    /// Provides access to =.
+    /// </summary>
     public IPlaywright Playwright { get; private set; } = null!;
+    /// <summary>
+    /// Provides access to =.
+    /// </summary>
     public IBrowser Browser { get; private set; } = null!;
 
+    /// <summary>
+    /// Verifies initialize Async.
+    /// </summary>
     public async Task InitializeAsync()
     {
         Playwright = await Microsoft.Playwright.Playwright.CreateAsync();
@@ -17,6 +29,9 @@ public class PlaywrightFixture : IAsyncLifetime
         });
     }
 
+    /// <summary>
+    /// Verifies dispose Async.
+    /// </summary>
     public async Task DisposeAsync()
     {
         if (Browser != null)
@@ -24,6 +39,10 @@ public class PlaywrightFixture : IAsyncLifetime
         Playwright?.Dispose();
     }
 
+    /// <summary>
+    /// Verifies new Context Async.
+    /// </summary>
+    /// <returns>A value indicating the result of this operation.</returns>
     public async Task<IBrowserContext> NewContextAsync(
         bool isMobile = false,
         string? deviceName = null,
@@ -65,3 +84,5 @@ public class PlaywrightFixture : IAsyncLifetime
         return context;
     }
 }
+
+

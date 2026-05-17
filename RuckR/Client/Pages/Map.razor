@@ -938,6 +938,7 @@
         {
             await LoadOnboardingPreferenceAsync();
             _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
+            await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
 
             GeolocationService.PositionChanged += OnPositionChanged;
             MapState.StateChanged += OnMapStateChanged;
@@ -2161,6 +2162,7 @@
         }
         if (_mapDiagnosticsModule is not null)
         {
+            try { await _mapDiagnosticsModule.InvokeVoidAsync("stopMapDiagnosticsCapture"); } catch { }
             try { await _mapDiagnosticsModule.DisposeAsync(); } catch { }
         }
         _pitchGraphics.Clear();
