@@ -4,10 +4,10 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class ProfileApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -41,10 +41,10 @@ public class ProfileApiTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Profile Returns Current Profile.
     /// </summary>
+    [Fact]
     public async Task GetProfile_ReturnsCurrentProfile()
     {
         var profile = await _client.GetFromJsonAsync<ProfileModel>("/api/profile");
@@ -53,10 +53,10 @@ public class ProfileApiTests : IAsyncLifetime
         Assert.False(string.IsNullOrWhiteSpace(profile.Email));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies put Profile Updates Current Profile.
     /// </summary>
+    [Fact]
     public async Task PutProfile_UpdatesCurrentProfile()
     {
         var updated = new ProfileModel

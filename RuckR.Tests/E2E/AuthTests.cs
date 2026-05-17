@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -46,10 +46,10 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies register New User Can Login And See Navbar.
     /// </summary>
+    [Fact]
     public async Task Register_NewUser_CanLoginAndSeeNavbar()
     {
         var username = $"testuser_{Guid.NewGuid():N}@test.com";
@@ -90,10 +90,10 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(loggedInAgain, "User should be logged in after login");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies root Login Root Logout Completes Successfully.
     /// </summary>
+    [Fact]
     public async Task Root_Login_Root_Logout_CompletesSuccessfully()
     {
         var username = $"loginflow_{Guid.NewGuid():N}@test.com";
@@ -127,10 +127,10 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.False(isStillLoggedIn, "User should be logged out after logout");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies logout Then Login Uses Normal Navigation Links.
     /// </summary>
+    [Fact]
     public async Task Logout_ThenLogin_UsesNormalNavigationLinks()
     {
         var username = $"normalnav_{Guid.NewGuid():N}@test.com";
@@ -171,10 +171,10 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.Equal(username, loggedInUsername);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies logout Removes Access To Authenticated Pages.
     /// </summary>
+    [Fact]
     public async Task Logout_RemovesAccessToAuthenticatedPages()
     {
         var username = $"logout_{Guid.NewGuid():N}@test.com";

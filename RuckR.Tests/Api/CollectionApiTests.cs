@@ -5,10 +5,10 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class CollectionApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -81,10 +81,10 @@ public class CollectionApiTests : IAsyncLifetime
     /// <summary>
     /// GET /collection returns the user's collection (authenticated).
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies get Collection Returns User Collection.
     /// </summary>
+    [Fact]
     public async Task GetCollection_ReturnsUserCollection()
     {
         // Arrange: capture a player first
@@ -105,10 +105,10 @@ public class CollectionApiTests : IAsyncLifetime
     /// <summary>
     /// POST /collection/capture with valid player + pitch + GPS position returns 201 Created.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies capture Player With Valid Data Returns201.
     /// </summary>
+    [Fact]
     public async Task CapturePlayer_WithValidData_Returns201()
     {
         // Arrange
@@ -132,10 +132,10 @@ public class CollectionApiTests : IAsyncLifetime
     /// <summary>
     /// POST /collection/capture without GPS position returns 400 Bad Request.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies capture Player Without Gps Position Returns400.
     /// </summary>
+    [Fact]
     public async Task CapturePlayer_WithoutGpsPosition_Returns400()
     {
         // Arrange: get a player and pitch, but do NOT set GPS position
@@ -156,10 +156,10 @@ public class CollectionApiTests : IAsyncLifetime
     /// <summary>
     /// POST /collection/capture duplicate player returns 409 Conflict.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies capture Player Duplicate Returns409.
     /// </summary>
+    [Fact]
     public async Task CapturePlayer_Duplicate_Returns409()
     {
         // Arrange: capture a player once
@@ -182,10 +182,10 @@ public class CollectionApiTests : IAsyncLifetime
     /// <summary>
     /// POST /collection/{id}/favorite toggles the IsFavorite flag.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies toggle Favorite Toggles Flag.
     /// </summary>
+    [Fact]
     public async Task ToggleFavorite_TogglesFlag()
     {
         // Arrange: capture a player first
@@ -214,10 +214,10 @@ public class CollectionApiTests : IAsyncLifetime
         Assert.False(updated2.IsFavorite);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies capture Eligibility Without Gps Returns Gps Required.
     /// </summary>
+    [Fact]
     public async Task CaptureEligibility_WithoutGps_ReturnsGpsRequired()
     {
         var (_, pitchId, _, _) = await GetTestPlayerAndPitchAsync();
@@ -232,10 +232,10 @@ public class CollectionApiTests : IAsyncLifetime
         Assert.Equal("GPS_REQUIRED", eligibility.Reason);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies capture Eligibility When Far Away Returns Too Far.
     /// </summary>
+    [Fact]
     public async Task CaptureEligibility_WhenFarAway_ReturnsTooFar()
     {
         var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
@@ -250,10 +250,10 @@ public class CollectionApiTests : IAsyncLifetime
         Assert.Equal("TOO_FAR", eligibility.Reason);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies capture Eligibility When Nearby And Accurate Returns Eligible Or No Players.
     /// </summary>
+    [Fact]
     public async Task CaptureEligibility_WhenNearbyAndAccurate_ReturnsEligibleOrNoPlayers()
     {
         var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();

@@ -7,19 +7,19 @@ namespace RuckR.Shared.Models
     /// </summary>
     public class RateLimitRecord
     {
-        [Key]
         /// <summary>Primary key.</summary>
+        [Key]
         public long Id { get; set; }
 
-        [Required]
-        [MaxLength(450)]
         /// <summary>User identifier associated with the request.
         /// </summary>
+        [Required]
+        [MaxLength(450)]
         public string UserId { get; set; } = string.Empty;
 
+        /// <summary>Action name being rate-limited.</summary>
         [Required]
         [MaxLength(50)]
-        /// <summary>Action name being rate-limited.</summary>
         public string Action { get; set; } = string.Empty;
 
         /// <summary>Request timestamp in UTC.</summary>

@@ -17,7 +17,7 @@
 - **ADR-003:** NuGet packages updated via `dotnet` CLI (`dotnet list package --outdated`, `dotnet add package`); no external tooling.
 - **ADR-004:** Spatial data layer — **SQL Server geography type + NetTopologySuite** for geospatial queries (proximity searches, pitch discovery). Rationale: User chose MSSQL for Windows dev simplicity (LocalDB); EF Core supports it via `Microsoft.EntityFrameworkCore.SqlServer.NetTopologySuite`.
 - **ADR-005:** Real-time communication — **SignalR** via `Microsoft.AspNetCore.SignalR` for live map updates, battle notifications, and player location sharing. Rationale: SignalR is the idiomatic ASP.NET Core real-time library with built-in Blazor client support.
-- **ADR-006:** Map rendering — **Leaflet.js via JS interop** (`IJSObjectReference`/`IJSRuntime`) for the interactive map. Rationale: Leaflet is lightweight (42 KB), open-source, and has mature Blazor interop community patterns; avoids heavy SDK dependencies in WASM.
+- **ADR-006:** Map rendering — **GeoBlazor/ArcGIS** for the interactive map. The routed app component is `GameMap.razor` (`/` and `/map`) to avoid colliding with GeoBlazor's library `<Map>` component. Use GeoBlazor `MapView`, `<Map>`, `Basemap`, widgets, `HitTest`, and `GraphicsLayer` APIs for map ownership and marker lifecycle. Keep JS only for browser APIs or diagnostics that GeoBlazor does not own directly.
 - **ADR-007:** Player data model redesign — new models under `RuckR.Shared.Models` namespace: `PlayerModel` (creature), `PitchModel` (location), `CollectionModel` (user inventory), `BattleModel` (async PVP state). Follows existing `ProfileModel` convention (subdirectory with qualified namespace).
 - **ADR-008:** State management — **Fluxor** (Flux/Redux pattern for Blazor) for client-side state (inventory, active battles, map state). Rationale: Multiple pages need shared reactive state; Fluxor is the most popular Blazor state library with middleware, dev tools, and strong community adoption.
 - **ADR-009:** Authentication — **ASP.NET Core Identity** with **EF Core** for user registration/login. Razor pages for auth UI (login, register) served by the Server project. Rationale: ASP.NET Core Identity is the built-in, battle-tested auth framework; avoids third-party auth dependencies for a simple username/password MVP.
@@ -128,6 +128,7 @@ Agents must **never** hardcode, generate, or guess a DB password. Follow these r
 - The `SupportedPlatform include="browser"` on `RuckR.Shared` marks that assembly for WASM compatibility.
 - Service worker (`service-worker.js` / `service-worker.published.js`) is registered for PWA support on the client.
 - Secrets never committed to the repo. Use `dotnet user-secrets` for local dev and environment variables (`RUCKR_DB_PASSWORD`, `RUCKR_TEST_DB_PASSWORD`) for deploy/test. See ADR-010.
+- Map pages must not be named `Map.razor`; that collides with `dymaptic.GeoBlazor.Core.Components.Map`. Keep the route in `GameMap.razor`, and prefer GeoBlazor `GraphicsLayer.AddMany`/`Clear` over custom ArcGIS graphics JS or per-graphic `MapView` mutation.
 - **PowerShell 7 (`pwsh`) is preferred over PowerShell 5 (`powershell`)**. All PowerShell snippets and commands assume `pwsh` unless otherwise noted.
 
 ## agentmemory

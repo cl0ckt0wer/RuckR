@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -64,10 +64,10 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies nav Menu All Links Should Navigate Correctly.
     /// </summary>
+    [Fact]
     public async Task NavMenu_AllLinks_ShouldNavigateCorrectly()
     {
         var nav = new NavMenu(_page, _baseUrl);

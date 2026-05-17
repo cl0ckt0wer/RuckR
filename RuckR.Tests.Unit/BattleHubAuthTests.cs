@@ -10,10 +10,10 @@ namespace RuckR.Tests.Unit;
 /// </summary>
 public class BattleHubAuthTests
 {
-    [Fact]
     /// <summary>
     /// Verifies send Challenge Self Challenge Is Blocked.
     /// </summary>
+    [Fact]
     public void SendChallenge_SelfChallenge_IsBlocked()
     {
         // Guard: if (opponent.Id == userId) throw HubException
@@ -21,10 +21,10 @@ public class BattleHubAuthTests
         Assert.True(true);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies accept Challenge Must Be Opponent.
     /// </summary>
+    [Fact]
     public void AcceptChallenge_MustBeOpponent()
     {
         // Guard: if (battle.OpponentId != userId) throw HubException
@@ -32,10 +32,10 @@ public class BattleHubAuthTests
         Assert.True(true);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies accept Challenge Must Be Pending.
     /// </summary>
+    [Fact]
     public void AcceptChallenge_MustBePending()
     {
         // Guard: if (battle.Status != BattleStatus.Pending) throw HubException
@@ -43,10 +43,10 @@ public class BattleHubAuthTests
         Assert.True(true);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies accept Challenge Expired Challenge Is Rejected.
     /// </summary>
+    [Fact]
     public void AcceptChallenge_ExpiredChallenge_IsRejected()
     {
         // Guard: if (battle.CreatedAt <= DateTime.UtcNow - ChallengeExpiryDuration)

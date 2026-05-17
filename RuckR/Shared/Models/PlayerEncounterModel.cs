@@ -7,24 +7,24 @@ namespace RuckR.Shared.Models;
 /// </summary>
 public class PlayerEncounterModel
 {
-    [Key]
     /// <summary>Encounter identifier.</summary>
+    [Key]
     public Guid Id { get; set; }
 
-    [Required]
     /// <summary>Encounter owner user identifier.</summary>
+    [Required]
     public string UserId { get; set; } = string.Empty;
 
-    [Required]
     /// <summary>Player identifier for this encounter.</summary>
+    [Required]
     public int PlayerId { get; set; }
 
-    [Range(-90.0, 90.0)]
     /// <summary>Encounter latitude.</summary>
+    [Range(-90.0, 90.0)]
     public double Latitude { get; set; }
 
-    [Range(-180.0, 180.0)]
     /// <summary>Encounter longitude.</summary>
+    [Range(-180.0, 180.0)]
     public double Longitude { get; set; }
 
     /// <summary>UTC expiration time for the encounter.</summary>

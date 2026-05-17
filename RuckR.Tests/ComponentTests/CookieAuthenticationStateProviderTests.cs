@@ -10,10 +10,10 @@ namespace RuckR.Tests.ComponentTests;
     /// </summary>
 public class CookieAuthenticationStateProviderTests
 {
-    [Fact]
     /// <summary>
     /// Verifies get Authentication State Async With Empty Json String Returns Anonymous User.
     /// </summary>
+    [Fact]
     public async Task GetAuthenticationStateAsync_WithEmptyJsonString_ReturnsAnonymousUser()
     {
         var provider = CreateProvider(string.Empty);
@@ -23,10 +23,10 @@ public class CookieAuthenticationStateProviderTests
         Assert.False(authState.User.Identity?.IsAuthenticated);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Authentication State Async With Username Json String Returns Authenticated User.
     /// </summary>
+    [Fact]
     public async Task GetAuthenticationStateAsync_WithUsernameJsonString_ReturnsAuthenticatedUser()
     {
         var provider = CreateProvider("test@example.com");

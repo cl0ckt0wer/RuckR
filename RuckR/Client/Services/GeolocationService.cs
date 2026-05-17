@@ -33,14 +33,14 @@ public class GeolocationService : IGeolocationService
     public event Action<GeoPosition>? PositionChanged;
 
     //#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
-    [DynamicDependency(nameof(OnPositionFromJs))]
-    [DynamicDependency(nameof(OnErrorFromJs))]
     /// <summary>
     /// Initializes a new <see cref="GeolocationService"/>.
     /// </summary>
     /// <param name="jsRuntime">The JS interop runtime used to load and invoke geolocation scripts.</param>
     /// <param name="dispatcher">The Fluxor dispatcher used to apply location state updates.</param>
     /// <param name="logger">Logger for geolocation diagnostics.</param>
+    [DynamicDependency(nameof(OnPositionFromJs))]
+    [DynamicDependency(nameof(OnErrorFromJs))]
     public GeolocationService(
         IJSRuntime jsRuntime,
         IDispatcher dispatcher,
@@ -88,11 +88,11 @@ public class GeolocationService : IGeolocationService
         _dispatcher.Dispatch(new SetGpsWatchingAction(true));
     }
 
-    [JSInvokable]
     /// <summary>
     /// Called from JS when a new geolocation result is available.
     /// </summary>
     /// <param name="result">The latest geolocation result from browser APIs.</param>
+    [JSInvokable]
     public void OnPositionFromJs(GeolocationResult result)
     {
         try
@@ -218,12 +218,12 @@ public class GeolocationService : IGeolocationService
         }
     }
 
-    [JSInvokable]
     /// <summary>
     /// Called from JS when the geolocation watch reports an error.
     /// </summary>
     /// <param name="code">The browser error code.</param>
     /// <param name="message">The browser error message.</param>
+    [JSInvokable]
     public void OnErrorFromJs(int code, string message)
     {
         _dispatcher.Dispatch(new LocationErrorAction($"Geolocation error {code}: {message}"));

@@ -11,8 +11,8 @@ namespace RuckR.Server.Controllers
     /// <summary>API endpoints for player collections and capture actions.</summary>
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     /// <summary>Defines the server-side class CollectionController.</summary>
+    [Authorize]
     public class CollectionController : ControllerBase
     {
         private const double CaptureProximityMeters = 100.0;
@@ -43,9 +43,9 @@ namespace RuckR.Server.Controllers
         /// GET /collection — returns all players collected by the current user,
         /// with the Player navigation property included.
         /// </summary>
-        [HttpGet]
         /// <summary>Get the current user's captured player collection.</summary>
         /// <returns>The operation result.</returns>
+        [HttpGet]
         public async Task<ActionResult<List<CollectionModel>>> GetCollections()
         {
             var userId = GetCurrentUserId();
@@ -74,10 +74,10 @@ namespace RuckR.Server.Controllers
         /// Requires server-side GPS validation and proximity check.
         /// Rate-limited to 20 captures per hour per user.
         /// </summary>
-        [HttpPost("capture")]
         /// <summary>Capture a player at a pitch after proximity and GPS checks.</summary>
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost("capture")]
         public async Task<ActionResult<CollectionModel>> CapturePlayer([FromBody] CapturePlayerRequest request)
         {
             var userId = GetCurrentUserId();
@@ -157,10 +157,10 @@ namespace RuckR.Server.Controllers
         /// can capture players from a pitch based on recent GPS, accuracy, proximity, and
         /// available uncaptured players.
         /// </summary>
-        [HttpGet("capture-eligibility/{pitchId:int}")]
         /// <summary>Get whether capture is currently allowed for the specified pitch.</summary>
         /// <param name="pitchId">The pitchid.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("capture-eligibility/{pitchId:int}")]
         public async Task<ActionResult<CaptureEligibilityDto>> GetCaptureEligibility(int pitchId)
         {
             var userId = GetCurrentUserId();
@@ -236,10 +236,10 @@ namespace RuckR.Server.Controllers
         /// POST /collection/{id}/favorite — toggle the IsFavorite flag on a collection entry.
         /// Only the owning user can toggle their own collection entries.
         /// </summary>
-        [HttpPost("{id}/favorite")]
         /// <summary>Toggle the favorite state of a collection entry.</summary>
         /// <param name="id">The id.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost("{id}/favorite")]
         public async Task<ActionResult> ToggleFavorite(int id)
         {
             var userId = GetCurrentUserId();

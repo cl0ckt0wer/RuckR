@@ -8,16 +8,16 @@ namespace RuckR.Shared.Models
     /// </summary>
     public class CollectionModel
     {
-        [Key]
         /// <summary>Primary key for the collection record.</summary>
+        [Key]
         public int Id { get; set; }
 
-        [Required]
         /// <summary>User identity associated with the captured player.</summary>
+        [Required]
         public required string UserId { get; set; }
 
-        [Required]
         /// <summary>Captured player identifier.</summary>
+        [Required]
         public int PlayerId { get; set; }
 
         /// <summary>Navigation to the captured player.</summary>

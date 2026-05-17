@@ -9,8 +9,8 @@ namespace RuckR.Server.Controllers;
     /// <summary>API endpoints for map encounters and pitch-adjacent gameplay data.</summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 /// <summary>Defines the server-side class MapController.</summary>
+[Authorize]
 public class MapController : ControllerBase
 {
     private readonly IRecruitmentService _recruitmentService;
@@ -24,12 +24,12 @@ public class MapController : ControllerBase
         _userManager = userManager;
     }
 
-    [HttpGet("encounters")]
     /// <summary>Get nearby player encounters for the current user.</summary>
     /// <param name="lat">The lat.</param>
     /// <param name="lng">The lng.</param>
     /// <param name="radius">The radius.</param>
     /// <returns>The operation result.</returns>
+    [HttpGet("encounters")]
     public async Task<ActionResult<IReadOnlyList<PlayerEncounterDto>>> GetEncounters(
         [FromQuery] double lat,
         [FromQuery] double lng,

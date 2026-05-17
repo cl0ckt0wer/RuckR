@@ -10,8 +10,8 @@ using RuckR.Shared.Models;
 namespace RuckR.Server.Hubs
 {
     /// <summary>SignalR hub for real-time battle and location updates.</summary>
-    [Authorize]
     /// <summary>Defines the server-side class BattleHub.</summary>
+    [Authorize]
     public class BattleHub : Hub
     {
         private const int PitchProximityMeters = 100;

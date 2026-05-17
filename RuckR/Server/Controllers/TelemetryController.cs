@@ -33,10 +33,10 @@ namespace RuckR.Server.Controllers
             _db = db;
         }
 
-        [HttpPost]
         /// <summary>Persist a telemetry batch from the client.</summary>
         /// <param name="batch">The batch.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost]
         public IActionResult Post([FromBody] ClientLogBatch batch)
         {
             if (batch.Entries.Count == 0)
@@ -292,9 +292,9 @@ namespace RuckR.Server.Controllers
             return false;
         }
 
-        [HttpGet("health")]
         /// <summary>Check database health and app runtime status.</summary>
         /// <returns>The operation result.</returns>
+        [HttpGet("health")]
         public async Task<IActionResult> Health()
         {
             // Verify DB connectivity with a lightweight query
@@ -316,9 +316,9 @@ namespace RuckR.Server.Controllers
             return Ok(new { status = "healthy", timestamp = DateTime.UtcNow });
         }
 
-        [HttpGet("status")]
         /// <summary>Get service and telemetry status details.</summary>
         /// <returns>The operation result.</returns>
+        [HttpGet("status")]
         public async Task<IActionResult> Status()
         {
             // Basic OTEL status — what's running

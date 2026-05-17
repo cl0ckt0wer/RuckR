@@ -1,6 +1,6 @@
 # Map UI Smoke Checklist
 
-Use this after changes to `RuckR/Client/Pages/Map.razor`, GeoBlazor widgets, map overlays, GPS prompts, or production deploys that affect the map.
+Use this after changes to `RuckR/Client/Pages/GameMap.razor`, `RuckR/Client/Pages/DebugMap.razor`, GeoBlazor widgets/layers, map overlays, GPS prompts, or production deploys that affect the map.
 
 ## Desktop
 

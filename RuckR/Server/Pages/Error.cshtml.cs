@@ -5,9 +5,9 @@ using System.Diagnostics;
 namespace RuckR.Server.Pages
 {
     /// <summary>Renders the shared error page and captures request identifiers.</summary>
+    /// <summary>Defines the server-side class ErrorModel.</summary>
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     [IgnoreAntiforgeryToken]
-    /// <summary>Defines the server-side class ErrorModel.</summary>
     public class ErrorModel : PageModel
     {
         /// <summary>Gets or sets the request ID.</summary>

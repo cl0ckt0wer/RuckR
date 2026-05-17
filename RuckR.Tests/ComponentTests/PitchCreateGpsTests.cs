@@ -12,10 +12,10 @@ namespace RuckR.Tests.ComponentTests;
     /// </summary>
 public class PitchCreateGpsTests : TestContext
 {
-    [Fact]
     /// <summary>
     /// Verifies pitch Create Disables Submit And Shows Error When Gps Unavailable.
     /// </summary>
+    [Fact]
     public void PitchCreate_DisablesSubmitAndShowsError_WhenGpsUnavailable()
     {
         Services.AddSingleton<IGeolocationService>(new FakeGeolocationService(null));
@@ -33,10 +33,10 @@ public class PitchCreateGpsTests : TestContext
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies pitch Create Enables Submit And Shows Read Only Location When Gps Available.
     /// </summary>
+    [Fact]
     public void PitchCreate_EnablesSubmitAndShowsReadOnlyLocation_WhenGpsAvailable()
     {
         Services.AddSingleton<IGeolocationService>(new FakeGeolocationService(new GeoPosition

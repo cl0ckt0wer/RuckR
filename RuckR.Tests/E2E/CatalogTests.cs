@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -63,10 +63,10 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies catalog Page Loads Shows Player Cards.
     /// </summary>
+    [Fact]
     public async Task CatalogPage_Loads_ShowsPlayerCards()
     {
         var catalogPage = new CatalogPage(_page, _baseUrl);
@@ -78,10 +78,10 @@ public class CatalogTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(cardCount > 0, "Catalog should show player cards");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies catalog Page Filter By Position.
     /// </summary>
+    [Fact]
     public async Task CatalogPage_Filter_ByPosition()
     {
         var catalogPage = new CatalogPage(_page, _baseUrl);

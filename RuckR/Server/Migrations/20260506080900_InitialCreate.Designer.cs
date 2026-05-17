@@ -12,11 +12,11 @@ using RuckR.Server.Data;
 
 namespace RuckR.Server.Migrations
 {
-    [DbContext(typeof(RuckRDbContext))]
-    [Migration("20260506080900_InitialCreate")]
     /// <summary>
     /// EF Core design-time model snapshot for the initial migration.
     /// </summary>
+    [DbContext(typeof(RuckRDbContext))]
+    [Migration("20260506080900_InitialCreate")]
     partial class InitialCreate
     {
         /// <summary>Build the target model for this migration.</summary>

@@ -11,10 +11,10 @@ using RuckR.Server.Data;
 
 namespace RuckR.Server.Migrations
 {
-    [DbContext(typeof(RuckRDbContext))]
     /// <summary>
     /// Entity Framework model snapshot for the current database schema.
     /// </summary>
+    [DbContext(typeof(RuckRDbContext))]
     partial class RuckRDbContextModelSnapshot : ModelSnapshot
     {
         /// <summary>Build the current EF model snapshot.</summary>

@@ -5,10 +5,10 @@ namespace RuckR.Tests;
     /// </summary>
 public class SanityCheck
 {
-    [Fact]
     /// <summary>
     /// Verifies test Project Builds.
     /// </summary>
+    [Fact]
     public void TestProjectBuilds() => Assert.True(true);
 }
 

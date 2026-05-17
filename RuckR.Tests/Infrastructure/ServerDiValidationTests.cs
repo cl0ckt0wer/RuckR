@@ -10,10 +10,10 @@ namespace RuckR.Tests.Infrastructure;
 /// <see cref="CustomWebApplicationFactory"/> to ensure all
 /// critical services resolve with correct lifetimes.
 /// </summary>
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to class.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class ServerDiValidationTests
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -27,10 +27,10 @@ public class ServerDiValidationTests
         _factory = factory;
     }
 
-    [Fact]
     /// <summary>
     /// Verifies battle Hub Should Resolve.
     /// </summary>
+    [Fact]
     public void BattleHub_ShouldResolve()
     {
         using var scope = _factory.Services.CreateScope();
@@ -38,10 +38,10 @@ public class ServerDiValidationTests
         Assert.NotNull(hub);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies battle Resolver Should Resolve.
     /// </summary>
+    [Fact]
     public void BattleResolver_ShouldResolve()
     {
         using var scope = _factory.Services.CreateScope();
@@ -49,10 +49,10 @@ public class ServerDiValidationTests
         Assert.NotNull(resolver);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies location Tracker Should Be Singleton.
     /// </summary>
+    [Fact]
     public void LocationTracker_ShouldBeSingleton()
     {
         var tracker1 = _factory.Services.GetService<ILocationTracker>();
@@ -61,10 +61,10 @@ public class ServerDiValidationTests
         Assert.Same(tracker1, tracker2);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies db Context Should Be Scoped.
     /// </summary>
+    [Fact]
     public void DbContext_ShouldBeScoped()
     {
         using var scope1 = _factory.Services.CreateScope();

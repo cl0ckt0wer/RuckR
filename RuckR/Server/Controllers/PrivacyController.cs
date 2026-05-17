@@ -13,8 +13,8 @@ namespace RuckR.Server.Controllers
     /// <summary>Privacy and consent endpoints for user data handling.</summary>
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     /// <summary>Defines the server-side class PrivacyController.</summary>
+    [Authorize]
     public class PrivacyController : ControllerBase
     {
         private readonly RuckRDbContext _db;
@@ -32,10 +32,10 @@ namespace RuckR.Server.Controllers
         /// POST /api/privacy/consent — records explicit user consent for GPS and data processing.
         /// Must be called before GPS tracking begins.
         /// </summary>
-        [HttpPost("consent")]
         /// <summary>Record explicit user consent for telemetry or GPS processing.</summary>
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost("consent")]
         public async Task<IActionResult> GiveConsent([FromBody] ConsentRequest request)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -61,10 +61,10 @@ namespace RuckR.Server.Controllers
         /// <summary>
         /// GET /api/privacy/consent — checks whether the user has consented to the given purpose.
         /// </summary>
-        [HttpGet("consent")]
         /// <summary>Check whether the user has consented for a specific purpose.</summary>
         /// <param name="purpose">The purpose.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("consent")]
         public async Task<IActionResult> HasConsent([FromQuery] string purpose)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
@@ -86,9 +86,9 @@ namespace RuckR.Server.Controllers
         /// DELETE /api/me/data — permanently deletes all user data (GDPR Article 17 right to erasure).
         /// Cascades across collections, battles, encounters, profiles, consents, and rate limits.
         /// </summary>
-        [HttpDelete("me/data")]
         /// <summary>Delete all data associated with the authenticated user.</summary>
         /// <returns>The operation result.</returns>
+        [HttpDelete("me/data")]
         public async Task<IActionResult> DeleteMyData()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;

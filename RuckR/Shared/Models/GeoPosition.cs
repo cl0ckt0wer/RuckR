@@ -8,10 +8,15 @@ namespace RuckR.Shared.Models
     /// </summary>
     public enum DistanceBucket
     {
+        /// <summary>Distance is at or below 50 meters.</summary>
         Within50m,
+        /// <summary>Distance is above 50 meters and at or below 100 meters.</summary>
         Within100m,
+        /// <summary>Distance is above 100 meters and at or below 250 meters.</summary>
         Within250m,
+        /// <summary>Distance is above 250 meters and at or below 500 meters.</summary>
         Within500m,
+        /// <summary>Distance is above 500 meters.</summary>
         Beyond
     }
 
@@ -22,10 +27,12 @@ namespace RuckR.Shared.Models
     {
         private const double EarthRadiusMeters = 6_371_000.0;
 
+        /// <summary>Latitude component in decimal degrees.</summary>
         [Required]
         [Range(-90.0, 90.0, ErrorMessage = "Latitude must be between -90 and 90 degrees.")]
         public double Latitude { get; init; }
 
+        /// <summary>Longitude component in decimal degrees.</summary>
         [Required]
         [Range(-180.0, 180.0, ErrorMessage = "Longitude must be between -180 and 180 degrees.")]
         public double Longitude { get; init; }

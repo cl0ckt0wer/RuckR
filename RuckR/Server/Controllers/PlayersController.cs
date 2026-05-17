@@ -12,8 +12,8 @@ namespace RuckR.Server.Controllers
     /// <summary>API endpoints for player lookup and nearby player queries.</summary>
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     /// <summary>Defines the server-side class PlayersController.</summary>
+    [Authorize]
     public class PlayersController : ControllerBase
     {
         private readonly RuckRDbContext _db;
@@ -37,12 +37,12 @@ namespace RuckR.Server.Controllers
             _rateLimitService = rateLimitService;
         }
 
-        [HttpGet]
         /// <summary>Get players with optional filtering by position, rarity, or name.</summary>
         /// <param name="position">The position.</param>
         /// <param name="rarity">The rarity.</param>
         /// <param name="name">The name.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet]
         public async Task<ActionResult<List<PlayerModel>>> GetPlayers(
             [FromQuery] string? position = null,
             [FromQuery] string? rarity = null,
@@ -70,10 +70,10 @@ namespace RuckR.Server.Controllers
             return await query.ToListAsync();
         }
 
-        [HttpGet("{id}")]
         /// <summary>Get a player by identifier.</summary>
         /// <param name="id">The id.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("{id}")]
         public async Task<ActionResult<PlayerModel>> GetPlayer(int id)
         {
             var player = await _db.Players.FindAsync(id);
@@ -90,12 +90,12 @@ namespace RuckR.Server.Controllers
         /// GET /api/players/nearby — returns players within radius, using DistanceBucket instead of exact distance.
         /// Does NOT expose OwnerUsername to prevent location triangulation.
         /// </summary>
-        [HttpGet("nearby")]
         /// <summary>Get nearby players by GPS coordinate and radius.</summary>
         /// <param name="lat">The lat.</param>
         /// <param name="lng">The lng.</param>
         /// <param name="radius">The radius.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("nearby")]
         public async Task<ActionResult<List<NearbyPlayerDto>>> GetNearbyPlayers(
             [FromQuery] double lat,
             [FromQuery] double lng,

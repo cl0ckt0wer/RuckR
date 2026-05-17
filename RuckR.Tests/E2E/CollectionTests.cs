@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class CollectionTests : IClassFixture<PlaywrightFixture>
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -30,10 +30,10 @@ public class CollectionTests : IClassFixture<PlaywrightFixture>
     /// Navigating to /collection without authentication should redirect
     /// to the ASP.NET Core Identity login page.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies unauthenticated Redirects To Login.
     /// </summary>
+    [Fact]
     public async Task Unauthenticated_RedirectsToLogin()
     {
         // Arrange
@@ -65,10 +65,10 @@ public class CollectionTests : IClassFixture<PlaywrightFixture>
     /// After registering (and auto-login), a new user visiting /collection
     /// should see the empty state with the "Explore Map" CTA.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies authenticated Shows Empty State.
     /// </summary>
+    [Fact]
     public async Task Authenticated_ShowsEmptyState()
     {
         // Arrange

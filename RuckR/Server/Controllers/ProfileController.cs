@@ -9,8 +9,8 @@ namespace RuckR.Server.Controllers
     /// <summary>API for reading and updating the authenticated user's profile.</summary>
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     /// <summary>Defines the server-side class ProfileController.</summary>
+    [Authorize]
     public class ProfileController : ControllerBase
     {
         private readonly IProfileService _profileService;
@@ -30,9 +30,9 @@ namespace RuckR.Server.Controllers
             _logger = logger;
         }
 
-        [HttpGet]
     /// <summary>Get the current user's profile.</summary>
     /// <returns>The operation result.</returns>
+        [HttpGet]
     public async Task<ActionResult<UserProfileModel>> Get()
         {
             var userId = _userManager.GetUserId(User);
@@ -48,10 +48,10 @@ namespace RuckR.Server.Controllers
             return Ok(profile);
         }
 
-        [HttpPut]
     /// <summary>Update or create the current user's profile.</summary>
     /// <param name="updatedProfile">The profile values to persist.</param>
     /// <returns>The operation result.</returns>
+        [HttpPut]
     public async Task<IActionResult> Put([FromBody] UserProfileModel updatedProfile)
         {
             var userId = _userManager.GetUserId(User);

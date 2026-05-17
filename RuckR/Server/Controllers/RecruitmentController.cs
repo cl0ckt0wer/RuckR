@@ -11,8 +11,8 @@ namespace RuckR.Server.Controllers;
 /// <summary>API endpoints for encounter generation and recruitment attempts.</summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 /// <summary>Defines the server-side class RecruitmentController.</summary>
+[Authorize]
 public class RecruitmentController : ControllerBase
 {
     private const double MaxCaptureAccuracyMeters = 50.0;
@@ -42,9 +42,9 @@ public class RecruitmentController : ControllerBase
         _rateLimitService = rateLimitService;
     }
 
-    [HttpGet("profile")]
     /// <summary>Get the current user's game progress profile.</summary>
     /// <returns>The operation result.</returns>
+    [HttpGet("profile")]
     public async Task<ActionResult<GameProgressDto>> GetProfile()
     {
         var userId = _userManager.GetUserId(User);
@@ -61,10 +61,10 @@ public class RecruitmentController : ControllerBase
         return Ok(new GameProgressDto(profile.Level, profile.Experience, nextLevelExperience));
     }
 
-    [HttpPost("attempt")]
     /// <summary>Attempt to recruit a player from an encounter.</summary>
     /// <param name="request">The request.</param>
     /// <returns>The operation result.</returns>
+    [HttpPost("attempt")]
     public async Task<ActionResult<RecruitmentAttemptResultDto>> Attempt([FromBody] RecruitmentAttemptRequest request)
     {
         var userId = _userManager.GetUserId(User);

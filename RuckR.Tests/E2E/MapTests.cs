@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -46,10 +46,10 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Page Loads Shows Geo Blazor Map.
     /// </summary>
+    [Fact]
     public async Task MapPage_Loads_ShowsGeoBlazorMap()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -64,10 +64,10 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(mapLoaded, "Map shell should load within timeout");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Page Shows Onboarding Banner Can Dismiss.
     /// </summary>
+    [Fact]
     public async Task MapPage_ShowsOnboardingBanner_CanDismiss()
     {
         var mapPage = new MapPage(_page, _baseUrl);

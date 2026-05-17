@@ -47,13 +47,13 @@ Out of scope for the next implementation cycle:
 
 ## Superseded Decisions
 
-The original PRD and map plan specified Leaflet. That is now superseded. The canonical map renderer is GeoBlazor using ArcGIS MapView/WebMap, with environment-sourced ArcGIS and GeoBlazor configuration.
+The original PRD and map plan specified Leaflet. That is now superseded. The canonical map renderer is GeoBlazor using ArcGIS `MapView`, GeoBlazor `<Map>`, `Basemap`, widgets, and `GraphicsLayer` components, with environment-sourced ArcGIS and GeoBlazor configuration.
 
-The GeoBlazor migration plan originally aimed for no custom JS modules. That is now too strict. The canonical rule is: use GeoBlazor for map ownership, and keep small targeted JS modules when they solve browser APIs or GeoBlazor gaps. Current accepted modules include:
+The GeoBlazor migration plan originally aimed for no custom JS modules. That is still the goal for map rendering itself, but too strict for browser capabilities and diagnostics. The canonical rule is: use GeoBlazor for map ownership and marker lifecycle, and keep small targeted JS modules only when they solve browser APIs or diagnostics outside GeoBlazor's component surface. Current accepted modules include:
 
 - `geolocation.module.js` for GPS and browser online/offline events.
-- `arcgis-graphics.module.js` for direct ArcGIS graphics management where GeoBlazor Core 4.4.4 is not sufficient.
 - `browser-logging.module.js` for client-side telemetry.
+- `map-diagnostics.module.js` for temporary production diagnostics around mobile/ArcGIS rendering.
 
 The SQL Server in-memory replacement plan should not be read as "immediately remove every in-memory service." The canonical rule is:
 
@@ -73,7 +73,7 @@ Already implemented:
 - Server-side controllers for players, pitches, collection, battles, recruitment, privacy, telemetry, map, and profile.
 - SignalR `BattleHub` with authenticated location updates, pitch discovery callbacks, challenges, accept/decline flow, idempotency key support, and latency `Ping`.
 - Fluxor state for game, battle, inventory, location, and map.
-- GeoBlazor map page at `/map` and `/`.
+- GeoBlazor map page at `/map` and `/`, implemented by `GameMap.razor` so the app component does not collide with GeoBlazor's `<Map>` component.
 - Browser geolocation service and JS module.
 - Connection status component with online/offline state, queue count, and latency quality.
 - SignalR offline action queue with bounded replay and coalesced location updates.
@@ -87,7 +87,10 @@ Known implementation gaps:
 - Some original acceptance criteria mention Leaflet and OpenStreetMap; those should be deleted or rewritten in future docs.
 - SignalR queue behavior is client-side only; server replay/idempotency coverage is strongest for challenges, weaker for every possible hub action.
 - `ILocationTracker` remains in-memory. This is acceptable for one app instance, but not for multi-instance scale-out or restart-resilient live presence.
-- GeoBlazor + direct ArcGIS graphics needs browser QA because compile-time tests cannot catch all rendering failures.
+- GeoBlazor `GraphicsLayer` marker rendering for pitches, encounters, candidate places, and player location needs browser QA because compile-time tests cannot catch all ArcGIS rendering failures.
+- Pitch markers are split by pitch type into separate GeoBlazor `GraphicsLayer`s. Marker summaries should live in GeoBlazor `PopupTemplate`s where possible, with the game bottom sheets reserved for game actions.
+- The full map's extra ArcGIS widgets are isolated behind `Map:EnableArcGisWidgets`; keep this disabled during mobile reduction testing unless the widget path is explicitly under test.
+- Main-map reduction switches are available through configuration and matching URL query parameters: `Map:BasemapMode` / `basemap`, `Map:EnableGameGraphics` / `mapGraphics`, `Map:EnableMapDiagnostics` / `mapDiagnostics`, and `Map:EnableAutoGpsWatch` / `autoGps`. Use `/map?basemap=empty&mapGraphics=false&mapDiagnostics=false&autoGps=false` as the closest main-route comparison to `/debug-map`.
 
 ## Target User Experience
 

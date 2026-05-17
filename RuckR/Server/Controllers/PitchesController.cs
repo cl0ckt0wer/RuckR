@@ -40,11 +40,11 @@ namespace RuckR.Server.Controllers
         /// <summary>
         /// GET /pitches — returns a paginated list of all pitches.
         /// </summary>
-        [HttpGet]
         /// <summary>Get a paginated list of pitches.</summary>
         /// <param name="page">The page.</param>
         /// <param name="pageSize">The pagesize.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet]
         public async Task<ActionResult<List<PitchModel>>> GetPitches(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
@@ -73,12 +73,12 @@ var pitches = await _db.Pitches
          /// <summary>
          /// GET /pitches/nearby — proximity search for pitches within a radius.
          /// </summary>
-         [HttpGet("nearby")]
          /// <summary>Get pitches within a proximity radius.</summary>
          /// <param name="lat">The lat.</param>
          /// <param name="lng">The lng.</param>
          /// <param name="radius">The radius.</param>
          /// <returns>The operation result.</returns>
+         [HttpGet("nearby")]
          public async Task<ActionResult<List<PitchModel>>> GetNearbyPitches(
              [FromQuery] double lat,
              [FromQuery] double lng,
@@ -111,12 +111,12 @@ var pitches = await _db.Pitches
         /// <summary>
         /// GET /pitches/place-candidates — ArcGIS Places that look suitable for pitch creation.
         /// </summary>
-        [HttpGet("place-candidates")]
          /// <summary>Find nearby real-world pitch candidate places.</summary>
         /// <param name="lat">The lat.</param>
         /// <param name="lng">The lng.</param>
         /// <param name="radius">The radius.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("place-candidates")]
         public async Task<ActionResult<IReadOnlyList<PitchCandidatePlaceDto>>> GetPitchCandidatePlaces(
             [FromQuery] double lat,
             [FromQuery] double lng,
@@ -136,10 +136,10 @@ var pitches = await _db.Pitches
         /// <summary>
         /// GET /pitches/{id} — returns a single pitch by id.
         /// </summary>
-        [HttpGet("{id}")]
         /// <summary>Get a pitch by identifier.</summary>
         /// <param name="id">The id.</param>
         /// <returns>The operation result.</returns>
+        [HttpGet("{id}")]
         public async Task<ActionResult<PitchModel>> GetPitch(int id)
         {
             var pitch = await _db.Pitches.FindAsync(id);
@@ -155,11 +155,11 @@ var pitches = await _db.Pitches
         /// Rate-limited to 5 pitches per user per day.
         /// Pitch names must be globally unique.
         /// </summary>
-        [HttpPost]
-        [Authorize]
         /// <summary>Create a new manual pitch.</summary>
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost]
+        [Authorize]
         public async Task<ActionResult<PitchModel>> CreatePitch([FromBody] CreatePitchRequest request)
         {
             // Validate lat/lng ranges
@@ -213,11 +213,11 @@ var pitches = await _db.Pitches
         /// <summary>
         /// POST /pitches/from-candidate — converts a reviewed ArcGIS place candidate into a real pitch.
         /// </summary>
-        [HttpPost("from-candidate")]
-        [Authorize]
         /// <summary>Create a pitch from a discovered candidate.</summary>
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
+        [HttpPost("from-candidate")]
+        [Authorize]
         public async Task<ActionResult<PitchModel>> CreatePitchFromCandidate([FromBody] CreatePitchFromCandidateRequest request)
         {
             if (request.Latitude < -90 || request.Latitude > 90)

@@ -5,10 +5,10 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class TelemetryApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -41,10 +41,10 @@ public class TelemetryApiTests : IAsyncLifetime
         _client?.Dispose();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies post Telemetry Valid Batch Returns200.
     /// </summary>
+    [Fact]
     public async Task PostTelemetry_ValidBatch_Returns200()
     {
         var batch = new ClientLogBatch
@@ -67,10 +67,10 @@ public class TelemetryApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies post Telemetry Empty Batch Returns200.
     /// </summary>
+    [Fact]
     public async Task PostTelemetry_EmptyBatch_Returns200()
     {
         var batch = new ClientLogBatch
@@ -83,10 +83,10 @@ public class TelemetryApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies post Telemetry Multiple Entries Returns200.
     /// </summary>
+    [Fact]
     public async Task PostTelemetry_MultipleEntries_Returns200()
     {
         var batch = new ClientLogBatch

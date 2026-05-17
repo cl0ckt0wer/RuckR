@@ -33,10 +33,10 @@ public class DiValidationTests
         public override Task<AuthenticationState> GetAuthenticationStateAsync()
             => Task.FromResult(new AuthenticationState(Anonymous));
     }
-    [Fact]
     /// <summary>
     /// Verifies all Client Services Should Resolve Without Scope Conflicts.
     /// </summary>
+    [Fact]
     public void AllClientServices_ShouldResolve_WithoutScopeConflicts()
     {
         // Arrange: build a service collection mimicking Blazor WASM DI
@@ -81,10 +81,10 @@ public class DiValidationTests
         Assert.NotNull(apiClient);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies signal R Client Service Should Not Throw When Scoped.
     /// </summary>
+    [Fact]
     public void SignalRClientService_ShouldNotThrow_WhenScoped()
     {
         var services = new ServiceCollection();
@@ -100,10 +100,10 @@ public class DiValidationTests
         Assert.Null(exception);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies fluxor Store Should Initialize Without Errors.
     /// </summary>
+    [Fact]
     public async Task FluxorStore_ShouldInitialize_WithoutErrors()
     {
         var services = new ServiceCollection();
@@ -118,10 +118,10 @@ public class DiValidationTests
         Assert.Null(exception);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies authentication State Provider Should Resolve.
     /// </summary>
+    [Fact]
     public void AuthenticationStateProvider_ShouldResolve()
     {
         var services = new ServiceCollection();
@@ -139,10 +139,10 @@ public class DiValidationTests
         Assert.NotNull(authProvider); // THIS would have caught the gap
     }
 
-    [Fact]
     /// <summary>
     /// Verifies authorize View Dependencies Should Resolve.
     /// </summary>
+    [Fact]
     public void AuthorizeView_Dependencies_ShouldResolve()
     {
         var services = new ServiceCollection();
@@ -162,10 +162,10 @@ public class DiValidationTests
         Assert.NotNull(provider.GetService<IAuthorizationService>());
     }
 
-    [Fact]
     /// <summary>
     /// Verifies authentication State Provider Must Be Concrete Not Just Interface.
     /// </summary>
+    [Fact]
     public void AuthenticationStateProvider_MustBeConcrete_NotJustInterface()
     {
         // Arrange — simulate the Blazor WASM service collection
@@ -192,10 +192,10 @@ public class DiValidationTests
         Assert.IsType<CookieAuthenticationStateProvider>(authProvider);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies all Auth Dependencies For Authorize View Should Resolve.
     /// </summary>
+    [Fact]
     public void AllAuthDependencies_ForAuthorizeView_ShouldResolve()
     {
         // Full AuthorizeView dependency chain

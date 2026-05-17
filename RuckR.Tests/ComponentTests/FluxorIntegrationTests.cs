@@ -27,10 +27,10 @@ public class FluxorIntegrationTests : TestContext
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies fluxor Store Initializes Without Error.
     /// </summary>
+    [Fact]
     public async Task FluxorStore_InitializesWithoutError()
     {
         var store = Services.GetRequiredService<IStore>();
@@ -40,10 +40,10 @@ public class FluxorIntegrationTests : TestContext
         Assert.Null(ex);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies fluxor Store Has Expected Feature States.
     /// </summary>
+    [Fact]
     public async Task FluxorStore_HasExpectedFeatureStates()
     {
         var store = Services.GetRequiredService<IStore>();
@@ -63,10 +63,10 @@ public class FluxorIntegrationTests : TestContext
         Assert.Contains("RuckR.Client.Store.GameFeature.GameState", featureKeys);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies fluxor Dispatch Does Not Throw.
     /// </summary>
+    [Fact]
     public async Task FluxorDispatch_DoesNotThrow()
     {
         var store = Services.GetRequiredService<IStore>();

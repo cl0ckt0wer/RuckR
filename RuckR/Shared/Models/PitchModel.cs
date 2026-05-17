@@ -11,13 +11,13 @@ namespace RuckR.Shared.Models
     /// </summary>
     public class PitchModel
     {
-        [Key]
         /// <summary>Primary key for the pitch.</summary>
+        [Key]
         public int Id { get; set; }
 
+        /// <summary>Pitch display name.</summary>
         [Required]
         [MaxLength(200)]
-        /// <summary>Pitch display name.</summary>
         public string Name { get; set; } = string.Empty;
 
         /// <summary>
@@ -25,44 +25,44 @@ namespace RuckR.Shared.Models
         /// Excluded from JSON serialization due to NetTopologySuite geometry cycle.
         /// Use /pitches/nearby endpoint for spatial queries.
         /// </summary>
+        /// <summary>Stored geography point used for spatial queries.</summary>
         [Required]
         [JsonIgnore]
-        /// <summary>Stored geography point used for spatial queries.</summary>
         public Point Location { get; set; } = null!;
 
         /// <summary>Latitude — populated from Location at query time, serialized for the client.</summary>
+        /// <summary>Latitude projected from <see cref="Location"/>.</summary>
         [NotMapped]
         [JsonPropertyName("latitude")]
-        /// <summary>Latitude projected from <see cref="Location"/>.</summary>
         public double Latitude { get; set; }
 
         /// <summary>Longitude — populated from Location at query time, serialized for the client.</summary>
+        /// <summary>Longitude projected from <see cref="Location"/>.</summary>
         [NotMapped]
         [JsonPropertyName("longitude")]
-        /// <summary>Longitude projected from <see cref="Location"/>.</summary>
         public double Longitude { get; set; }
 
-        [Required]
         /// <summary>Creator user identifier.</summary>
+        [Required]
         public string CreatorUserId { get; set; } = string.Empty;
 
         /// <summary>Pitch type category.</summary>
         public PitchType Type { get; set; }
 
-        [MaxLength(50)]
         /// <summary>Source system for this pitch (Manual or external).</summary>
+        [MaxLength(50)]
         public string Source { get; set; } = "Manual";
 
-        [MaxLength(128)]
         /// <summary>Optional external place identifier.</summary>
+        [MaxLength(128)]
         public string? ExternalPlaceId { get; set; }
 
-        [MaxLength(200)]
         /// <summary>Optional source category label.</summary>
+        [MaxLength(200)]
         public string? SourceCategory { get; set; }
 
-        [MaxLength(200)]
         /// <summary>Optional source match rationale.</summary>
+        [MaxLength(200)]
         public string? SourceMatchReason { get; set; }
 
         /// <summary>Optional confidence score for candidate source matches.</summary>

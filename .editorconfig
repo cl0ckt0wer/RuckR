@@ -1,0 +1,12 @@
+root = true
+
+[*.cs]
+# Keep public API docs complete once XML docs are enabled/enforced.
+dotnet_diagnostic.CS1573.severity = warning
+
+# StyleCop analyzers (if/when enabled) for API documentation completeness.
+dotnet_diagnostic.SA1600.severity = warning
+dotnet_diagnostic.SA1611.severity = warning
+dotnet_diagnostic.SA1615.severity = warning
+dotnet_diagnostic.SA1618.severity = warning
+

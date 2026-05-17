@@ -2,6 +2,8 @@
 @page "/"
 @using dymaptic.GeoBlazor.Core.Components
 @using dymaptic.GeoBlazor.Core.Components.Geometries
+@using dymaptic.GeoBlazor.Core.Components.Layers
+@using dymaptic.GeoBlazor.Core.Components.Popups
 @using dymaptic.GeoBlazor.Core.Components.Symbols
 @using dymaptic.GeoBlazor.Core.Components.Views
 @using dymaptic.GeoBlazor.Core.Components.Widgets
@@ -59,14 +61,29 @@
                  ShowZoomWidget="true"
                  style="width:100%; height:100%;">
             <Map>
-                <Basemap>
-                    <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@_apiKey" />
-                </Basemap>
+                @if (_basemapMode == MapBasemapMode.Styled)
+                {
+                    <Basemap>
+                        <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@_apiKey" />
+                    </Basemap>
+                }
+                @if (_enableGameGraphics)
+                {
+                    <GraphicsLayer @ref="_stadiumPitchLayer" Title="Stadiums" />
+                    <GraphicsLayer @ref="_standardPitchLayer" Title="Pitches" />
+                    <GraphicsLayer @ref="_trainingPitchLayer" Title="Training grounds" />
+                    <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
+                    <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
+                    <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
+                }
             </Map>
-            <HomeWidget Position="OverlayPosition.TopLeft" Viewpoint="@HomeViewpoint" />
-            <CompassWidget Position="OverlayPosition.TopLeft" />
-            <LocateWidget Position="OverlayPosition.TopLeft" />
-            <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
+            @if (_enableArcGisWidgets)
+            {
+                <HomeWidget Position="OverlayPosition.TopLeft" Viewpoint="@HomeViewpoint" />
+                <CompassWidget Position="OverlayPosition.TopLeft" />
+                <LocateWidget Position="OverlayPosition.TopLeft" />
+                <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
+            }
         </MapView>
         <div class="map-fab-group">
             <button class="btn btn-sm btn-outline-light map-fab"
@@ -128,7 +145,7 @@
             <div class="pitch-legend__row">
                 <span class="pitch-legend__marker pitch-legend__marker--candidate"></span>
                 <span>Candidates</span>
-                <strong>@_candidatePlaceGraphics.Count</strong>
+                <strong>@CandidatePlaceCount</strong>
             </div>
         </div>
 
@@ -376,7 +393,7 @@
         }
         else if (_pitchGraphics.Count > 0 || _encounterGraphics.Count > 0 || _candidatePlaceGraphics.Count > 0)
         {
-            <text>@_pitchGraphics.Count pitches, @_encounterGraphics.Count encounters, @_candidatePlaceGraphics.Count candidates visible. Tap a marker to see details.</text>
+            <text>@_pitchGraphics.Count pitches, @_encounterGraphics.Count encounters, @CandidatePlaceCount candidates visible. Tap a marker to see details.</text>
         }
         else
         {
@@ -867,7 +884,26 @@
         string CssClass,
         string? AccuracyText);
 
+    public enum MapBasemapMode
+    {
+        Styled,
+        Empty
+    }
+
+    public readonly record struct MapReductionOptions(
+        MapBasemapMode BasemapMode,
+        bool EnableArcGisWidgets,
+        bool EnableMapDiagnostics,
+        bool EnableGameGraphics,
+        bool EnableAutoGpsWatch);
+
     private MapView? _mapView;
+    private GraphicsLayer? _stadiumPitchLayer;
+    private GraphicsLayer? _standardPitchLayer;
+    private GraphicsLayer? _trainingPitchLayer;
+    private GraphicsLayer? _encounterLayer;
+    private GraphicsLayer? _candidatePlaceLayer;
+    private GraphicsLayer? _playerLocationLayer;
     private string _apiKey = string.Empty;
     private bool _hasApiKey;
     private double _latitude = 51.5074;
@@ -924,12 +960,113 @@
     private int _gpsRetryAttempts;
     private bool _gpsNoticeDismissed;
     private bool _showCandidatePlaces = true;
+    private bool _enableArcGisWidgets;
+    private bool _enableMapDiagnostics;
+    private bool _enableGameGraphics;
+    private bool _enableAutoGpsWatch;
+    private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
         _hasApiKey = !ShouldShowMapUnavailableFallback(_apiKey);
         _viewReady = !_hasApiKey;
+        var reductionOptions = ResolveMapReductionOptions(Configuration, Navigation.Uri);
+        _basemapMode = reductionOptions.BasemapMode;
+        _enableArcGisWidgets = reductionOptions.EnableArcGisWidgets;
+        _enableMapDiagnostics = reductionOptions.EnableMapDiagnostics;
+        _enableGameGraphics = reductionOptions.EnableGameGraphics;
+        _enableAutoGpsWatch = reductionOptions.EnableAutoGpsWatch;
+    }
+
+    public static MapReductionOptions ResolveMapReductionOptions(IConfiguration configuration, string currentUri)
+    {
+        var uri = new Uri(currentUri, UriKind.Absolute);
+
+        return new MapReductionOptions(
+            BasemapMode: ResolveBasemapMode(configuration, uri),
+            EnableArcGisWidgets: ResolveMapFeatureFlag(configuration, uri, "EnableArcGisWidgets", "arcGisWidgets", defaultValue: false),
+            EnableMapDiagnostics: ResolveMapFeatureFlag(configuration, uri, "EnableMapDiagnostics", "mapDiagnostics", defaultValue: true),
+            EnableGameGraphics: ResolveMapFeatureFlag(configuration, uri, "EnableGameGraphics", "mapGraphics", defaultValue: true),
+            EnableAutoGpsWatch: ResolveMapFeatureFlag(configuration, uri, "EnableAutoGpsWatch", "autoGps", defaultValue: true));
+    }
+
+    private static MapBasemapMode ResolveBasemapMode(IConfiguration configuration, Uri uri)
+    {
+        var value = configuration["Map:BasemapMode"];
+        var mode = ParseBasemapMode(value) ?? MapBasemapMode.Styled;
+
+        var query = uri.Query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return mode;
+        }
+
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(parts[0]);
+            if (!string.Equals(key, "basemap", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (parts.Length == 1)
+            {
+                return MapBasemapMode.Empty;
+            }
+
+            return ParseBasemapMode(Uri.UnescapeDataString(parts[1])) ?? mode;
+        }
+
+        return mode;
+    }
+
+    public static MapBasemapMode? ParseBasemapMode(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "styled" => MapBasemapMode.Styled,
+        "empty" => MapBasemapMode.Empty,
+        _ => null
+    };
+
+    private static bool ResolveMapFeatureFlag(
+        IConfiguration configuration,
+        Uri uri,
+        string configKey,
+        string queryKey,
+        bool defaultValue)
+    {
+        var value = configuration[$"Map:{configKey}"];
+        var enabled = bool.TryParse(value, out var configValue) ? configValue : defaultValue;
+
+        var query = uri.Query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return enabled;
+        }
+
+        foreach (var pair in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = pair.Split('=', 2);
+            var key = Uri.UnescapeDataString(parts[0]);
+            if (!string.Equals(key, queryKey, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (parts.Length == 1)
+            {
+                return true;
+            }
+
+            var rawQueryValue = Uri.UnescapeDataString(parts[1]);
+            if (bool.TryParse(rawQueryValue, out var queryValue))
+            {
+                return queryValue;
+            }
+        }
+
+        return enabled;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -937,22 +1074,28 @@
         if (firstRender)
         {
             await LoadOnboardingPreferenceAsync();
-            _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
-            await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+            if (_enableMapDiagnostics)
+            {
+                _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
+                await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+            }
 
             GeolocationService.PositionChanged += OnPositionChanged;
             MapState.StateChanged += OnMapStateChanged;
             LocationState.StateChanged += OnLocationStateChanged;
             _subscriptionsActive = true;
 
-            try
+            if (_enableAutoGpsWatch)
             {
-                await GeolocationService.StartWatchAsync();
-            }
-            catch
-            {
-                _statusMessage = "GPS unavailable. Showing pitches near London.";
-                StateHasChanged();
+                try
+                {
+                    await GeolocationService.StartWatchAsync();
+                }
+                catch
+                {
+                    _statusMessage = "GPS unavailable. Showing pitches near London.";
+                    StateHasChanged();
+                }
             }
 
             _ = DismissStaleLoadingIndicatorAsync();
@@ -986,7 +1129,14 @@
         _ = CaptureMapDiagnosticsAfterDelayAsync("view-initialized", TimeSpan.FromSeconds(1));
 
         await RefreshAuthenticationStateAsync();
-        await LoadPitchMarkersAsync(_latitude, _longitude);
+        if (_enableGameGraphics && _lastKnownPosition is not null)
+        {
+            await UpdatePlayerLocationGraphicAsync(_lastKnownPosition);
+        }
+        if (_enableGameGraphics)
+        {
+            await LoadPitchMarkersAsync(_latitude, _longitude);
+        }
         await RefreshGameProgress();
     }
 
@@ -998,7 +1148,7 @@
 
     private async Task CaptureMapDiagnosticsAsync(string reason)
     {
-        if (_mapDiagnosticsModule is null)
+        if (!_enableMapDiagnostics || _mapDiagnosticsModule is null)
         {
             return;
         }
@@ -1019,6 +1169,10 @@
         try
         {
             _lastKnownPosition = pos;
+            if (_enableGameGraphics)
+            {
+                await UpdatePlayerLocationGraphicAsync(pos);
+            }
             if (_statusMessage is not null
                 && (_statusMessage.StartsWith("GPS", StringComparison.OrdinalIgnoreCase)
                     || _statusMessage.StartsWith("Waiting for GPS", StringComparison.OrdinalIgnoreCase)))
@@ -1035,7 +1189,7 @@
                 _homeLongitude = pos.Longitude;
             }
 
-            if (ShouldRefreshPitches(pos))
+            if (_enableGameGraphics && ShouldRefreshPitches(pos))
             {
                 await LoadPitchMarkersAsync(pos.Latitude, pos.Longitude);
             }
@@ -1098,7 +1252,7 @@
 
     private async Task LoadPitchMarkersAsync(double lat, double lng)
     {
-        if (!_viewReady || _mapView is null)
+        if (!_enableGameGraphics || !_viewReady || _mapView is null)
             return;
 
         try
@@ -1115,7 +1269,8 @@
             else
             {
                 _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
-                await ClearCandidatePlaceGraphicsAsync();
+                _candidatePlaceGraphics.Clear();
+                await SetCandidatePlaceLayerVisibleAsync(false);
             }
 
             var encounters = new List<PlayerEncounterDto>();
@@ -1148,13 +1303,9 @@
 
     private async Task UpdatePitchGraphicsAsync(List<PitchModel> pitches)
     {
-        if (_mapView is null) return;
+        if (_stadiumPitchLayer is null || _standardPitchLayer is null || _trainingPitchLayer is null) return;
 
-        foreach (var old in _pitchGraphics.Values)
-        {
-            try { await _mapView.RemoveGraphic(old); }
-            catch (Exception ex) { Logger.LogDebug(ex, "Failed to remove old graphic"); }
-        }
+        await ClearPitchLayersAsync();
         _pitchGraphics.Clear();
 
         var graphics = new List<KeyValuePair<int, Graphic>>(pitches.Count);
@@ -1165,6 +1316,7 @@
                 new Graphic(
                 geometry: new Point(longitude: pitch.Longitude, latitude: pitch.Latitude),
                 symbol: GetPitchSymbol(pitch.Type),
+                popupTemplate: CreatePitchPopupTemplate(),
                 attributes: new AttributesDictionary(new Dictionary<string, object?>
                 {
                     ["_ruckrType"] = "pitch",
@@ -1178,7 +1330,7 @@
 
         try
         {
-            await _mapView.AddGraphics(graphics.Select(g => g.Value));
+            await AddPitchGraphicsByTypeAsync(pitches, graphics);
             foreach (var (pitchId, graphic) in graphics)
             {
                 _pitchGraphics[pitchId] = graphic;
@@ -1190,15 +1342,64 @@
         }
     }
 
+    private async Task ClearPitchLayersAsync()
+    {
+        if (_stadiumPitchLayer is not null)
+        {
+            await _stadiumPitchLayer.Clear();
+        }
+
+        if (_standardPitchLayer is not null)
+        {
+            await _standardPitchLayer.Clear();
+        }
+
+        if (_trainingPitchLayer is not null)
+        {
+            await _trainingPitchLayer.Clear();
+        }
+    }
+
+    private async Task AddPitchGraphicsByTypeAsync(
+        IReadOnlyList<PitchModel> pitches,
+        IReadOnlyList<KeyValuePair<int, Graphic>> graphics)
+    {
+        var pitchById = pitches.ToDictionary(p => p.Id);
+
+        var stadiumGraphics = graphics
+            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Stadium)
+            .Select(g => g.Value)
+            .ToArray();
+        var standardGraphics = graphics
+            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Standard)
+            .Select(g => g.Value)
+            .ToArray();
+        var trainingGraphics = graphics
+            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Training)
+            .Select(g => g.Value)
+            .ToArray();
+
+        if (stadiumGraphics.Length > 0 && _stadiumPitchLayer is not null)
+        {
+            await _stadiumPitchLayer.AddMany(stadiumGraphics);
+        }
+
+        if (standardGraphics.Length > 0 && _standardPitchLayer is not null)
+        {
+            await _standardPitchLayer.AddMany(standardGraphics);
+        }
+
+        if (trainingGraphics.Length > 0 && _trainingPitchLayer is not null)
+        {
+            await _trainingPitchLayer.AddMany(trainingGraphics);
+        }
+    }
+
     private async Task UpdateEncounterGraphicsAsync(IReadOnlyList<PlayerEncounterDto> encounters)
     {
-        if (_mapView is null) return;
+        if (_encounterLayer is null) return;
 
-        foreach (var old in _encounterGraphics.Values)
-        {
-            try { await _mapView.RemoveGraphic(old); }
-            catch (Exception ex) { Logger.LogDebug(ex, "Failed to remove old encounter graphic"); }
-        }
+        await _encounterLayer.Clear();
         _encounterGraphics.Clear();
 
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
@@ -1215,6 +1416,7 @@
                 new Graphic(
                     geometry: new Point(longitude: encounter.Longitude, latitude: encounter.Latitude),
                     symbol: symbol,
+                    popupTemplate: CreateEncounterPopupTemplate(),
                     attributes: new AttributesDictionary(new Dictionary<string, object?>
                     {
                         ["_ruckrType"] = "encounter",
@@ -1229,7 +1431,7 @@
 
         try
         {
-            await _mapView.AddGraphics(graphics.Select(g => g.Value));
+            await _encounterLayer.AddMany(graphics.Select(g => g.Value).ToArray());
             foreach (var (encounterId, graphic) in graphics)
             {
                 _encounterGraphics[encounterId] = graphic;
@@ -1243,7 +1445,7 @@
 
     private async Task UpdateCandidatePlaceGraphicsAsync(IReadOnlyList<PitchCandidatePlaceDto> candidates)
     {
-        if (_mapView is null) return;
+        if (_candidatePlaceLayer is null) return;
 
         await ClearCandidatePlaceGraphicsAsync();
 
@@ -1255,6 +1457,7 @@
                 new Graphic(
                 geometry: new Point(longitude: candidate.Longitude, latitude: candidate.Latitude),
                 symbol: GetCandidatePlaceSymbol(candidate.RecommendedPitchType),
+                popupTemplate: CreateCandidatePlacePopupTemplate(),
                 attributes: new AttributesDictionary(new Dictionary<string, object?>
                 {
                     ["_ruckrType"] = "candidate-place",
@@ -1270,7 +1473,8 @@
 
         try
         {
-            await _mapView.AddGraphics(graphics.Select(g => g.Value));
+            await _candidatePlaceLayer.AddMany(graphics.Select(g => g.Value).ToArray());
+            await SetCandidatePlaceLayerVisibleAsync(true);
             foreach (var (placeId, graphic) in graphics)
             {
                 _candidatePlaceGraphics[placeId] = graphic;
@@ -1284,15 +1488,24 @@
 
     private async Task ClearCandidatePlaceGraphicsAsync()
     {
-        if (_mapView is null) return;
+        if (_candidatePlaceLayer is null) return;
 
-        foreach (var old in _candidatePlaceGraphics.Values)
-        {
-            try { await _mapView.RemoveGraphic(old); }
-            catch (Exception ex) { Logger.LogDebug(ex, "Failed to remove old candidate place graphic"); }
-        }
-
+        await _candidatePlaceLayer.Clear();
         _candidatePlaceGraphics.Clear();
+    }
+
+    private async Task SetCandidatePlaceLayerVisibleAsync(bool visible)
+    {
+        if (_candidatePlaceLayer is null) return;
+
+        try
+        {
+            await _candidatePlaceLayer.SetVisible(visible);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to update candidate place layer visibility");
+        }
     }
 
     private async Task ToggleCandidatePlacesAsync()
@@ -1301,7 +1514,9 @@
         if (!_showCandidatePlaces)
         {
             _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
-            await ClearCandidatePlaceGraphicsAsync();
+            _candidatePlaceGraphics.Clear();
+            ClearCandidateSelection();
+            await SetCandidatePlaceLayerVisibleAsync(false);
             _statusMessage = "Candidate place overlay hidden.";
             await InvokeAsync(StateHasChanged);
             return;
@@ -1317,6 +1532,31 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private async Task UpdatePlayerLocationGraphicAsync(GeoPosition position)
+    {
+        if (_playerLocationLayer is null) return;
+
+        var graphic = new Graphic(
+            geometry: new Point(longitude: position.Longitude, latitude: position.Latitude),
+            symbol: GetPlayerLocationSymbol(),
+            popupTemplate: CreatePlayerLocationPopupTemplate(),
+            attributes: new AttributesDictionary(new Dictionary<string, object?>
+            {
+                ["_ruckrType"] = "player-location",
+                ["accuracyMeters"] = position.Accuracy
+            }));
+
+        try
+        {
+            await _playerLocationLayer.Clear();
+            await _playerLocationLayer.Add(graphic);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to update player location graphic");
+        }
+    }
+
     private static MapColor EncounterRarityColor(string rarity) => rarity switch
     {
         "Uncommon" => new MapColor(47, 133, 90),
@@ -1325,6 +1565,26 @@
         "Legendary" => new MapColor(200, 30, 30),
         _ => new MapColor(107, 114, 128)
     };
+
+    private static PopupTemplate CreatePitchPopupTemplate() =>
+        new(
+            title: "{name}",
+            stringContent: "{pitchType}<br>{pitchRole}");
+
+    private static PopupTemplate CreateEncounterPopupTemplate() =>
+        new(
+            title: "{name}",
+            stringContent: "Level {level} {rarity}<br>{parkName}");
+
+    private static PopupTemplate CreateCandidatePlacePopupTemplate() =>
+        new(
+            title: "{name}",
+            stringContent: "{recommendedPitchType}<br>{confidence}% confidence<br>{matchReason}");
+
+    private static PopupTemplate CreatePlayerLocationPopupTemplate() =>
+        new(
+            title: "Your location",
+            stringContent: "Accuracy: {accuracyMeters}m");
 
     private async Task HandleMapClick(ClickEvent clickEvent)
     {
@@ -1336,55 +1596,9 @@
             var hitResult = await _mapView.HitTest(clickEvent);
             foreach (var hit in hitResult.Results)
             {
-                if (hit is GraphicHit graphicHit)
+                if (hit is GraphicHit graphicHit && TryApplyGraphicHitSelection(graphicHit.Graphic))
                 {
-                    var attrs = graphicHit.Graphic.Attributes;
-                    if (attrs.TryGetValue("_ruckrType", out var type))
-                    {
-                        if (type?.ToString() == "pitch")
-                        {
-                            if (attrs.TryGetValue("_ruckrId", out var idObj) && idObj is int pitchId)
-                            {
-                                ClearCandidateSelection();
-                                Dispatcher.Dispatch(new SelectPitchAction(pitchId));
-                                return;
-                            }
-                        }
-                        else if (type?.ToString() == "encounter")
-                        {
-                            if (attrs.TryGetValue("_ruckrEncounterId", out var encIdObj) && Guid.TryParse(encIdObj?.ToString(), out var encounterId))
-                            {
-                                var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId);
-                                if (encounter is not null)
-                                {
-                                    ClearCandidateSelection();
-                                    _selectedEncounter = encounter;
-                                    UpdateRecruitEligibility();
-                                    _recruitMessage = null;
-                                    Dispatcher.Dispatch(new SelectEncounterAction(encounterId));
-                                    return;
-                                }
-                            }
-                        }
-                        else if (type?.ToString() == "candidate-place")
-                        {
-                            if (attrs.TryGetValue("_ruckrPlaceId", out var placeIdObj)
-                                && placeIdObj?.ToString() is { Length: > 0 } placeId)
-                            {
-                                SelectCandidatePlace(placeId);
-                            }
-
-                            var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : _selectedCandidatePlace?.Name ?? "Candidate place";
-                            var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
-                            var confidence = attrs.TryGetValue("confidence", out var confidenceObj) ? confidenceObj?.ToString() : "?";
-                            var reason = attrs.TryGetValue("matchReason", out var reasonObj) ? reasonObj?.ToString() : "matched place category";
-                            var category = attrs.TryGetValue("categoryLabel", out var categoryObj) ? categoryObj?.ToString() : "Place";
-                            _statusMessage = $"Candidate: {name} -> {recommendedType} ({confidence}%). {reason}; {category}.";
-                            Dispatcher.Dispatch(new ClearSelectionAction());
-                            StateHasChanged();
-                            return;
-                        }
-                    }
+                    return;
                 }
             }
 
@@ -1398,6 +1612,76 @@
             _statusMessage = $"Clicked: {clickEvent.MapPoint.Latitude:F5}, {clickEvent.MapPoint.Longitude:F5}";
             StateHasChanged();
         }
+    }
+
+    private bool TryApplyGraphicHitSelection(Graphic graphic)
+    {
+        var attrs = graphic.Attributes;
+        if (!attrs.TryGetValue("_ruckrType", out var type))
+        {
+            return false;
+        }
+
+        return type?.ToString() switch
+        {
+            "pitch" => TrySelectPitchGraphic(attrs),
+            "encounter" => TrySelectEncounterGraphic(attrs),
+            "candidate-place" => TrySelectCandidatePlaceGraphic(attrs),
+            _ => false
+        };
+    }
+
+    private bool TrySelectPitchGraphic(AttributesDictionary attrs)
+    {
+        if (!attrs.TryGetValue("_ruckrId", out var idObj) || idObj is not int pitchId)
+        {
+            return false;
+        }
+
+        ClearCandidateSelection();
+        Dispatcher.Dispatch(new SelectPitchAction(pitchId));
+        return true;
+    }
+
+    private bool TrySelectEncounterGraphic(AttributesDictionary attrs)
+    {
+        if (!attrs.TryGetValue("_ruckrEncounterId", out var encIdObj)
+            || !Guid.TryParse(encIdObj?.ToString(), out var encounterId))
+        {
+            return false;
+        }
+
+        var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId);
+        if (encounter is null)
+        {
+            return false;
+        }
+
+        ClearCandidateSelection();
+        _selectedEncounter = encounter;
+        UpdateRecruitEligibility();
+        _recruitMessage = null;
+        Dispatcher.Dispatch(new SelectEncounterAction(encounterId));
+        return true;
+    }
+
+    private bool TrySelectCandidatePlaceGraphic(AttributesDictionary attrs)
+    {
+        if (attrs.TryGetValue("_ruckrPlaceId", out var placeIdObj)
+            && placeIdObj?.ToString() is { Length: > 0 } placeId)
+        {
+            SelectCandidatePlace(placeId);
+        }
+
+        var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : _selectedCandidatePlace?.Name ?? "Candidate place";
+        var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
+        var confidence = attrs.TryGetValue("confidence", out var confidenceObj) ? confidenceObj?.ToString() : "?";
+        var reason = attrs.TryGetValue("matchReason", out var reasonObj) ? reasonObj?.ToString() : "matched place category";
+        var category = attrs.TryGetValue("categoryLabel", out var categoryObj) ? categoryObj?.ToString() : "Place";
+        _statusMessage = $"Candidate: {name} -> {recommendedType} ({confidence}%). {reason}; {category}.";
+        Dispatcher.Dispatch(new ClearSelectionAction());
+        StateHasChanged();
+        return true;
     }
 
     private void ClearSelection()
@@ -2025,13 +2309,24 @@
 
         try
         {
-            await _mapView.SetCenter(new Point(longitude: nearest.Longitude, latitude: nearest.Latitude));
+            await NavigateToPointAsync(nearest.Longitude, nearest.Latitude, _zoom);
             Dispatcher.Dispatch(new SelectPitchAction(nearest.Id));
         }
         catch (Exception ex)
         {
             Logger.LogWarning(ex, "Failed to center on nearest pitch");
         }
+    }
+
+    private async Task NavigateToPointAsync(double longitude, double latitude, int zoom)
+    {
+        if (_mapView is null)
+        {
+            return;
+        }
+
+        await _mapView.SetCenter(new Point(longitude: longitude, latitude: latitude));
+        await _mapView.SetZoom(zoom);
     }
 
     private Viewpoint HomeViewpoint =>
@@ -2053,6 +2348,8 @@
     {
         return MapState.Value.VisiblePitches.Count(p => p.Type == type);
     }
+
+    private int CandidatePlaceCount => _showCandidatePlaces ? _candidatePlaceGraphics.Count : 0;
 
     private string PitchDistanceText(PitchModel pitch)
     {
@@ -2155,6 +2452,13 @@
             style: SimpleMarkerSymbolStyle.Circle);
     }
 
+    private static SimpleMarkerSymbol GetPlayerLocationSymbol() =>
+        new(
+            outline: new Outline(color: new MapColor("#EFF6FF"), width: new Dimension(3)),
+            color: new MapColor("#2563EB"),
+            size: new Dimension(16),
+            style: SimpleMarkerSymbolStyle.Circle);
+
     private static string PitchTypeBadgeClass(PitchType type) => type switch
     {
         PitchType.Standard => "primary",
@@ -2174,9 +2478,18 @@
         }
         GeolocationService.StopWatch();
 
-        if (_mapView is not null)
+        try { await ClearPitchLayersAsync(); } catch { }
+        if (_encounterLayer is not null)
         {
-            try { await _mapView.ClearGraphics(); } catch { }
+            try { await _encounterLayer.Clear(); } catch { }
+        }
+        if (_candidatePlaceLayer is not null)
+        {
+            try { await _candidatePlaceLayer.Clear(); } catch { }
+        }
+        if (_playerLocationLayer is not null)
+        {
+            try { await _playerLocationLayer.Clear(); } catch { }
         }
         if (_mapDiagnosticsModule is not null)
         {

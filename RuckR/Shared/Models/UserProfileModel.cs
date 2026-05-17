@@ -7,27 +7,27 @@ namespace RuckR.Shared.Models
     /// </summary>
     public class UserProfileModel
     {
+        /// <summary>User identifier for this profile.</summary>
         [Key]
         [Required]
         [MaxLength(450)]
-        /// <summary>User identifier for this profile.</summary>
         public string UserId { get; set; } = string.Empty;
 
-        [MaxLength(200)]
         /// <summary>Display name.</summary>
+        [MaxLength(200)]
         public string? Name { get; set; }
 
-        [MaxLength(1000)]
         /// <summary>Profile biography.</summary>
+        [MaxLength(1000)]
         public string? Biography { get; set; }
 
-        [MaxLength(500)]
         /// <summary>User-specified location text.</summary>
+        [MaxLength(500)]
         public string? Location { get; set; }
 
+        /// <summary>Avatar image URL.</summary>
         [Url]
         [MaxLength(500)]
-        /// <summary>Avatar image URL.</summary>
         public string? AvatarUrl { get; set; }
 
         /// <summary>Date when profile was created.</summary>

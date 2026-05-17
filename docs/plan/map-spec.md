@@ -70,14 +70,20 @@ The full game map (backed up as `Map.full.razor.bak`) has all game features but 
 ### Component Stack
 
 ```
-Map.razor
+GameMap.razor
 ├── MapView (GeoBlazor)
-│   ├── Map > Basemap > BasemapStyle (ArcGIS Navigation)
-│   ├── GraphicsLayer (pitch markers + encounter markers + user marker)
-│   ├── HomeWidget
-│   ├── CompassWidget
-│   ├── LocateWidget
-│   └── ScaleBarWidget
+│   ├── Map > Basemap > BasemapStyle (ArcGIS Navigation, when Map:BasemapMode=styled)
+│   ├── Map only (when Map:BasemapMode=empty)
+│   ├── GraphicsLayer "Stadiums" (only when Map:EnableGameGraphics=true)
+│   ├── GraphicsLayer "Pitches" (only when Map:EnableGameGraphics=true)
+│   ├── GraphicsLayer "Training grounds" (only when Map:EnableGameGraphics=true)
+│   ├── GraphicsLayer "Encounters" (only when Map:EnableGameGraphics=true)
+│   ├── GraphicsLayer "Candidate places" (only when Map:EnableGameGraphics=true)
+│   ├── GraphicsLayer "Player location" (only when Map:EnableGameGraphics=true)
+│   ├── HomeWidget (only when Map:EnableArcGisWidgets=true)
+│   ├── CompassWidget (only when Map:EnableArcGisWidgets=true)
+│   ├── LocateWidget (only when Map:EnableArcGisWidgets=true)
+│   └── ScaleBarWidget (only when Map:EnableArcGisWidgets=true)
 ├── Pitch selection overlay (bottom sheet)
 ├── Encounter selection overlay (bottom sheet)
 ├── Game progress chip
@@ -89,7 +95,9 @@ Map.razor
 
 - **Fluxor** `MapState`: visible pitches, visible encounters, selected pitch ID, selected encounter ID, map readiness
 - **Fluxor** `LocationState`: user lat/lng, accuracy, GPS status, error message
-- **Page state** (local to Map.razor): loading flag, error flag, GPS disabled flag, onboarding flag, capture eligibility
+- **Page state** (local to GameMap.razor): loading flag, error flag, GPS disabled flag, onboarding flag, capture eligibility
+- **Reduction flags**: `Map:BasemapMode`, `Map:EnableArcGisWidgets`, `Map:EnableGameGraphics`, `Map:EnableMapDiagnostics`, and `Map:EnableAutoGpsWatch`. These can also be overridden per URL with `basemap`, `arcGisWidgets`, `mapGraphics`, `mapDiagnostics`, and `autoGps` query parameters.
+- **GeoBlazor ownership**: pitch graphics are split into pitch-type `GraphicsLayer`s, graphics define `PopupTemplate`s for map-native marker summaries, and click handling delegates hit-test parsing to a small graphic-selection adapter.
 
 ### Data Flow
 

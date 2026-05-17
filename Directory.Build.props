@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Phase-in switch: set true to enforce public API XML docs (CS1591/CS1587). -->
+    <EnforcePublicApiXmlDocs>true</EnforcePublicApiXmlDocs>
+    <NoWarn Condition="'$(EnforcePublicApiXmlDocs)' != 'true'">$(NoWarn);CS1591;CS1587</NoWarn>
+    <NoWarn Condition="'$(EnforcePublicApiXmlDocs)' == 'true'">$(NoWarn);CS1587</NoWarn>
+  </PropertyGroup>
+</Project>

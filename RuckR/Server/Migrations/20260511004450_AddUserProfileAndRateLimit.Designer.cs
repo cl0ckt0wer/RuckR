@@ -12,11 +12,11 @@ using RuckR.Server.Data;
 
 namespace RuckR.Server.RuckR.Server.Data.Migrations
 {
-    [DbContext(typeof(RuckRDbContext))]
-    [Migration("20260511004450_AddUserProfileAndRateLimit")]
     /// <summary>
     /// EF Core design-time model snapshot for user profile and rate-limit migration.
     /// </summary>
+    [DbContext(typeof(RuckRDbContext))]
+    [Migration("20260511004450_AddUserProfileAndRateLimit")]
     partial class AddUserProfileAndRateLimit
     {
         /// <summary>Build the target model for this migration.</summary>

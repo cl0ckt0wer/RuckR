@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel.DataAnnotations;
 
 namespace RuckR.Shared.Models
@@ -14,22 +14,22 @@ namespace RuckR.Shared.Models
         /// <summary>Optional biography text.</summary>
         public string? Biography { get; set; } = null;
 
+        /// <summary>Contact email address.</summary>
         [Required]
         [EmailAddress]
         [StringLength(256)]
-        /// <summary>Contact email address.</summary>
         public string? Email { get; set; }
 
-        [StringLength(100)]
         /// <summary>Location label shown on profile.</summary>
+        [StringLength(100)]
         public string? Location { get; set; }
 
         /// <summary>Date when the profile was created.</summary>
         public DateTime JoinedDate { get; set; } = DateTime.Today;
 
+        /// <summary>Avatar URL used in profile display.</summary>
         [Url]
         [StringLength(500)]
-        /// <summary>Avatar URL used in profile display.</summary>
         public string? AvatarUrl { get; set; }
     }
 }

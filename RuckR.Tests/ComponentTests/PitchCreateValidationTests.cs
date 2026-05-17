@@ -9,10 +9,10 @@ namespace RuckR.Tests.ComponentTests;
 /// </summary>
 public class PitchCreateValidationTests
 {
-    [Fact]
     /// <summary>
     /// Verifies pitch Form Model Name Is Required.
     /// </summary>
+    [Fact]
     public void PitchFormModel_NameIsRequired()
     {
         var model = new PitchFormModel { Name = "", Latitude = 51.5074, Longitude = -0.1278, Type = "Standard" };
@@ -21,10 +21,10 @@ public class PitchCreateValidationTests
         Assert.Contains(results, r => r.MemberNames.Contains("Name"));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies pitch Form Model Latitude Must Be In Range.
     /// </summary>
+    [Fact]
     public void PitchFormModel_LatitudeMustBeInRange()
     {
         var model = new PitchFormModel { Name = "Test", Latitude = 100, Longitude = -0.1278, Type = "Standard" };
@@ -33,10 +33,10 @@ public class PitchCreateValidationTests
         Assert.Contains(results, r => r.MemberNames.Contains("Latitude"));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies pitch Form Model Longitude Must Be In Range.
     /// </summary>
+    [Fact]
     public void PitchFormModel_LongitudeMustBeInRange()
     {
         var model = new PitchFormModel { Name = "Test", Latitude = 51.5074, Longitude = 200, Type = "Standard" };
@@ -45,10 +45,10 @@ public class PitchCreateValidationTests
         Assert.Contains(results, r => r.MemberNames.Contains("Longitude"));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies pitch Form Model Valid Data No Errors.
     /// </summary>
+    [Fact]
     public void PitchFormModel_ValidData_NoErrors()
     {
         var model = new PitchFormModel

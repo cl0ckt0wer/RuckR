@@ -31,10 +31,10 @@ public class GeolocationServiceTests
         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
     };
 
-    [Fact]
     /// <summary>
     /// Verifies on Position From Js First Position Dispatches Update And Raises Event.
     /// </summary>
+    [Fact]
     public void OnPositionFromJs_FirstPosition_DispatchesUpdateAndRaisesEvent()
     {
         var service = CreateService();
@@ -48,10 +48,10 @@ public class GeolocationServiceTests
         Assert.NotNull(changed);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies on Position From Js Null Island Is Discarded.
     /// </summary>
+    [Fact]
     public void OnPositionFromJs_NullIsland_IsDiscarded()
     {
         var service = CreateService();
@@ -61,10 +61,10 @@ public class GeolocationServiceTests
         _dispatcher.Verify(d => d.Dispatch(It.IsAny<UpdatePositionAction>()), Times.Never);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies on Position From Js Poor Accuracy After First Fix Is Discarded.
     /// </summary>
+    [Fact]
     public void OnPositionFromJs_PoorAccuracyAfterFirstFix_IsDiscarded()
     {
         var service = CreateService();
@@ -75,10 +75,10 @@ public class GeolocationServiceTests
         _dispatcher.Verify(d => d.Dispatch(It.IsAny<UpdatePositionAction>()), Times.Once);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies on Position From Js Too Small Displacement Is Discarded.
     /// </summary>
+    [Fact]
     public void OnPositionFromJs_TooSmallDisplacement_IsDiscarded()
     {
         var service = CreateService();
@@ -90,10 +90,10 @@ public class GeolocationServiceTests
         _dispatcher.Verify(d => d.Dispatch(It.IsAny<UpdatePositionAction>()), Times.Once);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies on Position From Js Throttle Drops Rapid Second Update.
     /// </summary>
+    [Fact]
     public void OnPositionFromJs_Throttle_DropsRapidSecondUpdate()
     {
         var service = CreateService();
@@ -104,10 +104,10 @@ public class GeolocationServiceTests
         _dispatcher.Verify(d => d.Dispatch(It.IsAny<UpdatePositionAction>()), Times.Once);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies on Error From Js Dispatches Location Error Action.
     /// </summary>
+    [Fact]
     public void OnErrorFromJs_DispatchesLocationErrorAction()
     {
         var service = CreateService();

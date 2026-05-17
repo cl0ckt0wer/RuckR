@@ -9,13 +9,13 @@ namespace RuckR.Shared.Models
     /// </summary>
     public class UserConsent
     {
-        [Key]
         /// <summary>Primary key.</summary>
+        [Key]
         public int Id { get; set; }
 
+        /// <summary>User identifier associated with this consent.</summary>
         [Required]
         [MaxLength(450)]
-        /// <summary>User identifier associated with this consent.</summary>
         public string UserId { get; set; } = string.Empty;
 
         /// <summary>

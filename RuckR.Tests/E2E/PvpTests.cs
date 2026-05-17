@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class PvpTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -39,10 +39,10 @@ public class PvpTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     /// </summary>
     public Task DisposeAsync() => Task.CompletedTask;
 
-    [Fact]
     /// <summary>
     /// Verifies two Users Challenge And Accept Both See Result.
     /// </summary>
+    [Fact]
     public async Task TwoUsers_ChallengeAndAccept_BothSeeResult()
     {
         // ── Create two isolated browser contexts for User A and User B ──

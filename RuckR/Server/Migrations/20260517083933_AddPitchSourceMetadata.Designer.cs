@@ -12,11 +12,11 @@ using RuckR.Server.Data;
 
 namespace RuckR.Server.Migrations
 {
-    [DbContext(typeof(RuckRDbContext))]
-    [Migration("20260517083933_AddPitchSourceMetadata")]
     /// <summary>
     /// EF Core design-time model snapshot for pitch source metadata migration.
     /// </summary>
+    [DbContext(typeof(RuckRDbContext))]
+    [Migration("20260517083933_AddPitchSourceMetadata")]
     partial class AddPitchSourceMetadata
     {
         /// <summary>Build the target model for this migration.</summary>

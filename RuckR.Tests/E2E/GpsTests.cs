@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class GpsTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -49,10 +49,10 @@ public class GpsTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies gps Enabled Map Centers On User Location.
     /// </summary>
+    [Fact]
     public async Task GpsEnabled_MapCentersOnUserLocation()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -64,10 +64,10 @@ public class GpsTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(hasUserMarker, "User location marker should appear when GPS is enabled");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies gps Disabled Shows Enable Prompt.
     /// </summary>
+    [Fact]
     public async Task GpsDisabled_ShowsEnablePrompt()
     {
         // Create context WITHOUT geolocation permission

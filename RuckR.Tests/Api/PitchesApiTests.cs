@@ -8,10 +8,10 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class PitchesApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -45,10 +45,10 @@ public class PitchesApiTests : IAsyncLifetime
         _client?.Dispose();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch Authenticated Returns Created Pitch.
     /// </summary>
+    [Fact]
     public async Task CreatePitch_Authenticated_ReturnsCreatedPitch()
     {
         var pitchName = $"TestPitch_{Guid.NewGuid():N}";
@@ -66,10 +66,10 @@ public class PitchesApiTests : IAsyncLifetime
         // Location is excluded from JSON serialization (NetTopologySuite geometry cycle)
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch Unauthenticated Returns Unauthorized.
     /// </summary>
+    [Fact]
     public async Task CreatePitch_Unauthenticated_ReturnsUnauthorized()
     {
         using var anonymousClient = _factory.CreateClient();
@@ -80,15 +80,15 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    /// <summary>
+    /// Verifies create Pitch Invalid Request Returns Bad Request.
+    /// </summary>
     [Theory]
     [InlineData(91, -0.1278, "Standard", "Latitude")]
     [InlineData(-91, -0.1278, "Standard", "Latitude")]
     [InlineData(51.5074, 181, "Standard", "Longitude")]
     [InlineData(51.5074, -181, "Standard", "Longitude")]
     [InlineData(51.5074, -0.1278, "InvalidType", "Invalid pitch type")]
-    /// <summary>
-    /// Verifies create Pitch Invalid Request Returns Bad Request.
-    /// </summary>
     public async Task CreatePitch_InvalidRequest_ReturnsBadRequest(
         double latitude,
         double longitude,
@@ -104,10 +104,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Contains(expectedMessage, body, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch Authenticated Persists Location And Metadata.
     /// </summary>
+    [Fact]
     public async Task CreatePitch_Authenticated_PersistsLocationAndMetadata()
     {
         var pitchName = $"PersistPitch_{Guid.NewGuid():N}";
@@ -135,10 +135,10 @@ public class PitchesApiTests : IAsyncLifetime
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch From Candidate Authenticated Persists Source Metadata.
     /// </summary>
+    [Fact]
     public async Task CreatePitchFromCandidate_Authenticated_PersistsSourceMetadata()
     {
         var pitchName = $"CandidatePitch_{Guid.NewGuid():N}";
@@ -177,10 +177,10 @@ public class PitchesApiTests : IAsyncLifetime
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch From Candidate Duplicate Place Id Returns409.
     /// </summary>
+    [Fact]
     public async Task CreatePitchFromCandidate_DuplicatePlaceId_Returns409()
     {
         var placeId = $"candidate-place-{Guid.NewGuid():N}";
@@ -207,10 +207,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch From Candidate Near Existing Pitch Returns409.
     /// </summary>
+    [Fact]
     public async Task CreatePitchFromCandidate_NearExistingPitch_Returns409()
     {
         var first = new CreatePitchFromCandidateRequest(
@@ -237,10 +237,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Pitches Nearby Returns Pitches.
     /// </summary>
+    [Fact]
     public async Task GetPitchesNearby_ReturnsPitches()
     {
         var response = await _client.GetAsync("/api/pitches/nearby?lat=51.5074&lng=-0.1278&radius=5000");
@@ -250,10 +250,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.NotEmpty(pitches);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch Duplicate Name Anywhere Returns409.
     /// </summary>
+    [Fact]
     public async Task CreatePitch_DuplicateNameAnywhere_Returns409()
     {
         var pitchName = $"DupPitch_{Guid.NewGuid():N}";
@@ -270,10 +270,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Conflict, response2.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies create Pitch Rate Limit Exceeded Returns429.
     /// </summary>
+    [Fact]
     public async Task CreatePitch_RateLimitExceeded_Returns429()
     {
         // Use a unique user for rate limit test to ensure clean counter
@@ -298,10 +298,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal((HttpStatusCode)429, sixthResponse.StatusCode);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies ensure Nearby Pitches No Stadium Within Thirty Miles Creates Stadium.
     /// </summary>
+    [Fact]
     public async Task EnsureNearbyPitches_NoStadiumWithinThirtyMiles_CreatesStadium()
     {
         using var scope = _factory.Services.CreateScope();
@@ -318,10 +318,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal(_userId, stadium.CreatorUserId);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies ensure Nearby Pitches Stadium Within Thirty Miles But Not Ten Creates Standard Pitch.
     /// </summary>
+    [Fact]
     public async Task EnsureNearbyPitches_StadiumWithinThirtyMilesButNotTen_CreatesStandardPitch()
     {
         await _factory.ExecuteInDbAsync(async db =>
@@ -350,10 +350,10 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal("PitchFounder's Standard Pitch", standard.Name);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies ensure Nearby Pitches No Pitch Within Two Miles Creates Practice Pitch.
     /// </summary>
+    [Fact]
     public async Task EnsureNearbyPitches_NoPitchWithinTwoMiles_CreatesPracticePitch()
     {
         await _factory.ExecuteInDbAsync(async db =>

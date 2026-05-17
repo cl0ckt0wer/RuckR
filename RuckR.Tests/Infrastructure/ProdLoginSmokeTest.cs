@@ -8,10 +8,10 @@ namespace RuckR.Tests.Infrastructure;
     /// </summary>
 public class ProdLoginSmokeTest
 {
-    [Fact]
     /// <summary>
     /// Verifies seed User Can Login.
     /// </summary>
+    [Fact]
     public async Task SeedUser_CanLogin()
     {
         var password = Environment.GetEnvironmentVariable("RUCKR_PROD_SMOKE_PASSWORD");

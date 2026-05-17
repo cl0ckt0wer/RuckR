@@ -1,4 +1,5 @@
 using RuckR.Shared.Models;
+using Microsoft.Extensions.Configuration;
 using MapPage = RuckR.Client.Pages.GameMap;
 
 namespace RuckR.Tests.ComponentTests;
@@ -8,10 +9,10 @@ namespace RuckR.Tests.ComponentTests;
     /// </summary>
 public class MapGpsNoticeTests
 {
-    [Fact]
     /// <summary>
     /// Verifies should Show Gps Notice For State Shows Only When Gps Is Unavailable.
     /// </summary>
+    [Fact]
     public void ShouldShowGpsNoticeForState_ShowsOnlyWhenGpsIsUnavailable()
     {
         Assert.True(MapPage.ShouldShowGpsNoticeForState(
@@ -30,10 +31,10 @@ public class MapGpsNoticeTests
             }));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies should Show Gps Notice For State Stays Hidden After Dismissal.
     /// </summary>
+    [Fact]
     public void ShouldShowGpsNoticeForState_StaysHiddenAfterDismissal()
     {
         Assert.False(MapPage.ShouldShowGpsNoticeForState(
@@ -42,14 +43,14 @@ public class MapGpsNoticeTests
             lastKnownPosition: null));
     }
 
+    /// <summary>
+    /// Verifies should Show Map Unavailable Fallback Only When Map Key Is Missing.
+    /// </summary>
     [Theory]
     [InlineData(null, true)]
     [InlineData("", true)]
     [InlineData("   ", true)]
     [InlineData("configured-api-key", false)]
-    /// <summary>
-    /// Verifies should Show Map Unavailable Fallback Only When Map Key Is Missing.
-    /// </summary>
     public void ShouldShowMapUnavailableFallback_OnlyWhenMapKeyIsMissing(
         string? apiKey,
         bool expected)
@@ -57,10 +58,10 @@ public class MapGpsNoticeTests
         Assert.Equal(expected, MapPage.ShouldShowMapUnavailableFallback(apiKey));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Unavailable Copy Gives Player Next Actions Instead Of Configuration Instructions.
     /// </summary>
+    [Fact]
     public void MapUnavailableCopy_GivesPlayerNextActionsInsteadOfConfigurationInstructions()
     {
         Assert.Contains("browse players", MapPage.MapUnavailableBody, StringComparison.OrdinalIgnoreCase);
@@ -68,10 +69,10 @@ public class MapGpsNoticeTests
         Assert.DoesNotContain("API key", MapPage.MapUnavailableTitle, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies build Gps Status When Waiting For Location Returns Searching.
     /// </summary>
+    [Fact]
     public void BuildGpsStatus_WhenWaitingForLocation_ReturnsSearching()
     {
         var status = MapPage.BuildGpsStatus(
@@ -86,10 +87,10 @@ public class MapGpsNoticeTests
         Assert.Null(status.AccuracyText);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies build Gps Status When Accuracy Is Good Returns Ready With Accuracy.
     /// </summary>
+    [Fact]
     public void BuildGpsStatus_WhenAccuracyIsGood_ReturnsReadyWithAccuracy()
     {
         var status = MapPage.BuildGpsStatus(
@@ -110,10 +111,10 @@ public class MapGpsNoticeTests
         Assert.Null(MapPage.BuildGpsActionHint(status, 50));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies build Gps Status When Accuracy Is Poor Returns Weak With Action Hint.
     /// </summary>
+    [Fact]
     public void BuildGpsStatus_WhenAccuracyIsPoor_ReturnsWeakWithActionHint()
     {
         var status = MapPage.BuildGpsStatus(
@@ -134,10 +135,10 @@ public class MapGpsNoticeTests
         Assert.Contains("50m", MapPage.BuildGpsActionHint(status, 50));
     }
 
-    [Fact]
     /// <summary>
     /// Verifies build Gps Status When Location Errors Returns Blocked.
     /// </summary>
+    [Fact]
     public void BuildGpsStatus_WhenLocationErrors_ReturnsBlocked()
     {
         var status = MapPage.BuildGpsStatus(
@@ -152,17 +153,128 @@ public class MapGpsNoticeTests
         Assert.Contains("location permission", MapPage.BuildGpsActionHint(status, 50), StringComparison.OrdinalIgnoreCase);
     }
 
-    [Theory]
-    [InlineData(4, false)]
-    [InlineData(5, true)]
     /// <summary>
     /// Verifies should Dismiss Gps Notice After Retry Hides On Fifth Retry.
     /// </summary>
+    [Theory]
+    [InlineData(4, false)]
+    [InlineData(5, true)]
     public void ShouldDismissGpsNoticeAfterRetry_HidesOnFifthRetry(
         int retryAttempts,
         bool expected)
     {
         Assert.Equal(expected, MapPage.ShouldDismissGpsNoticeAfterRetry(retryAttempts));
+    }
+
+    /// <summary>
+    /// Verifies parse Basemap Mode Handles Known Values.
+    /// </summary>
+    [Theory]
+    [InlineData("styled", MapPage.MapBasemapMode.Styled)]
+    [InlineData("empty", MapPage.MapBasemapMode.Empty)]
+    [InlineData(" EMPTY ", MapPage.MapBasemapMode.Empty)]
+    public void ParseBasemapMode_HandlesKnownValues(
+        string value,
+        MapPage.MapBasemapMode expected)
+    {
+        Assert.Equal(expected, MapPage.ParseBasemapMode(value));
+    }
+
+    /// <summary>
+    /// Verifies parse Basemap Mode Returns Null For Unknown Values.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("satellite")]
+    public void ParseBasemapMode_ReturnsNullForUnknownValues(string? value)
+    {
+        Assert.Null(MapPage.ParseBasemapMode(value));
+    }
+
+    /// <summary>
+    /// Verifies resolve Map Reduction Options Uses Defaults When Config And Query Are Missing.
+    /// </summary>
+    [Fact]
+    public void ResolveMapReductionOptions_UsesDefaults_WhenConfigAndQueryAreMissing()
+    {
+        var options = MapPage.ResolveMapReductionOptions(
+            BuildConfiguration(),
+            "https://example.test/map");
+
+        Assert.Equal(MapPage.MapBasemapMode.Styled, options.BasemapMode);
+        Assert.False(options.EnableArcGisWidgets);
+        Assert.True(options.EnableMapDiagnostics);
+        Assert.True(options.EnableGameGraphics);
+        Assert.True(options.EnableAutoGpsWatch);
+    }
+
+    /// <summary>
+    /// Verifies resolve Map Reduction Options Reads Config Values.
+    /// </summary>
+    [Fact]
+    public void ResolveMapReductionOptions_ReadsConfigValues()
+    {
+        var options = MapPage.ResolveMapReductionOptions(
+            BuildConfiguration(new Dictionary<string, string?>
+            {
+                ["Map:BasemapMode"] = "empty",
+                ["Map:EnableArcGisWidgets"] = "true",
+                ["Map:EnableMapDiagnostics"] = "false",
+                ["Map:EnableGameGraphics"] = "false",
+                ["Map:EnableAutoGpsWatch"] = "false"
+            }),
+            "https://example.test/map");
+
+        Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
+        Assert.True(options.EnableArcGisWidgets);
+        Assert.False(options.EnableMapDiagnostics);
+        Assert.False(options.EnableGameGraphics);
+        Assert.False(options.EnableAutoGpsWatch);
+    }
+
+    /// <summary>
+    /// Verifies resolve Map Reduction Options Lets Query Override Config.
+    /// </summary>
+    [Fact]
+    public void ResolveMapReductionOptions_LetsQueryOverrideConfig()
+    {
+        var options = MapPage.ResolveMapReductionOptions(
+            BuildConfiguration(new Dictionary<string, string?>
+            {
+                ["Map:BasemapMode"] = "styled",
+                ["Map:EnableArcGisWidgets"] = "false",
+                ["Map:EnableMapDiagnostics"] = "true",
+                ["Map:EnableGameGraphics"] = "true",
+                ["Map:EnableAutoGpsWatch"] = "true"
+            }),
+            "https://example.test/map?basemap=empty&arcGisWidgets=true&mapDiagnostics=false&mapGraphics=false&autoGps=false");
+
+        Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
+        Assert.True(options.EnableArcGisWidgets);
+        Assert.False(options.EnableMapDiagnostics);
+        Assert.False(options.EnableGameGraphics);
+        Assert.False(options.EnableAutoGpsWatch);
+    }
+
+    /// <summary>
+    /// Verifies resolve Map Reduction Options Treats Bare Basemap Query As Empty.
+    /// </summary>
+    [Fact]
+    public void ResolveMapReductionOptions_TreatsBareBasemapQueryAsEmpty()
+    {
+        var options = MapPage.ResolveMapReductionOptions(
+            BuildConfiguration(),
+            "https://example.test/map?basemap");
+
+        Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
+    }
+
+    private static IConfiguration BuildConfiguration(Dictionary<string, string?>? values = null)
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(values ?? new Dictionary<string, string?>())
+            .Build();
     }
 }
 

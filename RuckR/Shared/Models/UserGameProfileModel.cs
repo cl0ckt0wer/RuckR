@@ -7,17 +7,17 @@ namespace RuckR.Shared.Models;
 /// </summary>
 public class UserGameProfileModel
 {
+    /// <summary>User identifier for the profile owner.</summary>
     [Key]
     [Required]
-    /// <summary>User identifier for the profile owner.</summary>
     public string UserId { get; set; } = string.Empty;
 
-    [Range(1, 100)]
     /// <summary>Current player level.</summary>
+    [Range(1, 100)]
     public int Level { get; set; } = 1;
 
-    [Range(0, int.MaxValue)]
     /// <summary>Total accrued experience points.</summary>
+    [Range(0, int.MaxValue)]
     public int Experience { get; set; }
 
     /// <summary>UTC timestamp when the record was last updated.</summary>

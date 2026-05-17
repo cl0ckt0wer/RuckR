@@ -12,11 +12,11 @@ using RuckR.Server.Data;
 
 namespace RuckR.Server.Migrations
 {
-    [DbContext(typeof(RuckRDbContext))]
-    [Migration("20260509212925_AddRecruitmentProgression")]
     /// <summary>
     /// EF Core design-time model snapshot for recruitment progression migration.
     /// </summary>
+    [DbContext(typeof(RuckRDbContext))]
+    [Migration("20260509212925_AddRecruitmentProgression")]
     partial class AddRecruitmentProgression
     {
         /// <summary>Build the target model for this migration.</summary>

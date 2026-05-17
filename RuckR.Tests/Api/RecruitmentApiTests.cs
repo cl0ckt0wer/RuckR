@@ -7,10 +7,10 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to :.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class RecruitmentApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -47,10 +47,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Encounters Returns Chance Based On Player And User Level.
     /// </summary>
+    [Fact]
     public async Task GetEncounters_ReturnsChanceBasedOnPlayerAndUserLevel()
     {
         await _factory.ExecuteInDbAsync(async db =>
@@ -88,10 +88,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Equal(expected, first.SuccessChancePercent);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Encounters Spawns Recruitable Players At Real World Park Locations.
     /// </summary>
+    [Fact]
     public async Task GetEncounters_SpawnsRecruitablePlayersAtRealWorldParkLocations()
     {
         var beforeRequestUtc = DateTime.UtcNow;
@@ -120,10 +120,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Encounters No Real World Parks Returns No Recruitable Players.
     /// </summary>
+    [Fact]
     public async Task GetEncounters_NoRealWorldParks_ReturnsNoRecruitablePlayers()
     {
         _factory.ParkService.UseNoParks();
@@ -139,10 +139,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Empty(encounters!);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Encounters Park Away From Player Spawns Recruitable At Park Not Player Location.
     /// </summary>
+    [Fact]
     public async Task GetEncounters_ParkAwayFromPlayer_SpawnsRecruitableAtParkNotPlayerLocation()
     {
         var anchor = await GetAnyPlayerLocationAsync();
@@ -167,10 +167,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Expired Encounter Returns Failure.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_ExpiredEncounter_ReturnsFailure()
     {
         var encounter = await CreateEncounterAsync();
@@ -191,10 +191,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("expired", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Duplicate Recruit Returns Failure.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_DuplicateRecruit_ReturnsFailure()
     {
         await SetUserProfileAsync(level: 100, xp: 9900);
@@ -243,10 +243,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("already recruited", duplicateResult.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Too Far Returns Failure.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_TooFar_ReturnsFailure()
     {
         var encounter = await CreateEncounterAsync();
@@ -261,10 +261,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("park", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Without Gps Position Returns Bad Request.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_WithoutGpsPosition_ReturnsBadRequest()
     {
         var encounter = await CreateEncounterAsync();
@@ -277,10 +277,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("GPS position required", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment When Gps Accuracy Is Poor Returns Bad Request.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_WhenGpsAccuracyIsPoor_ReturnsBadRequest()
     {
         var encounter = await CreateEncounterAsync();
@@ -299,10 +299,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("Improve GPS accuracy", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment When Rate Limit Exceeded Returns Too Many Requests.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_WhenRateLimitExceeded_ReturnsTooManyRequests()
     {
         await SetUserProfileAsync(level: 100, xp: 9900);
@@ -324,10 +324,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("Rate limit exceeded", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Invalid Encounter Returns Failure.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_InvalidEncounter_ReturnsFailure()
     {
         var anchor = await GetAnyPlayerLocationAsync();
@@ -344,10 +344,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Contains("invalid", result.Message, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies attempt Recruitment Success Adds Collection Awards Experience And Removes Encounter.
     /// </summary>
+    [Fact]
     public async Task AttemptRecruitment_Success_AddsCollection_AwardsExperience_AndRemovesEncounter()
     {
         await SetUserProfileAsync(level: 100, xp: 9900);
@@ -394,10 +394,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         });
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Profile Without Existing Record Returns Default Profile.
     /// </summary>
+    [Fact]
     public async Task GetProfile_WithoutExistingRecord_ReturnsDefaultProfile()
     {
         var response = await _client.GetAsync("/api/recruitment/profile");
@@ -410,10 +410,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Equal(100, profile.NextLevelExperience);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Profile With Existing Record Returns Calculated Next Level Experience.
     /// </summary>
+    [Fact]
     public async Task GetProfile_WithExistingRecord_ReturnsCalculatedNextLevelExperience()
     {
         await SetUserProfileAsync(level: 7, xp: 650);
@@ -428,10 +428,10 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.Equal(700, profile.NextLevelExperience);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies get Profile At Level Cap Returns Current Experience As Next Level Experience.
     /// </summary>
+    [Fact]
     public async Task GetProfile_AtLevelCap_ReturnsCurrentExperienceAsNextLevelExperience()
     {
         await SetUserProfileAsync(level: 100, xp: 15000);

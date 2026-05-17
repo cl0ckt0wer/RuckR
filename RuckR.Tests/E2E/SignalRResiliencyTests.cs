@@ -10,10 +10,10 @@ namespace RuckR.Tests.E2E;
 /// Uses Playwright's network emulation to simulate
 /// disconnections and verify the ConnectionStatus shared component.
 /// </summary>
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -59,10 +59,10 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// Verify that after a forced network disconnect, the ConnectionStatus
     /// component transitions to Disconnected and shows the Reconnect button.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies connection Status Shows Disconnected And Reconnect Button After Network Loss.
     /// </summary>
+    [Fact]
     public async Task ConnectionStatus_ShowsDisconnectedAndReconnectButton_AfterNetworkLoss()
     {
         var page = await _context.NewPageAsync();
@@ -110,10 +110,10 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// reconnect states (Reconnecting → Connected) when network is
     /// restored.
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies connection Status Reconnects After Network Restored.
     /// </summary>
+    [Fact]
     public async Task ConnectionStatus_ReconnectsAfterNetworkRestored()
     {
         var page = await _context.NewPageAsync();
@@ -153,10 +153,10 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
     /// Verify the ConnectionStatus component is present and reports
     /// Connected on a healthy page load (baseline test).
     /// </summary>
-    [Fact]
     /// <summary>
     /// Verifies connection Status Reports Connected On Healthy Startup.
     /// </summary>
+    [Fact]
     public async Task ConnectionStatus_ReportsConnected_OnHealthyStartup()
     {
         var page = await _context.NewPageAsync();

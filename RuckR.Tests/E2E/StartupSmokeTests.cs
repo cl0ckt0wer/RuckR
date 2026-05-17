@@ -9,10 +9,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -68,10 +68,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     //  Server Startup & OTel Health Check
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
     /// <summary>
     /// Verifies server Startup Health Endpoint Returns Healthy.
     /// </summary>
+    [Fact]
     public async Task Server_Startup_HealthEndpointReturnsHealthy()
     {
         var response = await _kestrelClient.GetAsync("/api/telemetry/health");
@@ -81,10 +81,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.Contains("healthy", body);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies server Startup O Tel Status Reports All Signals.
     /// </summary>
+    [Fact]
     public async Task Server_Startup_OTelStatusReportsAllSignals()
     {
         var response = await _kestrelClient.GetAsync("/api/telemetry/status");
@@ -97,20 +97,20 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.Contains("logs", body);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies server Startup O Tel Tracer Provider Is Registered.
     /// </summary>
+    [Fact]
     public async Task Server_Startup_OTelTracerProviderIsRegistered()
     {
         var tracerProvider = _factory.Services.GetService<TracerProvider>();
         Assert.NotNull(tracerProvider);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies server Startup O Tel Meter Provider Is Registered.
     /// </summary>
+    [Fact]
     public async Task Server_Startup_OTelMeterProviderIsRegistered()
     {
         var meterProvider = _factory.Services.GetService<MeterProvider>();
@@ -121,10 +121,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     //  WASM Client Error Monitoring
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
     /// <summary>
     /// Verifies wASM Startup Loads Without Errors.
     /// </summary>
+    [Fact]
     public async Task WASM_Startup_LoadsWithoutErrors()
     {
         var page = await _context.NewPageAsync();
@@ -193,10 +193,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     //  WASM Rendering Correctness
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
     /// <summary>
     /// Verifies wASM Startup Blazor Renders Content.
     /// </summary>
+    [Fact]
     public async Task WASM_Startup_BlazorRendersContent()
     {
         var page = await _context.NewPageAsync();
@@ -241,10 +241,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     //  Telemetry Bridge
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
     /// <summary>
     /// Verifies wASM Startup Telemetry Bridge Is Active.
     /// </summary>
+    [Fact]
     public async Task WASM_Startup_TelemetryBridgeIsActive()
     {
         var page = await _context.NewPageAsync();
@@ -274,10 +274,10 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     //  Full Orchestration
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
     /// <summary>
     /// Verifies full Startup All Systems Healthy.
     /// </summary>
+    [Fact]
     public async Task FullStartup_AllSystemsHealthy()
     {
         // 1.  API level: server health + OTel status

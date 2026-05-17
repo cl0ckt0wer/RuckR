@@ -15,12 +15,12 @@ public sealed class BrowserErrorLogger : IAsyncDisposable
     private DotNetObjectReference<BrowserErrorLogger>? _dotNetObjectReference;
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
-    [DynamicDependency(nameof(LogBrowserError))]
     /// <summary>
     /// Creates a new browser error logger bridge.
     /// </summary>
     /// <param name="jsRuntime">The JS runtime used to import and invoke error-logging script.</param>
     /// <param name="telemetryLoggerProvider">Telemetry logger to enqueue browser logs.</param>
+    [DynamicDependency(nameof(LogBrowserError))]
     public BrowserErrorLogger(IJSRuntime jsRuntime, TelemetryLoggerProvider telemetryLoggerProvider)
 #pragma warning restore CS8618
     {
@@ -38,7 +38,6 @@ public sealed class BrowserErrorLogger : IAsyncDisposable
         await _module.InvokeVoidAsync("start", _dotNetObjectReference);
     }
 
-    [JSInvokable]
     /// <summary>
     /// Receives a browser error and forwards it to telemetry batching.
     /// </summary>
@@ -46,6 +45,7 @@ public sealed class BrowserErrorLogger : IAsyncDisposable
     /// <param name="stack">Error stack trace, if any.</param>
     /// <param name="url">URL where the error occurred.</param>
     /// <param name="userAgent">Browser user-agent string.</param>
+    [JSInvokable]
     public void LogBrowserError(string message, string? stack, string? url, string? userAgent)
     {
         _telemetryLoggerProvider.Enqueue(new ClientLogEntry

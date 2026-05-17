@@ -21,10 +21,10 @@ public class NavMenuTests : TestContext
         Services.AddSingleton<IAuthorizationService>(new TestAuthorizationService());
     }
 
-    [Fact]
     /// <summary>
     /// Verifies nav Menu Renders All Nav Links When Unauthenticated.
     /// </summary>
+    [Fact]
     public void NavMenu_RendersAllNavLinks_WhenUnauthenticated()
     {
         var authProvider = new TestAuthProvider(authenticated: false);
@@ -43,10 +43,10 @@ public class NavMenuTests : TestContext
         Assert.Contains("Login", loginLink.TextContent);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies nav Menu Renders Logout When Authenticated.
     /// </summary>
+    [Fact]
     public void NavMenu_RendersLogout_WhenAuthenticated()
     {
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");
@@ -62,10 +62,10 @@ public class NavMenuTests : TestContext
         Assert.Contains("TestPlayer", usernameSpan.TextContent);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies nav Menu Contains All Expected Routes.
     /// </summary>
+    [Fact]
     public void NavMenu_ContainsAllExpectedRoutes()
     {
         var authProvider = new TestAuthProvider(authenticated: true, username: "TestPlayer");

@@ -4,10 +4,10 @@ using RuckR.Tests.Pages;
 
 namespace RuckR.Tests.E2E;
 
-[Collection(nameof(TestCollection))]
     /// <summary>
     /// Provides access to i Class Fixture<Playwright Fixture>,.
     /// </summary>
+[Collection(nameof(TestCollection))]
 public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
@@ -46,10 +46,10 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _context.CloseAsync();
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Page On Pixel5 Should Be Responsive.
     /// </summary>
+    [Fact]
     public async Task MapPage_OnPixel5_ShouldBeResponsive()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -67,10 +67,10 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(isRendered, "GeoBlazor map container should be visible on mobile viewport");
     }
 
-    [Fact]
     /// <summary>
     /// Verifies player Grid On Pixel5 Should Render Cards.
     /// </summary>
+    [Fact]
     public async Task PlayerGrid_OnPixel5_ShouldRenderCards()
     {
         // Register a test user first so we can access the players grid

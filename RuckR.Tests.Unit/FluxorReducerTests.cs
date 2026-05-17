@@ -13,10 +13,10 @@ namespace RuckR.Tests.Unit;
     /// </summary>
 public class FluxorReducerTests
 {
-    [Fact]
     /// <summary>
     /// Verifies location Update Position Updates Coordinates And Clears Error.
     /// </summary>
+    [Fact]
     public void Location_UpdatePosition_UpdatesCoordinatesAndClearsError()
     {
         var state = new LocationState { ErrorMessage = "err" };
@@ -28,10 +28,10 @@ public class FluxorReducerTests
         Assert.Null(next.ErrorMessage);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies location Error Sets Error And Stops Watching.
     /// </summary>
+    [Fact]
     public void Location_Error_SetsErrorAndStopsWatching()
     {
         var state = new LocationState { IsWatching = true };
@@ -41,10 +41,10 @@ public class FluxorReducerTests
         Assert.Equal("gps error", next.ErrorMessage);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies game Set Auth Updates Auth State.
     /// </summary>
+    [Fact]
     public void Game_SetAuth_UpdatesAuthState()
     {
         var state = new GameState();
@@ -54,10 +54,10 @@ public class FluxorReducerTests
         Assert.Equal("alice", next.Username);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies game Set Connection Updates Connection State.
     /// </summary>
+    [Fact]
     public void Game_SetConnection_UpdatesConnectionState()
     {
         var state = new GameState();
@@ -67,10 +67,10 @@ public class FluxorReducerTests
         Assert.Null(next.ConnectionError);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies game Set Browser Online State Updates Online Flag.
     /// </summary>
+    [Fact]
     public void Game_SetBrowserOnlineState_UpdatesOnlineFlag()
     {
         var state = new GameState { IsBrowserOnline = true };
@@ -79,10 +79,10 @@ public class FluxorReducerTests
         Assert.False(next.IsBrowserOnline);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies game Set Connection Metrics Updates Latency And Queue Count.
     /// </summary>
+    [Fact]
     public void Game_SetConnectionMetrics_UpdatesLatencyAndQueueCount()
     {
         var state = new GameState();
@@ -92,10 +92,10 @@ public class FluxorReducerTests
         Assert.Equal(3, next.PendingActionCount);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies inventory Fetch Result Sets Players And Last Synced.
     /// </summary>
+    [Fact]
     public void Inventory_FetchResult_SetsPlayersAndLastSynced()
     {
         var state = new InventoryState { IsLoading = true };
@@ -108,10 +108,10 @@ public class FluxorReducerTests
         Assert.NotNull(next.LastSynced);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies inventory Toggle Favorite Flips Flag.
     /// </summary>
+    [Fact]
     public void Inventory_ToggleFavorite_FlipsFlag()
     {
         var state = new InventoryState
@@ -127,10 +127,10 @@ public class FluxorReducerTests
         Assert.True(next.CollectedPlayers.First().IsFavorite);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Set Pitches Replaces Visible Pitches.
     /// </summary>
+    [Fact]
     public void Map_SetPitches_ReplacesVisiblePitches()
     {
         var state = new MapState();
@@ -145,10 +145,10 @@ public class FluxorReducerTests
         Assert.Equal(1, next.VisiblePitches.First().Id);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Clear Selection Clears Both Selections.
     /// </summary>
+    [Fact]
     public void Map_ClearSelection_ClearsBothSelections()
     {
         var state = new MapState { SelectedPitchId = 5, SelectedEncounterId = Guid.NewGuid() };
@@ -158,10 +158,10 @@ public class FluxorReducerTests
         Assert.Null(next.SelectedEncounterId);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Select Pitch Clears Encounter Selection.
     /// </summary>
+    [Fact]
     public void Map_SelectPitch_ClearsEncounterSelection()
     {
         var state = new MapState { SelectedEncounterId = Guid.NewGuid() };
@@ -171,10 +171,10 @@ public class FluxorReducerTests
         Assert.Null(next.SelectedEncounterId);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Select Encounter Clears Pitch Selection.
     /// </summary>
+    [Fact]
     public void Map_SelectEncounter_ClearsPitchSelection()
     {
         var encounterId = Guid.NewGuid();
@@ -185,10 +185,10 @@ public class FluxorReducerTests
         Assert.Equal(encounterId, next.SelectedEncounterId);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies map Set Encounters Clears Selected Encounter When It Disappears.
     /// </summary>
+    [Fact]
     public void Map_SetEncounters_ClearsSelectedEncounterWhenItDisappears()
     {
         var selectedEncounterId = Guid.NewGuid();
@@ -204,10 +204,10 @@ public class FluxorReducerTests
         Assert.Single(next.VisibleEncounters);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies battle Challenge Responded Completed Moves To History.
     /// </summary>
+    [Fact]
     public void Battle_ChallengeResponded_Completed_MovesToHistory()
     {
         var battle = new BattleModel
@@ -233,10 +233,10 @@ public class FluxorReducerTests
         Assert.Equal(BattleStatus.Completed, next.BattleHistory.First().Status);
     }
 
-    [Fact]
     /// <summary>
     /// Verifies battle Error Sets Error And Stops Loading.
     /// </summary>
+    [Fact]
     public void Battle_Error_SetsErrorAndStopsLoading()
     {
         var state = new BattleState { IsLoading = true };
