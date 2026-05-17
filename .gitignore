@@ -44,6 +44,12 @@ Generated\ Files/
 # MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
+*.trx
+
+# Playwright test artifacts
+playwright-report/
+test-results/
+blob-report/
 
 # NUnit
 *.VisualState.xml

@@ -125,17 +125,30 @@ log "Using gstack at: $GSTACK_DIR"
 # ── 7. Install Playwright Chromium browser ────────────────
 echo ""
 
-echo "Installing Playwright Chromium (~290 MB download)..."
+echo "Ensuring Playwright Chromium is installed (~290 MB first download)..."
 cd "$GSTACK_DIR"
 
 # Prefer bunx; fall back to npx
-if "$BUN_EXE" x playwright install chromium 2>&1; then
-    log "Playwright Chromium installed via bunx"
+if INSTALLED_OUTPUT=$("$BUN_EXE" x playwright install --list 2>&1); then
+    if printf '%s\n' "$INSTALLED_OUTPUT" | grep -Eq '^[[:space:]]*chromium([[:space:]]|@|$)'; then
+        log "Playwright Chromium already installed (bunx check)"
+    else
+        echo "Installing Playwright Chromium..."
+        "$BUN_EXE" x playwright install chromium 2>&1
+        log "Playwright Chromium installed via bunx"
+    fi
 else
-    warn "bunx failed, trying npx (native Linux node)..."
-    PATH="$HOME/.bun/bin:$HOME/.nvm/versions/node/v24.15.0/bin:$PATH" \
-        npx playwright install chromium 2>&1
-    log "Playwright Chromium installed via npx"
+    warn "bunx check failed, trying npx (native Linux node)..."
+    NPX_PATH="$HOME/.bun/bin:$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"
+    INSTALLED_OUTPUT=$(PATH="$NPX_PATH" npx playwright install --list 2>&1 || true)
+
+    if printf '%s\n' "$INSTALLED_OUTPUT" | grep -Eq '^[[:space:]]*chromium([[:space:]]|@|$)'; then
+        log "Playwright Chromium already installed (npx check)"
+    else
+        echo "Installing Playwright Chromium..."
+        PATH="$NPX_PATH" npx playwright install chromium 2>&1
+        log "Playwright Chromium installed via npx"
+    fi
 fi
 
 # ── 8. Verify Playwright works (headless, then headed) ────

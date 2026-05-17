@@ -1,0 +1,64 @@
+@page "/debug-map"
+@using dymaptic.GeoBlazor.Core.Components
+@using dymaptic.GeoBlazor.Core.Components.Views
+@using dymaptic.GeoBlazor.Core.Enums
+@inject IConfiguration Configuration
+
+<PageTitle>Debug Map</PageTitle>
+
+<div class="debug-map-page">
+    <div class="debug-map-toolbar">
+        <strong>Debug Map</strong>
+        <span>GeoBlazor sample-style MapView</span>
+        <span>API key: @(HasApiKey ? "configured" : "missing")</span>
+        <span>View: @_viewStatus</span>
+    </div>
+
+    <div class="debug-map-host" data-testid="debug-map-host">
+        @if (HasApiKey)
+        {
+            <MapView Class="debug-map-view"
+                     Latitude="@Latitude"
+                     Longitude="@Longitude"
+                     Zoom="@Zoom"
+                     ShowZoomWidget="true"
+                     OnViewInitialized="OnViewInitializedAsync">
+                <Map>
+                    <Basemap>
+                        <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@ApiKey" />
+                    </Basemap>
+                </Map>
+            </MapView>
+        }
+        else
+        {
+            <MapView Class="debug-map-view"
+                     Latitude="@Latitude"
+                     Longitude="@Longitude"
+                     Zoom="@Zoom"
+                     ShowZoomWidget="true"
+                     OnViewInitialized="OnViewInitializedAsync">
+                <Map></Map>
+            </MapView>
+        }
+    </div>
+</div>
+
+@code {
+    private const double Latitude = 26.0527;
+    private const double Longitude = -80.1581;
+    private const int Zoom = 13;
+
+    private string _viewStatus = "initializing";
+
+    private string ApiKey => Configuration["ArcGISApiKey"] ?? string.Empty;
+
+    private bool HasApiKey => !string.IsNullOrWhiteSpace(ApiKey)
+        && !string.Equals(ApiKey, "YOUR_ARCGIS_API_KEY", StringComparison.OrdinalIgnoreCase);
+
+    private Task OnViewInitializedAsync()
+    {
+        _viewStatus = "initialized";
+        return InvokeAsync(StateHasChanged);
+    }
+}

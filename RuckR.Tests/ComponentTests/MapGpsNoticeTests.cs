@@ -1,5 +1,5 @@
 using RuckR.Shared.Models;
-using MapPage = RuckR.Client.Pages.Map;
+using MapPage = RuckR.Client.Pages.GameMap;
 
 namespace RuckR.Tests.ComponentTests;
 
