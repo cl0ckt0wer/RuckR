@@ -34,6 +34,98 @@ public class MapGpsNoticeTests
     }
 
     [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("   ", true)]
+    [InlineData("configured-api-key", false)]
+    public void ShouldShowMapUnavailableFallback_OnlyWhenMapKeyIsMissing(
+        string? apiKey,
+        bool expected)
+    {
+        Assert.Equal(expected, MapPage.ShouldShowMapUnavailableFallback(apiKey));
+    }
+
+    [Fact]
+    public void MapUnavailableCopy_GivesPlayerNextActionsInsteadOfConfigurationInstructions()
+    {
+        Assert.Contains("browse players", MapPage.MapUnavailableBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("environment variable", MapPage.MapUnavailableBody, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("API key", MapPage.MapUnavailableTitle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildGpsStatus_WhenWaitingForLocation_ReturnsSearching()
+    {
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: true,
+            errorMessage: null,
+            lastKnownPosition: null,
+            maxActionAccuracyMeters: 50);
+
+        Assert.Equal(MapPage.GpsStatusKind.Searching, status.Kind);
+        Assert.Equal("Searching", status.Label);
+        Assert.Null(status.AccuracyText);
+    }
+
+    [Fact]
+    public void BuildGpsStatus_WhenAccuracyIsGood_ReturnsReadyWithAccuracy()
+    {
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: true,
+            errorMessage: null,
+            lastKnownPosition: new GeoPosition
+            {
+                Latitude = 51.5074,
+                Longitude = -0.1278,
+                Accuracy = 18
+            },
+            maxActionAccuracyMeters: 50);
+
+        Assert.Equal(MapPage.GpsStatusKind.Ready, status.Kind);
+        Assert.Equal("GPS on", status.Label);
+        Assert.Equal("18m", status.AccuracyText);
+        Assert.Null(MapPage.BuildGpsActionHint(status, 50));
+    }
+
+    [Fact]
+    public void BuildGpsStatus_WhenAccuracyIsPoor_ReturnsWeakWithActionHint()
+    {
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: true,
+            errorMessage: null,
+            lastKnownPosition: new GeoPosition
+            {
+                Latitude = 51.5074,
+                Longitude = -0.1278,
+                Accuracy = 82
+            },
+            maxActionAccuracyMeters: 50);
+
+        Assert.Equal(MapPage.GpsStatusKind.Weak, status.Kind);
+        Assert.Equal("Weak GPS", status.Label);
+        Assert.Equal("82m", status.AccuracyText);
+        Assert.Contains("50m", MapPage.BuildGpsActionHint(status, 50));
+    }
+
+    [Fact]
+    public void BuildGpsStatus_WhenLocationErrors_ReturnsBlocked()
+    {
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: false,
+            errorMessage: "Permission denied",
+            lastKnownPosition: null,
+            maxActionAccuracyMeters: 50);
+
+        Assert.Equal(MapPage.GpsStatusKind.Blocked, status.Kind);
+        Assert.Equal("GPS blocked", status.Label);
+        Assert.Contains("location permission", MapPage.BuildGpsActionHint(status, 50), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
     [InlineData(4, false)]
     [InlineData(5, true)]
     public void ShouldDismissGpsNoticeAfterRetry_HidesOnFifthRetry(

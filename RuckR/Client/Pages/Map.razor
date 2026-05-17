@@ -29,12 +29,15 @@
 <div class="map-shell" data-testid="map-container">
     @if (!_hasApiKey)
     {
-        <div class="map-unavailable-shell">
+        <div class="map-unavailable-shell" data-testid="map-unavailable">
             <div class="map-unavailable-panel">
-                <p class="mb-1 fw-bold">Map unavailable</p>
-                <p class="small text-muted mb-0">
-                    ArcGIS API key is not configured. Set the <code>ARC_GIS_API_KEY</code> environment variable.
-                </p>
+                <p class="map-unavailable-panel__eyebrow">Map offline</p>
+                <h2>@MapUnavailableTitle</h2>
+                <p>@MapUnavailableBody</p>
+                <div class="map-unavailable-panel__actions">
+                    <a class="btn btn-sm btn-primary" href="/catalog">Browse players</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="/collection">View collection</a>
+                </div>
             </div>
         </div>
     }
@@ -93,6 +96,17 @@
                     title="@(_showCandidatePlaces ? "Hide candidate places" : "Show candidate places")">
                 &#x2726;
             </button>
+        </div>
+        <div class="gps-status-chip gps-status-chip--@GpsStatus.CssClass"
+             data-testid="gps-status-chip"
+             role="status"
+             title="@GpsStatus.Detail">
+            <span class="gps-status-chip__dot" aria-hidden="true"></span>
+            <span>@GpsStatus.Label</span>
+            @if (GpsStatus.AccuracyText is not null)
+            {
+                <small>@GpsStatus.AccuracyText</small>
+            }
         </div>
         <div class="pitch-legend" data-testid="pitch-legend">
             <div class="pitch-legend__title">Pitches</div>
@@ -198,6 +212,10 @@
                 <strong>@CaptureDistanceText</strong>
             </div>
             <p class="capture-panel__status" data-testid="capture-status">@CaptureStatusText</p>
+            @if (GpsActionHint is not null)
+            {
+                <p class="capture-panel__gps" data-testid="capture-gps-hint">@GpsActionHint</p>
+            }
             <button class="btn btn-sm btn-primary w-100"
                     data-testid="capture-players-btn"
                     disabled="@(!CanCaptureSelectedPitch)"
@@ -254,6 +272,10 @@
         @if (!_canRecruit)
         {
             <p class="small mt-2 mb-0 text-warning">@_recruitBlockedReason</p>
+        }
+        @if (GpsActionHint is not null)
+        {
+            <p class="small mt-1 mb-0 text-muted" data-testid="recruit-gps-hint">@GpsActionHint</p>
         }
         @if (_recruitMessage is not null)
         {
@@ -804,6 +826,26 @@
  </style>
 
 @code {
+    public const string MapUnavailableTitle = "The nearby pitch map is not ready.";
+    public const string MapUnavailableBody =
+        "You can still browse players and check your collection while map services are being restored.";
+
+    public enum GpsStatusKind
+    {
+        Offline,
+        Searching,
+        Ready,
+        Weak,
+        Blocked
+    }
+
+    public readonly record struct GpsStatusView(
+        GpsStatusKind Kind,
+        string Label,
+        string Detail,
+        string CssClass,
+        string? AccuracyText);
+
     private MapView? _mapView;
     private string _apiKey = string.Empty;
     private bool _hasApiKey;
@@ -864,7 +906,7 @@
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
-        _hasApiKey = !string.IsNullOrWhiteSpace(_apiKey);
+        _hasApiKey = !ShouldShowMapUnavailableFallback(_apiKey);
         _viewReady = !_hasApiKey;
     }
 
@@ -876,6 +918,7 @@
 
             GeolocationService.PositionChanged += OnPositionChanged;
             MapState.StateChanged += OnMapStateChanged;
+            LocationState.StateChanged += OnLocationStateChanged;
             _subscriptionsActive = true;
 
             try
@@ -888,6 +931,11 @@
                 StateHasChanged();
             }
         }
+    }
+
+    private void OnLocationStateChanged(object? sender, EventArgs e)
+    {
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async Task OnViewInitializedAsync()
@@ -1275,6 +1323,15 @@
 
     private bool CanCaptureSelectedPitch => _isAuthenticated && _captureEligibility?.CanCapture == true;
 
+    private GpsStatusView GpsStatus => BuildGpsStatus(
+        _hasApiKey,
+        LocationState.Value.IsWatching,
+        LocationState.Value.ErrorMessage,
+        _lastKnownPosition,
+        MaxRecruitAccuracyMeters);
+
+    private string? GpsActionHint => BuildGpsActionHint(GpsStatus, MaxRecruitAccuracyMeters);
+
     private string CaptureDistanceText =>
         _captureEligibility is not null
             ? FormatDistanceBucket(_captureEligibility.DistanceBucket)
@@ -1500,6 +1557,84 @@
         hasApiKey
         && !gpsNoticeDismissed
         && lastKnownPosition is null;
+
+    public static bool ShouldShowMapUnavailableFallback(string? apiKey) =>
+        string.IsNullOrWhiteSpace(apiKey);
+
+    public static GpsStatusView BuildGpsStatus(
+        bool hasApiKey,
+        bool isWatching,
+        string? errorMessage,
+        GeoPosition? lastKnownPosition,
+        double maxActionAccuracyMeters)
+    {
+        if (!hasApiKey)
+        {
+            return new GpsStatusView(
+                GpsStatusKind.Offline,
+                "Map offline",
+                "Map services are not configured.",
+                "offline",
+                null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            return new GpsStatusView(
+                GpsStatusKind.Blocked,
+                "GPS blocked",
+                errorMessage,
+                "blocked",
+                null);
+        }
+
+        if (lastKnownPosition is null)
+        {
+            return new GpsStatusView(
+                GpsStatusKind.Searching,
+                isWatching ? "Searching" : "GPS idle",
+                isWatching
+                    ? "Waiting for browser location."
+                    : "Enable GPS to unlock distance checks.",
+                "searching",
+                null);
+        }
+
+        var accuracyText = lastKnownPosition.Accuracy.HasValue
+            ? $"{Math.Round(lastKnownPosition.Accuracy.Value)}m"
+            : null;
+
+        if (lastKnownPosition.Accuracy.HasValue
+            && lastKnownPosition.Accuracy.Value > maxActionAccuracyMeters)
+        {
+            return new GpsStatusView(
+                GpsStatusKind.Weak,
+                "Weak GPS",
+                $"Accuracy is {Math.Round(lastKnownPosition.Accuracy.Value)}m. Recruiting needs {Math.Round(maxActionAccuracyMeters)}m or better.",
+                "weak",
+                accuracyText);
+        }
+
+        return new GpsStatusView(
+            GpsStatusKind.Ready,
+            "GPS on",
+            accuracyText is null
+                ? "Location is active."
+                : $"Location is active with {accuracyText} accuracy.",
+            "ready",
+            accuracyText);
+    }
+
+    public static string? BuildGpsActionHint(GpsStatusView status, double maxActionAccuracyMeters)
+    {
+        return status.Kind switch
+        {
+            GpsStatusKind.Blocked => "Enable location permission to unlock distance checks.",
+            GpsStatusKind.Searching => "Waiting for GPS before checking range.",
+            GpsStatusKind.Weak => $"Improve GPS accuracy to {Math.Round(maxActionAccuracyMeters)}m or better for recruiting and capture.",
+            _ => null
+        };
+    }
 
     private const string GpsNoticeTitle = "GPS needed";
 
@@ -1950,6 +2085,7 @@
         {
             GeolocationService.PositionChanged -= OnPositionChanged;
             MapState.StateChanged -= OnMapStateChanged;
+            LocationState.StateChanged -= OnLocationStateChanged;
             _subscriptionsActive = false;
         }
         GeolocationService.StopWatch();

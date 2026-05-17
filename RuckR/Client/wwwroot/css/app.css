@@ -138,19 +138,124 @@ a, .btn-link {
     align-items: center;
     justify-content: center;
     background:
-        linear-gradient(rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.78)),
+        linear-gradient(rgba(248, 250, 252, 0.86), rgba(248, 250, 252, 0.86)),
         repeating-linear-gradient(45deg, #dbe4ea 0, #dbe4ea 1px, #eef3f6 1px, #eef3f6 18px);
 }
 
 .map-unavailable-panel {
-    max-width: min(360px, calc(100vw - 32px));
+    max-width: min(460px, calc(100vw - 32px));
     margin: 16px;
-    padding: 16px;
+    padding: 20px;
     background: #ffffff;
     border: 1px solid #d9dee5;
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
-    text-align: center;
+}
+
+.map-unavailable-panel__eyebrow {
+    margin: 0 0 6px;
+    color: #64748b;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.map-unavailable-panel h2 {
+    margin: 0 0 8px;
+    color: #0f172a;
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
+    line-height: 1.2;
+}
+
+.map-unavailable-panel p:not(.map-unavailable-panel__eyebrow) {
+    margin: 0;
+    color: #475569;
+    line-height: 1.45;
+}
+
+.map-unavailable-panel__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.gps-status-chip {
+    position: absolute;
+    top: 0.75rem;
+    left: 4.25rem;
+    z-index: 12;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.25rem;
+    max-width: min(300px, calc(100vw - 1.5rem));
+    padding: 0.4rem 0.65rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+    font-size: 0.82rem;
+    font-weight: 700;
+    backdrop-filter: blur(8px);
+}
+
+.gps-status-chip__dot {
+    width: 0.62rem;
+    height: 0.62rem;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #64748b;
+    box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.16);
+}
+
+.gps-status-chip small {
+    color: #64748b;
+    font-size: 0.74rem;
+    font-weight: 800;
+}
+
+.gps-status-chip--ready .gps-status-chip__dot {
+    background: #16a34a;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+
+.gps-status-chip--searching .gps-status-chip__dot {
+    background: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+    animation: gps-search-pulse 1.5s ease-in-out infinite;
+}
+
+.gps-status-chip--weak .gps-status-chip__dot {
+    background: #d97706;
+    box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.18);
+}
+
+.gps-status-chip--blocked .gps-status-chip__dot,
+.gps-status-chip--offline .gps-status-chip__dot {
+    background: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.18);
+}
+
+.capture-panel__gps {
+    margin: -0.2rem 0 0.7rem;
+    color: #facc15;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+@keyframes gps-search-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.72;
+    }
+
+    50% {
+        transform: scale(1.28);
+        opacity: 1;
+    }
 }
 
 .map-overlay {
@@ -255,6 +360,12 @@ a, .btn-link {
 
     .map-progress-chip--lower {
         top: auto;
+    }
+
+    .gps-status-chip {
+        left: auto;
+        right: 0.75rem;
+        max-width: calc(100vw - 1.5rem);
     }
 
     .map-center-buttons {
