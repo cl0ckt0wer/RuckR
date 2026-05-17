@@ -27,6 +27,16 @@ namespace RuckR.Shared.Models
         string MatchReason,
         int Confidence);
 
+    public sealed record CreatePitchFromCandidateRequest(
+        [Required, MaxLength(200)] string Name,
+        [Required] string PlaceId,
+        [Range(-90.0, 90.0)] double Latitude,
+        [Range(-180.0, 180.0)] double Longitude,
+        [Required] string Type,
+        [MaxLength(200)] string? CategoryLabel,
+        [MaxLength(200)] string? MatchReason,
+        [Range(0, 100)] int Confidence);
+
     public sealed record ChallengeNotification(
         string ChallengerUsername,
         string PlayerName,

@@ -262,6 +262,66 @@
     </div>
 }
 
+@if (_selectedCandidatePlace is not null)
+{
+    <div class="map-overlay pitch-card" data-testid="candidate-place-overlay">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+            <div>
+                <div class="pitch-card__eyebrow">Candidate place</div>
+                <h5 class="mb-0" data-testid="candidate-place-name">@_selectedCandidatePlace.Name</h5>
+            </div>
+            <button type="button" class="btn-close" data-testid="candidate-place-close" @onclick="ClearCandidateSelection" aria-label="Close"></button>
+        </div>
+        <div class="pitch-card__meta mb-2">
+            <span class="pitch-card__pill">@_selectedCandidatePlace.CategoryLabel</span>
+            <span class="pitch-card__distance">@CandidateDistanceText(_selectedCandidatePlace)</span>
+        </div>
+        <p class="capture-panel__status mb-2">
+            @_selectedCandidatePlace.MatchReason. Confidence @_selectedCandidatePlace.Confidence%.
+        </p>
+        <div class="mb-2">
+            <label class="form-label small text-muted mb-1" for="candidate-pitch-name">Pitch name</label>
+            <input id="candidate-pitch-name"
+                   class="form-control form-control-sm"
+                   data-testid="candidate-pitch-name-input"
+                   maxlength="200"
+                   @bind="_candidatePitchName" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label small text-muted mb-1" for="candidate-pitch-type">Pitch type</label>
+            <select id="candidate-pitch-type"
+                    class="form-select form-select-sm"
+                    data-testid="candidate-pitch-type-select"
+                    @bind="_candidatePitchType">
+                <option value="Stadium">Stadium</option>
+                <option value="Standard">Standard</option>
+                <option value="Training">Training</option>
+            </select>
+        </div>
+        @if (_candidateCreateMessage is not null)
+        {
+            <p class="small mb-2 text-@_candidateCreateMessageClass">@_candidateCreateMessage</p>
+        }
+        <button class="btn btn-sm btn-primary w-100"
+                data-testid="create-candidate-pitch-btn"
+                disabled="@(!CanCreateSelectedCandidatePitch)"
+                @onclick="CreateSelectedCandidatePitchAsync">
+            @if (_isCreatingCandidatePitch)
+            {
+                <span class="spinner-border spinner-border-sm" role="status"></span>
+            }
+            else if (_isAuthenticated)
+            {
+                @:Create pitch
+            }
+            else
+            {
+                @:Log in to create pitch
+            }
+        </button>
+    </div>
+}
+
 @if (_recruitToastMessage is not null)
 {
     <div class="recruit-toast recruit-toast--@_recruitToastClass" data-testid="recruit-toast">
@@ -780,6 +840,12 @@
     private int _eligibilityRequestPitchId = -1;
     private int _nearbyPlayerCount;
     private PlayerEncounterDto? _selectedEncounter;
+    private PitchCandidatePlaceDto? _selectedCandidatePlace;
+    private string _candidatePitchName = string.Empty;
+    private string _candidatePitchType = PitchType.Standard.ToString();
+    private bool _isCreatingCandidatePitch;
+    private string? _candidateCreateMessage;
+    private string _candidateCreateMessageClass = "success";
     private GameProgressDto? _gameProgress;
     private int _prevLevelXp;
     private bool _canRecruit;
@@ -1147,6 +1213,7 @@
                         {
                             if (attrs.TryGetValue("_ruckrId", out var idObj) && idObj is int pitchId)
                             {
+                                ClearCandidateSelection();
                                 Dispatcher.Dispatch(new SelectPitchAction(pitchId));
                                 return;
                             }
@@ -1158,6 +1225,7 @@
                                 var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId);
                                 if (encounter is not null)
                                 {
+                                    ClearCandidateSelection();
                                     _selectedEncounter = encounter;
                                     UpdateRecruitEligibility();
                                     _recruitMessage = null;
@@ -1168,8 +1236,14 @@
                         }
                         else if (type?.ToString() == "candidate-place")
                         {
-                            var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : "Candidate place";
-                            var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : "Pitch";
+                            if (attrs.TryGetValue("_ruckrPlaceId", out var placeIdObj)
+                                && placeIdObj?.ToString() is { Length: > 0 } placeId)
+                            {
+                                SelectCandidatePlace(placeId);
+                            }
+
+                            var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : _selectedCandidatePlace?.Name ?? "Candidate place";
+                            var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
                             var confidence = attrs.TryGetValue("confidence", out var confidenceObj) ? confidenceObj?.ToString() : "?";
                             var reason = attrs.TryGetValue("matchReason", out var reasonObj) ? reasonObj?.ToString() : "matched place category";
                             var category = attrs.TryGetValue("categoryLabel", out var categoryObj) ? categoryObj?.ToString() : "Place";
@@ -1331,6 +1405,84 @@
     {
         _selectedEncounter = null;
         Dispatcher.Dispatch(new ClearSelectionAction());
+    }
+
+    private void SelectCandidatePlace(string placeId)
+    {
+        var candidate = _candidatePlaces.FirstOrDefault(c => c.PlaceId == placeId);
+        if (candidate is null)
+        {
+            return;
+        }
+
+        _selectedCandidatePlace = candidate;
+        _selectedEncounter = null;
+        _candidatePitchName = candidate.Name;
+        _candidatePitchType = NormalizePitchType(candidate.RecommendedPitchType);
+        _candidateCreateMessage = null;
+        _candidateCreateMessageClass = "success";
+    }
+
+    private void ClearCandidateSelection()
+    {
+        _selectedCandidatePlace = null;
+        _candidateCreateMessage = null;
+        _isCreatingCandidatePitch = false;
+    }
+
+    private bool CanCreateSelectedCandidatePitch =>
+        _isAuthenticated
+        && !_isCreatingCandidatePitch
+        && _selectedCandidatePlace is not null
+        && !string.IsNullOrWhiteSpace(_candidatePitchName)
+        && Enum.TryParse<PitchType>(_candidatePitchType, ignoreCase: true, out _);
+
+    private async Task CreateSelectedCandidatePitchAsync()
+    {
+        if (!CanCreateSelectedCandidatePitch || _selectedCandidatePlace is null)
+        {
+            return;
+        }
+
+        _isCreatingCandidatePitch = true;
+        _candidateCreateMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var created = await ApiClient.CreatePitchFromCandidateAsync(
+                _selectedCandidatePlace,
+                _candidatePitchName.Trim(),
+                _candidatePitchType);
+
+            _candidateCreateMessageClass = "success";
+            _candidateCreateMessage = created is null
+                ? "Pitch created."
+                : $"{created.Name} created.";
+
+            var lat = _lastPitchFetchPosition?.Latitude ?? _selectedCandidatePlace.Latitude;
+            var lng = _lastPitchFetchPosition?.Longitude ?? _selectedCandidatePlace.Longitude;
+            ClearCandidateSelection();
+            await LoadPitchMarkersAsync(lat, lng);
+            _statusMessage = "Candidate converted into a pitch.";
+        }
+        catch (HttpRequestException ex)
+        {
+            Logger.LogWarning(ex, "Failed to create pitch from candidate place {PlaceId}", _selectedCandidatePlace.PlaceId);
+            _candidateCreateMessageClass = "warning";
+            _candidateCreateMessage = "Could not create this pitch. It may already exist nearby or have a duplicate name.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error creating pitch from candidate place {PlaceId}", _selectedCandidatePlace.PlaceId);
+            _candidateCreateMessageClass = "danger";
+            _candidateCreateMessage = "Unable to create this pitch right now.";
+        }
+        finally
+        {
+            _isCreatingCandidatePitch = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private void DismissRecruitToast()
@@ -1699,6 +1851,19 @@
             : $"{distanceMeters / 1000:0.0} km away";
     }
 
+    private string CandidateDistanceText(PitchCandidatePlaceDto candidate)
+    {
+        var distanceMeters = _lastKnownPosition is not null
+            ? GeoPosition.HaversineDistance(
+                _lastKnownPosition,
+                new GeoPosition { Latitude = candidate.Latitude, Longitude = candidate.Longitude })
+            : candidate.DistanceMeters;
+
+        return distanceMeters < 1000
+            ? $"{Math.Round(distanceMeters)} m away"
+            : $"{distanceMeters / 1000:0.0} km away";
+    }
+
     private static string PitchTypeDisplayName(PitchType type) => type switch
     {
         PitchType.Stadium => "Stadium",
@@ -1714,6 +1879,11 @@
         PitchType.Training => "Practice ground",
         _ => "Rugby location"
     };
+
+    private static string NormalizePitchType(string value) =>
+        Enum.TryParse<PitchType>(value, ignoreCase: true, out var parsed)
+            ? parsed.ToString()
+            : PitchType.Standard.ToString();
 
     private static string PitchTypeCssClass(PitchType type) => type switch
     {

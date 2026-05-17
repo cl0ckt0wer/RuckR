@@ -111,6 +111,99 @@ public class PitchesApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CreatePitchFromCandidate_Authenticated_PersistsSourceMetadata()
+    {
+        var pitchName = $"CandidatePitch_{Guid.NewGuid():N}";
+        var placeId = $"candidate-place-{Guid.NewGuid():N}";
+        var latitude = -42.1234;
+        var longitude = 88.5678;
+        var request = new CreatePitchFromCandidateRequest(
+            pitchName,
+            placeId,
+            latitude,
+            longitude,
+            "Standard",
+            "Rugby Pitch",
+            "Rugby signal",
+            98);
+
+        var response = await _client.PostAsJsonAsync("/api/pitches/from-candidate", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = await response.Content.ReadFromJsonAsync<PitchModel>();
+        Assert.NotNull(created);
+        Assert.Equal(pitchName, created.Name);
+        Assert.Equal(PitchType.Standard, created.Type);
+        Assert.Equal(latitude, created.Latitude, precision: 4);
+        Assert.Equal(longitude, created.Longitude, precision: 4);
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var stored = await db.Pitches.FindAsync(created.Id);
+            Assert.NotNull(stored);
+            Assert.Equal("ArcGISPlaces", stored.Source);
+            Assert.Equal(placeId, stored.ExternalPlaceId);
+            Assert.Equal("Rugby Pitch", stored.SourceCategory);
+            Assert.Equal("Rugby signal", stored.SourceMatchReason);
+            Assert.Equal(98, stored.SourceConfidence);
+        });
+    }
+
+    [Fact]
+    public async Task CreatePitchFromCandidate_DuplicatePlaceId_Returns409()
+    {
+        var placeId = $"candidate-place-{Guid.NewGuid():N}";
+        var first = new CreatePitchFromCandidateRequest(
+            $"CandidatePitch_{Guid.NewGuid():N}",
+            placeId,
+            -43.1234,
+            89.5678,
+            "Standard",
+            "Rugby Pitch",
+            "Rugby signal",
+            98);
+        var second = first with
+        {
+            Name = $"CandidatePitch_{Guid.NewGuid():N}",
+            Latitude = -44.1234,
+            Longitude = 90.5678
+        };
+
+        var firstResponse = await _client.PostAsJsonAsync("/api/pitches/from-candidate", first);
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+        var secondResponse = await _client.PostAsJsonAsync("/api/pitches/from-candidate", second);
+        Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreatePitchFromCandidate_NearExistingPitch_Returns409()
+    {
+        var first = new CreatePitchFromCandidateRequest(
+            $"CandidatePitch_{Guid.NewGuid():N}",
+            $"candidate-place-{Guid.NewGuid():N}",
+            -45.1234,
+            91.5678,
+            "Standard",
+            "Rugby Pitch",
+            "Rugby signal",
+            98);
+        var second = first with
+        {
+            Name = $"CandidatePitch_{Guid.NewGuid():N}",
+            PlaceId = $"candidate-place-{Guid.NewGuid():N}",
+            Latitude = -45.12345,
+            Longitude = 91.56785
+        };
+
+        var firstResponse = await _client.PostAsJsonAsync("/api/pitches/from-candidate", first);
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+        var secondResponse = await _client.PostAsJsonAsync("/api/pitches/from-candidate", second);
+        Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task GetPitchesNearby_ReturnsPitches()
     {
         var response = await _client.GetAsync("/api/pitches/nearby?lat=51.5074&lng=-0.1278&radius=5000");

@@ -39,6 +39,20 @@ namespace RuckR.Shared.Models
 
         public PitchType Type { get; set; }
 
+        [MaxLength(50)]
+        public string Source { get; set; } = "Manual";
+
+        [MaxLength(128)]
+        public string? ExternalPlaceId { get; set; }
+
+        [MaxLength(200)]
+        public string? SourceCategory { get; set; }
+
+        [MaxLength(200)]
+        public string? SourceMatchReason { get; set; }
+
+        public int? SourceConfidence { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

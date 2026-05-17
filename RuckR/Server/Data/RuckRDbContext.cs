@@ -37,6 +37,13 @@ namespace RuckR.Server.Data
                     .HasColumnType("geography");
                 entity.Property(p => p.Name).IsRequired().HasMaxLength(200);
                 entity.Property(p => p.CreatorUserId).IsRequired();
+                entity.Property(p => p.Source).IsRequired().HasMaxLength(50).HasDefaultValue("Manual");
+                entity.Property(p => p.ExternalPlaceId).HasMaxLength(128);
+                entity.Property(p => p.SourceCategory).HasMaxLength(200);
+                entity.Property(p => p.SourceMatchReason).HasMaxLength(200);
+                entity.HasIndex(p => p.ExternalPlaceId)
+                    .IsUnique()
+                    .HasFilter("[ExternalPlaceId] IS NOT NULL");
             });
 
             // --- CollectionModel ---

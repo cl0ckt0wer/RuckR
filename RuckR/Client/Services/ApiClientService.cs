@@ -100,6 +100,26 @@ public class ApiClientService
         return await response.Content.ReadFromJsonAsync<PitchModel>();
     }
 
+    public async Task<PitchModel?> CreatePitchFromCandidateAsync(
+        PitchCandidatePlaceDto candidate,
+        string name,
+        string type)
+    {
+        var request = new CreatePitchFromCandidateRequest(
+            name,
+            candidate.PlaceId,
+            candidate.Latitude,
+            candidate.Longitude,
+            type,
+            candidate.CategoryLabel,
+            candidate.MatchReason,
+            candidate.Confidence);
+
+        var response = await _http.PostAsJsonAsync("api/pitches/from-candidate", request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PitchModel>();
+    }
+
     // Collection
     public async Task<List<CollectionModel>> GetCollectionAsync()
     {

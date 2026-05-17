@@ -13,6 +13,7 @@ namespace RuckR.Server.Controllers
     public class PitchesController : ControllerBase
     {
         private const int MaxPitchesPerUserPerDay = 5;
+        private const double CandidateDuplicateDistanceMeters = 100.0;
 
         private static readonly GeometryFactory _geometryFactory =
             NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
@@ -174,11 +175,81 @@ var pitches = await _db.Pitches
                 Location = requestPoint,
                 CreatorUserId = userId,
                 Type = pitchType,
+                Source = "Manual",
                 CreatedAt = DateTime.UtcNow
             };
 
             _db.Pitches.Add(pitch);
             await _db.SaveChangesAsync();
+
+            return CreatedAtAction(nameof(GetPitch), new { id = pitch.Id }, pitch);
+        }
+
+        /// <summary>
+        /// POST /pitches/from-candidate — converts a reviewed ArcGIS place candidate into a real pitch.
+        /// </summary>
+        [HttpPost("from-candidate")]
+        [Authorize]
+        public async Task<ActionResult<PitchModel>> CreatePitchFromCandidate([FromBody] CreatePitchFromCandidateRequest request)
+        {
+            if (request.Latitude < -90 || request.Latitude > 90)
+                return BadRequest("Latitude must be between -90 and 90 degrees.");
+            if (request.Longitude < -180 || request.Longitude > 180)
+                return BadRequest("Longitude must be between -180 and 180 degrees.");
+            if (IsNullIsland(request.Latitude, request.Longitude))
+                return BadRequest("Latitude and longitude cannot both be zero. Provide a real location.");
+            if (IsSentinelLocation(request.Latitude, request.Longitude))
+                return BadRequest("Location appears to be a placeholder (-1,-1). Provide a real location.");
+            if (string.IsNullOrWhiteSpace(request.PlaceId))
+                return BadRequest("PlaceId is required.");
+
+            if (!Enum.TryParse<PitchType>(request.Type, ignoreCase: true, out var pitchType))
+                return BadRequest($"Invalid pitch type '{request.Type}'. Valid types: Standard, Training, Stadium.");
+
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized("User identity not found.");
+
+            if (!await _rateLimitService.IsAllowedAsync(userId, "create_pitch", MaxPitchesPerUserPerDay, TimeSpan.FromHours(24)))
+                return StatusCode(429, "Rate limit exceeded. You can create up to 5 pitches per 24 hours.");
+
+            var pitchName = request.Name.Trim();
+            if (string.IsNullOrWhiteSpace(pitchName))
+                return BadRequest("Pitch name is required.");
+
+            var duplicatePlaceExists = await _db.Pitches.AnyAsync(p => p.ExternalPlaceId == request.PlaceId);
+            if (duplicatePlaceExists)
+                return Conflict("This place has already been converted into a pitch.");
+
+            var duplicateNameExists = await _db.Pitches.AnyAsync(p => p.Name == pitchName);
+            if (duplicateNameExists)
+                return Conflict($"A pitch named '{pitchName}' already exists.");
+
+            var requestPoint = _geometryFactory.CreatePoint(new Coordinate(request.Longitude, request.Latitude));
+            var nearbyDuplicateExists = await _db.Pitches.AnyAsync(p =>
+                p.Location.IsWithinDistance(requestPoint, CandidateDuplicateDistanceMeters));
+            if (nearbyDuplicateExists)
+                return Conflict($"A pitch already exists within {CandidateDuplicateDistanceMeters:0} meters of this place.");
+
+            var pitch = new PitchModel
+            {
+                Name = pitchName,
+                Location = requestPoint,
+                CreatorUserId = userId,
+                Type = pitchType,
+                Source = "ArcGISPlaces",
+                ExternalPlaceId = request.PlaceId.Trim(),
+                SourceCategory = request.CategoryLabel?.Trim(),
+                SourceMatchReason = request.MatchReason?.Trim(),
+                SourceConfidence = request.Confidence,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Pitches.Add(pitch);
+            await _db.SaveChangesAsync();
+
+            pitch.Latitude = pitch.Location.Y;
+            pitch.Longitude = pitch.Location.X;
 
             return CreatedAtAction(nameof(GetPitch), new { id = pitch.Id }, pitch);
         }
