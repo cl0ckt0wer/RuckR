@@ -26,7 +26,12 @@
         <nav class="debug-map-mode-nav" aria-label="Debug map modes">
             @foreach (var mode in Modes)
             {
-                <a class="@ModeLinkClass(mode.Key)" href="@mode.Href">@mode.Label</a>
+                <a class="@ModeLinkClass(mode.Key)"
+                   href="@mode.Href"
+                   @onclick="() => SwitchMode(mode.Key)"
+                   @onclick:preventDefault>
+                    @mode.Label
+                </a>
             }
         </nav>
     </div>
@@ -219,6 +224,23 @@
         }
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void SwitchMode(DebugMapMode mode)
+    {
+        if (Mode == mode)
+        {
+            return;
+        }
+
+        Mode = mode;
+        _debugLayer = null;
+        _viewStatus = "initializing";
+        _markerStatus = Mode is DebugMapMode.Marker or DebugMapMode.Overlays ? "pending" : "not requested";
+        _markerAdded = false;
+
+        var href = Modes.First(item => item.Key == mode).Href;
+        Navigation.NavigateTo(href, replace: false);
     }
 
     private async Task StartDiagnosticsAsync()
