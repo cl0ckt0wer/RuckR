@@ -107,8 +107,31 @@ namespace RuckR.Server.Controllers
                 {
                     AddMapDiagnosticsEvent(activity, entry.Message);
                 }
+
+                if (activity is not null
+                    && entry.Category.Contains("Browser", StringComparison.OrdinalIgnoreCase))
+                {
+                    activity.AddEvent(new ActivityEvent("browser.console_error", tags: new ActivityTagsCollection
+                    {
+                        { "browser.message", TruncateTag(entry.Message, 1000) },
+                        { "browser.exception", TruncateTag(entry.Exception, 2000) },
+                        { "browser.url", entry.Url },
+                        { "browser.user_agent", entry.UserAgent },
+                        { "browser.level", level.ToString() }
+                    }));
+                }
             }
             return Ok();
+        }
+
+        private static string? TruncateTag(string? value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value[..maxLength];
         }
 
         private static void AddMapDiagnosticsEvent(Activity activity, string message)
