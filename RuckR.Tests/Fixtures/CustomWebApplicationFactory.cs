@@ -22,6 +22,7 @@ using OpenTelemetry.Trace;
 using RuckR.Server.Data;
 using RuckR.Server.Hubs;
 using RuckR.Server.Services;
+using RuckR.Shared.Models;
 using Testcontainers.MsSql;
 
 namespace RuckR.Tests.Fixtures;
@@ -475,5 +476,15 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
             new("test-park", "Test Real World Park", latitude, longitude, 0)
         ];
         return Task.FromResult(parks);
+    }
+
+    public Task<IReadOnlyList<PitchCandidatePlaceDto>> FindNearbyPitchCandidatePlacesAsync(
+        double latitude,
+        double longitude,
+        double radiusMeters,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<PitchCandidatePlaceDto> candidates = Array.Empty<PitchCandidatePlaceDto>();
+        return Task.FromResult(candidates);
     }
 }

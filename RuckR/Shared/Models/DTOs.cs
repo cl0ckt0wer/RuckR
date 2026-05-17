@@ -16,6 +16,17 @@ namespace RuckR.Shared.Models
         [Range(-180.0, 180.0)] double Longitude,
         [Required] string Type);
 
+    public sealed record PitchCandidatePlaceDto(
+        string PlaceId,
+        string Name,
+        double Latitude,
+        double Longitude,
+        double DistanceMeters,
+        string CategoryLabel,
+        string RecommendedPitchType,
+        string MatchReason,
+        int Confidence);
+
     public sealed record ChallengeNotification(
         string ChallengerUsername,
         string PlayerName,

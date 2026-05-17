@@ -67,6 +67,21 @@ public class ApiClientService
         }
     }
 
+    public async Task<List<PitchCandidatePlaceDto>> GetPitchCandidatePlacesAsync(double lat, double lng, double radius = 5_000)
+    {
+        try
+        {
+            _logger.LogDebug("Fetching pitch candidate places at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            return await _http.GetFromJsonAsync<List<PitchCandidatePlaceDto>>(
+                $"api/pitches/place-candidates?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch pitch candidate places at ({Lat}, {Lng})", lat, lng);
+            return new();
+        }
+    }
+
     public async Task<List<PitchModel>> GetPitchesAsync(int page = 1, int pageSize = 20)
     {
         return await _http.GetFromJsonAsync<List<PitchModel>>(

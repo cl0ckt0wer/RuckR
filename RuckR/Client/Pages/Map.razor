@@ -87,6 +87,12 @@
                     title="Nearest training ground">
                 &#x1F4A1;
             </button>
+            <button class="btn btn-sm btn-outline-light map-fab map-fab--candidate @(_showCandidatePlaces ? "map-fab--active" : "")"
+                    data-testid="candidate-places-toggle"
+                    @onclick="ToggleCandidatePlacesAsync"
+                    title="@(_showCandidatePlaces ? "Hide candidate places" : "Show candidate places")">
+                &#x2726;
+            </button>
         </div>
         <div class="pitch-legend" data-testid="pitch-legend">
             <div class="pitch-legend__title">Pitches</div>
@@ -104,6 +110,11 @@
                 <span class="pitch-legend__marker pitch-legend__marker--training"></span>
                 <span>Training</span>
                 <strong>@PitchCount(PitchType.Training)</strong>
+            </div>
+            <div class="pitch-legend__row">
+                <span class="pitch-legend__marker pitch-legend__marker--candidate"></span>
+                <span>Candidates</span>
+                <strong>@_candidatePlaceGraphics.Count</strong>
             </div>
         </div>
 
@@ -281,9 +292,9 @@
         {
             @_statusMessage
         }
-        else if (_pitchGraphics.Count > 0 || _encounterGraphics.Count > 0)
+        else if (_pitchGraphics.Count > 0 || _encounterGraphics.Count > 0 || _candidatePlaceGraphics.Count > 0)
         {
-            <text>@_pitchGraphics.Count pitches, @_encounterGraphics.Count encounters visible. Tap a marker to see details.</text>
+            <text>@_pitchGraphics.Count pitches, @_encounterGraphics.Count encounters, @_candidatePlaceGraphics.Count candidates visible. Tap a marker to see details.</text>
         }
         else
         {
@@ -319,6 +330,13 @@
      }
      .map-fab:disabled {
          opacity: 0.4;
+     }
+     .map-fab--candidate {
+         color: #f5d0fe;
+         border-color: rgba(216,180,254,0.4);
+     }
+     .map-fab--active {
+         background: rgba(88,28,135,0.92);
      }
      .onboarding-banner {
          position: fixed;
@@ -401,6 +419,12 @@
          border-top: 0;
          background: transparent;
          box-shadow: none;
+     }
+     .pitch-legend__marker--candidate {
+         border-radius: 999px;
+         background: #a855f7;
+         border-color: #f5d0fe;
+         box-shadow: 0 0 0 3px rgba(168,85,247,0.22);
      }
      .gps-readiness {
          position: absolute;
@@ -747,6 +771,8 @@
 
     private readonly Dictionary<int, Graphic> _pitchGraphics = new();
     private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
+    private readonly Dictionary<string, Graphic> _candidatePlaceGraphics = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<PitchCandidatePlaceDto> _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
     private PitchModel? _selectedPitch;
     private int _lastSelectedPitchId = -1;
     private CaptureEligibilityDto? _captureEligibility;
@@ -767,6 +793,7 @@
     private bool _showOnboarding = true;
     private int _gpsRetryAttempts;
     private bool _gpsNoticeDismissed;
+    private bool _showCandidatePlaces = true;
 
     protected override void OnInitialized()
     {
@@ -900,6 +927,17 @@
             Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
             await UpdatePitchGraphicsAsync(pitches);
 
+            if (_showCandidatePlaces)
+            {
+                _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
+                await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
+            }
+            else
+            {
+                _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
+                await ClearCandidatePlaceGraphicsAsync();
+            }
+
             var encounters = new List<PlayerEncounterDto>();
             if (_isAuthenticated)
             {
@@ -1011,6 +1049,76 @@
         }
     }
 
+    private async Task UpdateCandidatePlaceGraphicsAsync(IReadOnlyList<PitchCandidatePlaceDto> candidates)
+    {
+        if (_mapView is null) return;
+
+        await ClearCandidatePlaceGraphicsAsync();
+
+        foreach (var candidate in candidates)
+        {
+            var graphic = new Graphic(
+                geometry: new Point(longitude: candidate.Longitude, latitude: candidate.Latitude),
+                symbol: GetCandidatePlaceSymbol(candidate.RecommendedPitchType),
+                attributes: new AttributesDictionary(new Dictionary<string, object?>
+                {
+                    ["_ruckrType"] = "candidate-place",
+                    ["_ruckrPlaceId"] = candidate.PlaceId,
+                    ["name"] = candidate.Name,
+                    ["recommendedPitchType"] = candidate.RecommendedPitchType,
+                    ["confidence"] = candidate.Confidence,
+                    ["categoryLabel"] = candidate.CategoryLabel,
+                    ["matchReason"] = candidate.MatchReason
+                })
+            );
+
+            try
+            {
+                await _mapView.AddGraphic(graphic);
+                _candidatePlaceGraphics[candidate.PlaceId] = graphic;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to add graphic for pitch candidate place {PlaceId}", candidate.PlaceId);
+            }
+        }
+    }
+
+    private async Task ClearCandidatePlaceGraphicsAsync()
+    {
+        if (_mapView is null) return;
+
+        foreach (var old in _candidatePlaceGraphics.Values)
+        {
+            try { await _mapView.RemoveGraphic(old); }
+            catch (Exception ex) { Logger.LogDebug(ex, "Failed to remove old candidate place graphic"); }
+        }
+
+        _candidatePlaceGraphics.Clear();
+    }
+
+    private async Task ToggleCandidatePlacesAsync()
+    {
+        _showCandidatePlaces = !_showCandidatePlaces;
+        if (!_showCandidatePlaces)
+        {
+            _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
+            await ClearCandidatePlaceGraphicsAsync();
+            _statusMessage = "Candidate place overlay hidden.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var lat = _lastKnownPosition?.Latitude ?? _lastPitchFetchPosition?.Latitude ?? _latitude;
+        var lng = _lastKnownPosition?.Longitude ?? _lastPitchFetchPosition?.Longitude ?? _longitude;
+        _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
+        await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
+        _statusMessage = _candidatePlaces.Count == 0
+            ? "No candidate places found in this map area."
+            : $"{_candidatePlaces.Count} candidate places visible.";
+        await InvokeAsync(StateHasChanged);
+    }
+
     private static MapColor EncounterRarityColor(string rarity) => rarity switch
     {
         "Uncommon" => new MapColor(47, 133, 90),
@@ -1057,6 +1165,18 @@
                                     return;
                                 }
                             }
+                        }
+                        else if (type?.ToString() == "candidate-place")
+                        {
+                            var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : "Candidate place";
+                            var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : "Pitch";
+                            var confidence = attrs.TryGetValue("confidence", out var confidenceObj) ? confidenceObj?.ToString() : "?";
+                            var reason = attrs.TryGetValue("matchReason", out var reasonObj) ? reasonObj?.ToString() : "matched place category";
+                            var category = attrs.TryGetValue("categoryLabel", out var categoryObj) ? categoryObj?.ToString() : "Place";
+                            _statusMessage = $"Candidate: {name} -> {recommendedType} ({confidence}%). {reason}; {category}.";
+                            Dispatcher.Dispatch(new ClearSelectionAction());
+                            StateHasChanged();
+                            return;
                         }
                     }
                 }
@@ -1627,6 +1747,25 @@
             style: SimpleMarkerSymbolStyle.Circle)
     };
 
+    private static SimpleMarkerSymbol GetCandidatePlaceSymbol(string recommendedPitchType)
+    {
+        var fill = Enum.TryParse<PitchType>(recommendedPitchType, ignoreCase: true, out var parsed)
+            ? parsed switch
+            {
+                PitchType.Stadium => "#F59E0B",
+                PitchType.Standard => "#22C55E",
+                PitchType.Training => "#38BDF8",
+                _ => "#A855F7"
+            }
+            : "#A855F7";
+
+        return new SimpleMarkerSymbol(
+            outline: new Outline(color: new MapColor("#F5D0FE"), width: new Dimension(3)),
+            color: new MapColor(fill),
+            size: new Dimension(13),
+            style: SimpleMarkerSymbolStyle.Circle);
+    }
+
     private static string PitchTypeBadgeClass(PitchType type) => type switch
     {
         PitchType.Standard => "primary",
@@ -1651,5 +1790,6 @@
         }
         _pitchGraphics.Clear();
         _encounterGraphics.Clear();
+        _candidatePlaceGraphics.Clear();
     }
 }

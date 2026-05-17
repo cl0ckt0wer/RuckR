@@ -1,3 +1,5 @@
+using RuckR.Shared.Models;
+
 namespace RuckR.Server.Services;
 
 public sealed record RealWorldPark(
@@ -10,6 +12,12 @@ public sealed record RealWorldPark(
 public interface IRealWorldParkService
 {
     Task<IReadOnlyList<RealWorldPark>> FindNearbyParksAsync(
+        double latitude,
+        double longitude,
+        double radiusMeters,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PitchCandidatePlaceDto>> FindNearbyPitchCandidatePlacesAsync(
         double latitude,
         double longitude,
         double radiusMeters,

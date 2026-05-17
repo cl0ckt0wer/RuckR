@@ -19,11 +19,16 @@ namespace RuckR.Server.Controllers
 
         private readonly RuckRDbContext _db;
         private readonly IRateLimitService _rateLimitService;
+        private readonly IRealWorldParkService _parkService;
 
-        public PitchesController(RuckRDbContext db, IRateLimitService rateLimitService)
+        public PitchesController(
+            RuckRDbContext db,
+            IRateLimitService rateLimitService,
+            IRealWorldParkService parkService)
         {
             _db = db;
             _rateLimitService = rateLimitService;
+            _parkService = parkService;
         }
 
         /// <summary>
@@ -86,6 +91,26 @@ var pitches = await _db.Pitches
              }
 
             return Ok(pitches);
+        }
+
+        /// <summary>
+        /// GET /pitches/place-candidates — ArcGIS Places that look suitable for pitch creation.
+        /// </summary>
+        [HttpGet("place-candidates")]
+        public async Task<ActionResult<IReadOnlyList<PitchCandidatePlaceDto>>> GetPitchCandidatePlaces(
+            [FromQuery] double lat,
+            [FromQuery] double lng,
+            [FromQuery] double radius = 5000)
+        {
+            if (lat < -90 || lat > 90)
+                return BadRequest("Latitude must be between -90 and 90 degrees.");
+            if (lng < -180 || lng > 180)
+                return BadRequest("Longitude must be between -180 and 180 degrees.");
+            if (radius <= 0 || radius > 10_000)
+                return BadRequest("Radius must be between 1 and 10000 meters.");
+
+            var candidates = await _parkService.FindNearbyPitchCandidatePlacesAsync(lat, lng, radius, HttpContext.RequestAborted);
+            return Ok(candidates);
         }
 
         /// <summary>
