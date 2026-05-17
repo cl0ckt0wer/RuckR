@@ -15,6 +15,18 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
     private static readonly TimeSpan ParkSearchCacheDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan PitchCandidateSearchCacheDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan CategoryCacheDuration = TimeSpan.FromHours(24);
+    private static readonly string[] DefaultPitchCandidateCategoryIds =
+    [
+        "56aa371be4b08b9a8d573556", // Rugby Stadium
+        "63be6904847c3692a84b9c14", // Rugby
+        "52e81612bcbc57f1066b7a2c", // Rugby Pitch
+        "63be6904847c3692a84b9bfd", // Athletic Field
+        "4bf58dd8d48988d184941735", // Stadium
+        "4bf58dd8d48988d189941735", // Football Stadium
+        "63be6904847c3692a84b9c07", // Football Field
+        "4bf58dd8d48988d188941735", // Soccer Stadium
+        "4cce455aebf7b749d5e191f5"  // Soccer Field
+    ];
 
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
@@ -228,13 +240,7 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
             return configured;
         }
 
-        var cached = await _cache.GetOrCreateAsync("arcgis-places:pitch-candidate-category-ids", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = CategoryCacheDuration;
-            return await QueryPitchCandidateCategoryIdsAsync(token, cancellationToken);
-        });
-
-        return cached ?? Array.Empty<string>();
+        return DefaultPitchCandidateCategoryIds;
     }
 
     private async Task<IReadOnlyList<string>> QueryParkCategoryIdsAsync(
