@@ -365,6 +365,29 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.UseWhen(ctx => ctx.Request.Path.Equals("/css/app.css", StringComparison.OrdinalIgnoreCase), appCss =>
+{
+    appCss.Run(async context =>
+    {
+        var appCssPath = Path.Combine(app.Environment.WebRootPath, "css", "app.css");
+        if (!File.Exists(appCssPath))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        ApplyNoStoreHeaders(context.Response.Headers);
+        context.Response.ContentType = "text/css; charset=utf-8";
+
+        if (HttpMethods.IsHead(context.Request.Method))
+        {
+            return;
+        }
+
+        await context.Response.SendFileAsync(appCssPath);
+    });
+});
+
 app.UseBlazorFrameworkFiles();
 
 app.UseWhen(ctx => ctx.Request.Path.Equals("/service-worker.js", StringComparison.OrdinalIgnoreCase), serviceWorker =>
