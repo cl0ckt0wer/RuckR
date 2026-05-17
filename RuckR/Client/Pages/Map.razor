@@ -345,7 +345,7 @@
      }
      .pitch-legend {
          position: absolute;
-         top: 0.75rem;
+         top: 10.75rem;
          left: 0.75rem;
          z-index: 10;
          min-width: 148px;
@@ -439,7 +439,7 @@
      }
      .encounter-radar {
          position: absolute;
-         top: 9rem;
+         top: 18.5rem;
          left: 0.75rem;
          z-index: 10;
          width: min(260px, calc(100vw - 1.5rem));
@@ -692,6 +692,15 @@
      }
 
      @@media (max-width: 640px) {
+         .pitch-legend {
+             min-width: 132px;
+             padding: 0.5rem 0.55rem;
+         }
+         .pitch-legend__row {
+             grid-template-columns: 16px 1fr auto;
+             gap: 0.3rem;
+             font-size: 0.74rem;
+         }
          .gps-readiness {
              top: 4.25rem;
              left: 0.75rem;
