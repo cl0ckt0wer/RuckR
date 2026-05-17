@@ -60,7 +60,7 @@
                     <BasemapStyle Name="@BasemapStyleName.ArcgisNavigation" ApiKey="@_apiKey" />
                 </Basemap>
             </dymaptic.GeoBlazor.Core.Components.Map>
-            <HomeWidget Position="OverlayPosition.TopLeft" />
+            <HomeWidget Position="OverlayPosition.TopLeft" Viewpoint="@HomeViewpoint" />
             <CompassWidget Position="OverlayPosition.TopLeft" />
             <LocateWidget Position="OverlayPosition.TopLeft" />
             <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
@@ -730,6 +730,8 @@
     private bool _viewReady;
     private bool _subscriptionsActive;
     private bool _initialCenterPerformed;
+    private double _homeLatitude = 51.5074;
+    private double _homeLongitude = -0.1278;
     private GeoPosition? _lastKnownPosition;
     private GeoPosition? _lastPitchFetchPosition;
     private DateTime _lastPitchFetchAtUtc = DateTime.MinValue;
@@ -822,6 +824,8 @@
                 _initialCenterPerformed = true;
                 _latitude = pos.Latitude;
                 _longitude = pos.Longitude;
+                _homeLatitude = pos.Latitude;
+                _homeLongitude = pos.Longitude;
             }
 
             if (ShouldRefreshPitches(pos))
@@ -1538,6 +1542,12 @@
             Logger.LogWarning(ex, "Failed to center on nearest pitch");
         }
     }
+
+    private Viewpoint HomeViewpoint =>
+        new(new Point(longitude: _homeLongitude, latitude: _homeLatitude), ScaleForZoom(_zoom), 0, null);
+
+    private static double ScaleForZoom(int zoom) =>
+        591657527.591555 / Math.Pow(2, zoom);
 
     private bool ShouldRefreshPitches(GeoPosition current)
     {
