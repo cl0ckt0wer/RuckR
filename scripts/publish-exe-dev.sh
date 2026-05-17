@@ -11,7 +11,6 @@ REMOTE_REPO_DIR="$ABS_DEPLOY_DIR/src"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_CSPROJ_REL="RuckR/Server/RuckR.Server.csproj"
 SERVER_CSPROJ="$REPO_ROOT/$SERVER_CSPROJ_REL"
-LOCAL_BACKUP_DIR="${RUCKR_LOCAL_BACKUP_DIR:-/mnt/c/Users/clock/dbbackups}"
 RELEASE_ID=$(date +%Y%m%d%H%M%S)
 PREV_RELEASE=""
 RELEASES_TO_KEEP=10
@@ -84,6 +83,37 @@ remote_quote(){
   printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
+resolve_local_backup_dir(){
+  if [ -n "${RUCKR_LOCAL_BACKUP_DIR:-}" ]; then
+    printf '%s' "$RUCKR_LOCAL_BACKUP_DIR"
+    return 0
+  fi
+
+  if [ -d "/mnt/c/Users/clock" ]; then
+    printf '%s' "/mnt/c/Users/clock/dbbackups"
+  elif [ -d "/c/Users/clock" ]; then
+    printf '%s' "/c/Users/clock/dbbackups"
+  else
+    printf '%s' "$HOME/dbbackups"
+  fi
+}
+
+normalize_deploy_git_remote_url(){
+  local remote_url=$1
+
+  case "$remote_url" in
+    git@github.com:*.git)
+      printf 'https://github.com/%s' "${remote_url#git@github.com:}"
+      ;;
+    git@github.com:*)
+      printf 'https://github.com/%s.git' "${remote_url#git@github.com:}"
+      ;;
+    *)
+      printf '%s' "$remote_url"
+      ;;
+  esac
+}
+
 local_git_clean_check(){
   if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=no)" ] && [ -z "${RUCKR_DEPLOY_ALLOW_DIRTY:-}" ]; then
     fail "Working tree has tracked uncommitted changes. Commit and push first, or deploy a specific pushed --ref."
@@ -135,8 +165,10 @@ done
 ok "Local tools available (dotnet, git, ssh, scp, curl)"
 ssh -o ConnectTimeout=5 -o BatchMode=yes "$SSH_HOST" "echo ok" 2>/dev/null && ok "SSH to $SSH_HOST" || fail "SSH to $SSH_HOST failed. Check connectivity and credentials."
 
-GIT_REMOTE_URL=$(git -C "$REPO_ROOT" config --get remote.origin.url)
+LOCAL_BACKUP_DIR=$(resolve_local_backup_dir)
+GIT_REMOTE_URL=${RUCKR_DEPLOY_GIT_REMOTE_URL:-$(git -C "$REPO_ROOT" config --get remote.origin.url)}
 [ -n "$GIT_REMOTE_URL" ] || fail "No origin remote configured."
+GIT_REMOTE_URL=$(normalize_deploy_git_remote_url "$GIT_REMOTE_URL")
 GIT_COMMIT=$(resolve_deploy_ref)
 ok "Deploy ref resolved to $GIT_COMMIT"
 
