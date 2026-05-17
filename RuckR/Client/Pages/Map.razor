@@ -896,6 +896,7 @@
     private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
     private readonly Dictionary<string, Graphic> _candidatePlaceGraphics = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<PitchCandidatePlaceDto> _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
+    private IJSObjectReference? _mapDiagnosticsModule;
     private PitchModel? _selectedPitch;
     private int _lastSelectedPitchId = -1;
     private CaptureEligibilityDto? _captureEligibility;
@@ -936,6 +937,7 @@
         if (firstRender)
         {
             await LoadOnboardingPreferenceAsync();
+            _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
 
             GeolocationService.PositionChanged += OnPositionChanged;
             MapState.StateChanged += OnMapStateChanged;
@@ -953,6 +955,9 @@
             }
 
             _ = DismissStaleLoadingIndicatorAsync();
+            _ = CaptureMapDiagnosticsAfterDelayAsync("first-render", TimeSpan.FromSeconds(2));
+            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
+            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-30s", TimeSpan.FromSeconds(30));
         }
     }
 
@@ -963,6 +968,7 @@
         {
             _viewReady = true;
             _statusMessage ??= "Map is available, but some map services are still settling.";
+            _ = CaptureMapDiagnosticsAsync("stale-loading-dismissed");
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -976,10 +982,35 @@
     {
         _viewReady = true;
         Logger.LogInformation("MapView initialized, loading pitches near London");
+        _ = CaptureMapDiagnosticsAfterDelayAsync("view-initialized", TimeSpan.FromSeconds(1));
 
         await RefreshAuthenticationStateAsync();
         await LoadPitchMarkersAsync(_latitude, _longitude);
         await RefreshGameProgress();
+    }
+
+    private async Task CaptureMapDiagnosticsAfterDelayAsync(string reason, TimeSpan delay)
+    {
+        await Task.Delay(delay);
+        await CaptureMapDiagnosticsAsync(reason);
+    }
+
+    private async Task CaptureMapDiagnosticsAsync(string reason)
+    {
+        if (_mapDiagnosticsModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var diagnosticsJson = await _mapDiagnosticsModule.InvokeAsync<string>("collectMapDiagnostics", reason);
+            Logger.LogWarning("MapDiagnostics {Reason}: {DiagnosticsJson}", reason, diagnosticsJson);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "MapDiagnostics failed for {Reason}", reason);
+        }
     }
 
     private async void OnPositionChanged(GeoPosition pos)
@@ -2127,6 +2158,10 @@
         if (_mapView is not null)
         {
             try { await _mapView.ClearGraphics(); } catch { }
+        }
+        if (_mapDiagnosticsModule is not null)
+        {
+            try { await _mapDiagnosticsModule.DisposeAsync(); } catch { }
         }
         _pitchGraphics.Clear();
         _encounterGraphics.Clear();
