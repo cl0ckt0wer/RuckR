@@ -1,0 +1,83 @@
+@page "/debug-layers"
+
+<PageTitle>Map Debug Layers</PageTitle>
+
+<div class="debug-links-page">
+    <header class="debug-links-header">
+        <div>
+            <p class="debug-links-eyebrow">GameMap flags</p>
+            <h1>Map debug links</h1>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary" href="/debug-map">Open Debug Map</a>
+    </header>
+
+    <section class="debug-link-grid" aria-label="GameMap debug links">
+        @foreach (var link in Links)
+        {
+            <a class="debug-link-card" href="@link.Href">
+                <span class="debug-link-card__title">@link.Title</span>
+                <span class="debug-link-card__description">@link.Description</span>
+                <code>@link.Href</code>
+            </a>
+        }
+    </section>
+
+    <section class="debug-flag-table" aria-label="Available flags">
+        <h2>Flags</h2>
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Flag</th>
+                        <th>Values</th>
+                        <th>Effect</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>basemap</code></td>
+                        <td><code>styled</code>, <code>empty</code></td>
+                        <td>Switches between ArcGIS Navigation and an empty map.</td>
+                    </tr>
+                    <tr>
+                        <td><code>mapGraphics</code></td>
+                        <td><code>true</code>, <code>false</code></td>
+                        <td>Turns RuckR game graphics layers on or off.</td>
+                    </tr>
+                    <tr>
+                        <td><code>autoGps</code></td>
+                        <td><code>true</code>, <code>false</code></td>
+                        <td>Controls whether the page starts GPS watching automatically.</td>
+                    </tr>
+                    <tr>
+                        <td><code>mapDiagnostics</code></td>
+                        <td><code>true</code>, <code>false</code></td>
+                        <td>Controls device diagnostics posted to telemetry and Jaeger.</td>
+                    </tr>
+                    <tr>
+                        <td><code>arcGisWidgets</code></td>
+                        <td><code>true</code>, <code>false</code></td>
+                        <td>Shows or hides ArcGIS widgets such as home, compass, locate, and scale bar.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@code {
+    private static readonly DebugLink[] Links =
+    [
+        new("Normal map", "/map", "Default production GameMap path."),
+        new("Diagnostics baseline", "/map?mapDiagnostics=true", "Keeps defaults while forcing diagnostics on."),
+        new("No auto GPS", "/map?autoGps=false", "Loads the map without starting location watch."),
+        new("No game graphics", "/map?mapGraphics=false", "Keeps the styled basemap and removes RuckR layers."),
+        new("Basemap only", "/map?basemap=styled&mapGraphics=false&autoGps=false", "Closest styled GeoBlazor surface without game layers or GPS."),
+        new("Empty map shell", "/map?basemap=empty&mapGraphics=false&autoGps=false", "Removes the basemap, game layers, and automatic GPS."),
+        new("Widgets enabled", "/map?arcGisWidgets=true", "Turns on ArcGIS widgets that are disabled by default."),
+        new("Full debug", "/map?basemap=styled&mapGraphics=true&autoGps=true&mapDiagnostics=true&arcGisWidgets=true", "Forces every optional GameMap feature on."),
+        new("Quiet render", "/map?basemap=styled&mapGraphics=false&autoGps=false&mapDiagnostics=false", "Checks rendering with diagnostics and game features disabled.")
+    ];
+
+    private sealed record DebugLink(string Title, string Href, string Description);
+}
