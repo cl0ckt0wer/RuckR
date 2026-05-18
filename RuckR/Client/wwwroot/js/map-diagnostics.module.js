@@ -216,6 +216,34 @@ function surfaceSummary() {
     };
 }
 
+function overlaySummary(selector) {
+    const element = document.querySelector(selector);
+    return {
+        visible: isVisible(element),
+        rect: rectOf(element),
+        style: styleOf(element),
+        text: element?.innerText?.trim().slice(0, 180) ?? null
+    };
+}
+
+function rectsOverlap(a, b) {
+    if (!a || !b) return false;
+    return a.x < b.right
+        && a.right > b.x
+        && a.y < b.bottom
+        && a.bottom > b.y;
+}
+
+function mapOverlayLayoutSummary() {
+    const legend = overlaySummary('[data-testid="pitch-legend"]');
+    const radar = overlaySummary('[data-testid="encounter-radar"]');
+    return {
+        pitchLegend: legend,
+        encounterRadar: radar,
+        pitchLegendOverlapsEncounterRadar: rectsOverlap(legend.rect, radar.rect)
+    };
+}
+
 function healthSummary() {
     const arcgis = arcGisViewSummary();
     const surface = surfaceSummary();
@@ -438,7 +466,8 @@ export function collectMapDiagnostics(reason) {
         visual: {
             surface: surfaceSummary(),
             canvas: readCanvasElementSummary(),
-            elementStackAtCenter: elementStackAtMapCenter()
+            elementStackAtCenter: elementStackAtMapCenter(),
+            overlays: mapOverlayLayoutSummary()
         },
         arcgis: arcGisViewSummary(),
         console: {
