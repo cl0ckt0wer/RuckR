@@ -964,6 +964,7 @@
     private bool _enableMapDiagnostics;
     private bool _enableGameGraphics;
     private bool _enableAutoGpsWatch;
+    private bool _isDisposing;
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
     protected override void OnInitialized()
@@ -1166,6 +1167,11 @@
 
     private async void OnPositionChanged(GeoPosition pos)
     {
+        if (_isDisposing)
+        {
+            return;
+        }
+
         try
         {
             _lastKnownPosition = pos;
@@ -1208,6 +1214,12 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Position change handler cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogError(ex, "Error in position change handler");
         }
     }
@@ -1252,18 +1264,23 @@
 
     private async Task LoadPitchMarkersAsync(double lat, double lng)
     {
-        if (!_enableGameGraphics || !_viewReady || _mapView is null)
+        if (_isDisposing || !_enableGameGraphics || !_viewReady || _mapView is null)
             return;
 
         try
         {
             var pitches = await ApiClient.GetNearbyPitchesAsync(lat, lng, BrowseRadiusMeters);
+            if (_isDisposing) return;
+
             Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
             await UpdatePitchGraphicsAsync(pitches);
+            if (_isDisposing) return;
 
             if (_showCandidatePlaces)
             {
                 _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
+                if (_isDisposing) return;
+
                 await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
             }
             else
@@ -1277,6 +1294,8 @@
             if (_isAuthenticated)
             {
                 encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
+                if (_isDisposing) return;
+
                 _statusMessage = encounters.Count == 0
                     ? "No recruitable players nearby. Head to a real-world park to find players."
                     : null;
@@ -1294,18 +1313,29 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Pitch marker load cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogError(ex, "Failed to load pitch markers");
             _statusMessage = "Failed to load pitches. Map is still usable.";
         }
 
-        await InvokeAsync(StateHasChanged);
+        if (!_isDisposing)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task UpdatePitchGraphicsAsync(List<PitchModel> pitches)
     {
-        if (_stadiumPitchLayer is null || _standardPitchLayer is null || _trainingPitchLayer is null) return;
+        if (_isDisposing || _stadiumPitchLayer is null || _standardPitchLayer is null || _trainingPitchLayer is null) return;
 
         await ClearPitchLayersAsync();
+        if (_isDisposing) return;
+
         _pitchGraphics.Clear();
 
         var graphics = new List<KeyValuePair<int, Graphic>>(pitches.Count);
@@ -1338,12 +1368,20 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Pitch graphics update cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogWarning(ex, "Failed to add pitch graphics");
         }
     }
 
     private async Task ClearPitchLayersAsync()
     {
+        if (_isDisposing) return;
+
         if (_stadiumPitchLayer is not null)
         {
             await _stadiumPitchLayer.Clear();
@@ -1364,6 +1402,8 @@
         IReadOnlyList<PitchModel> pitches,
         IReadOnlyList<KeyValuePair<int, Graphic>> graphics)
     {
+        if (_isDisposing) return;
+
         var pitchById = pitches.ToDictionary(p => p.Id);
 
         var stadiumGraphics = graphics
@@ -1397,9 +1437,11 @@
 
     private async Task UpdateEncounterGraphicsAsync(IReadOnlyList<PlayerEncounterDto> encounters)
     {
-        if (_encounterLayer is null) return;
+        if (_isDisposing || _encounterLayer is null) return;
 
         await _encounterLayer.Clear();
+        if (_isDisposing) return;
+
         _encounterGraphics.Clear();
 
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
@@ -1439,15 +1481,22 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Encounter graphics update cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogWarning(ex, "Failed to add encounter graphics");
         }
     }
 
     private async Task UpdateCandidatePlaceGraphicsAsync(IReadOnlyList<PitchCandidatePlaceDto> candidates)
     {
-        if (_candidatePlaceLayer is null) return;
+        if (_isDisposing || _candidatePlaceLayer is null) return;
 
         await ClearCandidatePlaceGraphicsAsync();
+        if (_isDisposing) return;
 
         var graphics = new List<KeyValuePair<string, Graphic>>(candidates.Count);
         foreach (var candidate in candidates)
@@ -1482,13 +1531,19 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Candidate place graphics update cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogWarning(ex, "Failed to add pitch candidate place graphics");
         }
     }
 
     private async Task ClearCandidatePlaceGraphicsAsync()
     {
-        if (_candidatePlaceLayer is null) return;
+        if (_isDisposing || _candidatePlaceLayer is null) return;
 
         await _candidatePlaceLayer.Clear();
         _candidatePlaceGraphics.Clear();
@@ -1496,7 +1551,7 @@
 
     private async Task SetCandidatePlaceLayerVisibleAsync(bool visible)
     {
-        if (_candidatePlaceLayer is null) return;
+        if (_isDisposing || _candidatePlaceLayer is null) return;
 
         try
         {
@@ -1504,12 +1559,20 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Candidate place layer visibility update cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogDebug(ex, "Failed to update candidate place layer visibility");
         }
     }
 
     private async Task ToggleCandidatePlacesAsync()
     {
+        if (_isDisposing) return;
+
         _showCandidatePlaces = !_showCandidatePlaces;
         if (!_showCandidatePlaces)
         {
@@ -1525,16 +1588,21 @@
         var lat = _lastKnownPosition?.Latitude ?? _lastPitchFetchPosition?.Latitude ?? _latitude;
         var lng = _lastKnownPosition?.Longitude ?? _lastPitchFetchPosition?.Longitude ?? _longitude;
         _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
+        if (_isDisposing) return;
+
         await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
         _statusMessage = _candidatePlaces.Count == 0
             ? "No candidate places found in this map area."
             : $"{_candidatePlaces.Count} candidate places visible.";
-        await InvokeAsync(StateHasChanged);
+        if (!_isDisposing)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task UpdatePlayerLocationGraphicAsync(GeoPosition position)
     {
-        if (_playerLocationLayer is null) return;
+        if (_isDisposing || _playerLocationLayer is null) return;
 
         var graphic = new Graphic(
             geometry: new Point(longitude: position.Longitude, latitude: position.Latitude),
@@ -1549,10 +1617,18 @@
         try
         {
             await _playerLocationLayer.Clear();
+            if (_isDisposing) return;
+
             await _playerLocationLayer.Add(graphic);
         }
         catch (Exception ex)
         {
+            if (IsExpectedGeoBlazorCancellation(ex))
+            {
+                Logger.LogDebug(ex, "Player location graphic update cancelled during map lifecycle transition");
+                return;
+            }
+
             Logger.LogDebug(ex, "Failed to update player location graphic");
         }
     }
@@ -2467,8 +2543,18 @@
         _ => "secondary"
     };
 
+    private static bool IsExpectedGeoBlazorCancellation(Exception ex)
+    {
+        return ex is OperationCanceledException
+            || ex is TaskCanceledException
+            || ex.Message.Contains("TaskCanceledException", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Cannot read properties of null (reading 'reject')", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async ValueTask DisposeAsync()
     {
+        _isDisposing = true;
+
         if (_subscriptionsActive)
         {
             GeolocationService.PositionChanged -= OnPositionChanged;
