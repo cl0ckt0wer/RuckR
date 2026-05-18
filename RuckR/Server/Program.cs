@@ -286,8 +286,20 @@ app.UseHttpLogging();
 // ── Jaeger Reverse Proxy ──
 // The SPA fallback (MapFallbackToFile) catches all unmatched paths,
 // so we intercept /jaeger/* before Blazor serves the SPA shell.
+var enableJaegerProxy = app.Configuration.GetValue<bool>("Observability:EnableJaegerProxy");
 app.UseWhen(ctx => ctx.Request.Path.StartsWithSegments("/jaeger"), proxy =>
 {
+    if (!enableJaegerProxy)
+    {
+        proxy.Run(ctx =>
+        {
+            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+            return Task.CompletedTask;
+        });
+
+        return;
+    }
+
     var target = "http://localhost:16686";
     var client = new HttpClient();
 
