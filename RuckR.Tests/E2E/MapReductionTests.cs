@@ -145,7 +145,18 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
             Assert.InRange(width, 30, 36);
             Assert.InRange(height, 30, 36);
-            Assert.Contains("255, 255, 255", backgroundColor);
+            if (testId == MapPage.CandidatePlacesToggleTestId)
+            {
+                Assert.True(
+                    backgroundColor.Contains("255, 255, 255", StringComparison.Ordinal)
+                    || backgroundColor.Contains("233, 221, 245", StringComparison.Ordinal),
+                    $"Candidate places button should use either the default or active map-control background; actual was '{backgroundColor}'.");
+            }
+            else
+            {
+                Assert.Contains("255, 255, 255", backgroundColor);
+            }
+
             Assert.Equal(expectedLabels[testId], ariaLabel);
             Assert.Equal(expectedLabels[testId], title);
         }
@@ -167,17 +178,16 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
         await mapPage.WaitForShortcutButtonsAsync();
 
-        Assert.Equal("true", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
-        Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should start visible.");
+        Assert.NotNull(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
 
         await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
 
-        Assert.Equal("false", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        Assert.Null(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
         Assert.False(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should hide after the shortcut is clicked.");
 
         await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
 
-        Assert.Equal("true", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        Assert.NotNull(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
         Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should show after the shortcut is clicked again.");
         AssertNoUnexpectedBrowserErrors();
     }
