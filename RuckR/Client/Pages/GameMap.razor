@@ -115,17 +115,6 @@
                 &#x2726;
             </button>
         </div>
-        <div class="gps-status-chip gps-status-chip--@GpsStatus.CssClass"
-             data-testid="gps-status-chip"
-             role="status"
-             title="@GpsStatus.Detail">
-            <span class="gps-status-chip__dot" aria-hidden="true"></span>
-            <span>@GpsStatus.Label</span>
-            @if (GpsStatus.AccuracyText is not null)
-            {
-                <small>@GpsStatus.AccuracyText</small>
-            }
-        </div>
         <div class="pitch-legend" data-testid="pitch-legend">
             <div class="pitch-legend__title">Pitches</div>
             <div class="pitch-legend__row">

@@ -1,16 +1,31 @@
 @using Fluxor
+@using RuckR.Client.Pages
 @using RuckR.Client.Services
 @using RuckR.Client.Store.GameFeature
+@using RuckR.Client.Store.LocationFeature
+@using RuckR.Shared.Models
 @implements IAsyncDisposable
+@inject IConfiguration Configuration
 @inject IJSRuntime JS
 @inject IDispatcher Dispatcher
 @inject IState<GameState> GameState
+@inject IState<LocationState> LocationState
 @inject SignalRClientService SignalRClient
 @inject AuthenticationStateProvider AuthStateProvider
 
 <div class="connection-status @StatusClass" data-testid="connection-status">
     <span class="status-dot @DotClass" data-testid="status-dot"></span>
     <span class="status-text" data-testid="status-text">@StatusText</span>
+    <span class="status-detail status-detail--gps gps-status-inline gps-status-inline--@GpsStatus.CssClass"
+          data-testid="gps-status-chip"
+          title="@GpsStatus.Detail">
+        <span class="gps-status-inline__dot" aria-hidden="true"></span>
+        <span>@GpsStatus.Label</span>
+        @if (GpsStatus.AccuracyText is not null)
+        {
+            <small>@GpsStatus.AccuracyText</small>
+        }
+    </span>
     <span class="status-detail" data-testid="online-status">@OnlineStatusText</span>
     <span class="status-detail" data-testid="quality-status">@QualityStatusText</span>
     @if (GameState.Value.PendingActionCount > 0)
@@ -43,6 +58,44 @@
         opacity: 0.8;
         white-space: nowrap;
     }
+    .gps-status-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        opacity: 1;
+        font-weight: 700;
+    }
+    .gps-status-inline__dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: #64748b;
+        box-shadow: 0 0 0 2px rgba(100, 116, 139, 0.2);
+    }
+    .gps-status-inline small {
+        font-size: 0.74rem;
+        font-weight: 800;
+        opacity: 0.75;
+    }
+    .gps-status-inline--ready .gps-status-inline__dot {
+        background: #22c55e;
+        box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.22);
+    }
+    .gps-status-inline--searching .gps-status-inline__dot {
+        background: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.22);
+        animation: gps-inline-pulse 1.5s ease-in-out infinite;
+    }
+    .gps-status-inline--weak .gps-status-inline__dot {
+        background: #f59e0b;
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
+    }
+    .gps-status-inline--blocked .gps-status-inline__dot,
+    .gps-status-inline--offline .gps-status-inline__dot {
+        background: #ef4444;
+        box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.22);
+    }
     .status-dot.connected {
         background-color: #28a745;
         box-shadow: 0 0 6px #28a745;
@@ -73,7 +126,7 @@
         .status-detail {
             white-space: nowrap;
         }
-        .status-detail {
+        .status-detail:not(.status-detail--gps) {
             display: none;
         }
         .connection-status .btn {
@@ -88,10 +141,15 @@
         0%, 100% { opacity: 1; }
         50% { opacity: 0.3; }
     }
+    @@keyframes gps-inline-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.45; }
+    }
 </style>
 
 @code {
     private enum ConnectionStatusEnum { Connected, Reconnecting, Disconnected }
+    private const double MaxActionAccuracyMeters = 50;
 
     private ConnectionStatusEnum _connectionStatus = ConnectionStatusEnum.Disconnected;
     private string _statusText = "Disconnected";
@@ -114,6 +172,22 @@
 
     private string StatusText => _statusText;
     private string OnlineStatusText => GameState.Value.IsBrowserOnline ? "Online" : "Offline";
+    private bool HasMapApiKey => !GameMap.ShouldShowMapUnavailableFallback(Configuration["ArcGISApiKey"]);
+    private GameMap.GpsStatusView GpsStatus => GameMap.BuildGpsStatus(
+        HasMapApiKey,
+        LocationState.Value.IsWatching,
+        LocationState.Value.ErrorMessage,
+        LastKnownPosition,
+        MaxActionAccuracyMeters);
+    private GeoPosition? LastKnownPosition =>
+        LocationState.Value.UserLatitude.HasValue && LocationState.Value.UserLongitude.HasValue
+            ? new GeoPosition
+            {
+                Latitude = LocationState.Value.UserLatitude.Value,
+                Longitude = LocationState.Value.UserLongitude.Value,
+                Accuracy = LocationState.Value.AccuracyMeters
+            }
+            : null;
     private string QualityStatusText => GameState.Value.ConnectionLatencyMs switch
     {
         null when GameState.Value.IsSignalRConnected => "Quality unknown",
@@ -127,6 +201,7 @@
     {
         SignalRClient.ConnectionStateChanged += OnConnectionStateChanged;
         GameState.StateChanged += OnGameStateChanged;
+        LocationState.StateChanged += OnLocationStateChanged;
 
         UpdateFromConnectionState(GameState.Value.IsSignalRConnected, GameState.Value.ConnectionError);
 
@@ -170,6 +245,11 @@
     {
         var state = ((IState<GameState>)sender!).Value;
         UpdateFromConnectionState(state.IsSignalRConnected, state.ConnectionError);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnLocationStateChanged(object? sender, EventArgs e)
+    {
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -219,6 +299,7 @@
     {
         SignalRClient.ConnectionStateChanged -= OnConnectionStateChanged;
         GameState.StateChanged -= OnGameStateChanged;
+        LocationState.StateChanged -= OnLocationStateChanged;
 
         if (_geoModule is not null)
         {
