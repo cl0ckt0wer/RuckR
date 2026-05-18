@@ -38,10 +38,19 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
         private string _serverAddress = string.Empty;
         private WebApplication? _kestrelApp;
 
-        // Test ArcGIS keys — injected into client appsettings so the map renders in E2E tests.
-        private const string TestArcGisApiKey = "test-arcgis-api-key-for-e2e";
-        private const string TestArcGisPortalItemId = "test-portal-item-id-for-e2e";
-        private const string TestGeoBlazorLicenseKey = "test-geoblazor-license-key-for-e2e";
+        // Test ArcGIS keys are injected into client appsettings so the map renders in E2E tests.
+        // Prefer real environment values when running browser tests on the deployment VM.
+        private static string TestArcGisApiKey => FirstConfiguredValue(
+            "ArcGISApiKey",
+            "ARC_GIS_API_KEY") ?? "test-arcgis-api-key-for-e2e";
+        private static string TestArcGisPortalItemId => FirstConfiguredValue(
+            "ArcGISPortalItemId",
+            "ARC_GIS_PORTAL_ITEM_ID") ?? "test-portal-item-id-for-e2e";
+        private static string TestGeoBlazorLicenseKey => FirstConfiguredValue(
+            "GeoBlazor__LicenseKey",
+            "GeoBlazor:LicenseKey",
+            "GeoBlazor__RegistrationKey",
+            "GeoBlazor:RegistrationKey") ?? "test-geoblazor-license-key-for-e2e";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="""CustomWebApplicationFactory"""/> class.
@@ -100,8 +109,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         // Resolve the Client's wwwroot directory for Blazor WASM _framework files.
         var testAssemblyDir = Path.GetDirectoryName(typeof(Program).Assembly.Location)!;
-        var clientWwwrootDir = Path.GetFullPath(Path.Combine(testAssemblyDir,
-            "..", "..", "..", "..", "RuckR", "Client", "bin", "Debug", "net10.0", "wwwroot"));
+        var clientWwwrootDir = ResolveClientWwwrootPath(testAssemblyDir, Environments.Development);
 
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
@@ -442,9 +450,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     {
         var relativePath = requestPath.TrimStart('/');
         var configuration = env.IsDevelopment() ? "Debug" : "Release";
+        var serverAssemblyDir = Path.GetDirectoryName(typeof(Program).Assembly.Location)!;
         var candidateRoots = new[]
         {
             env.WebRootPath,
+            ResolveClientWwwrootPath(serverAssemblyDir, env.EnvironmentName),
             Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
             Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "wwwroot"))
         };
@@ -457,6 +467,35 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             var path = Path.Combine(root, relativePath);
             if (System.IO.File.Exists(path))
                 return path;
+        }
+
+        return null;
+    }
+
+    private static string ResolveClientWwwrootPath(string serverAssemblyDir, string environmentName)
+    {
+        var configuration = string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase)
+            ? "Debug"
+            : "Release";
+
+        var candidates = new[]
+        {
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "Client", "wwwroot")),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "Client", "wwwroot"))
+        };
+
+        return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
+    }
+
+    private static string? FirstConfiguredValue(params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
         }
 
         return null;
