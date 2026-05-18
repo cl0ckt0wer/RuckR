@@ -104,8 +104,7 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
 
-        await mapPage.CenterOnNearestAvailablePitchAsync();
-        await mapPage.ClickMapCenterAsync();
+        await mapPage.ClickFirstPitchGraphicAsync();
         await mapPage.WaitForPitchOverlayAsync(10_000);
 
         Assert.True(await mapPage.IsPitchOverlayVisibleAsync(), "Pitch marker tap should open the RuckR pitch overlay.");

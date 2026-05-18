@@ -209,14 +209,6 @@ public class MapPage : BasePage
         }
     }
 
-    /// <summary>Center the map on the deterministic seeded London pitch.</summary>
-    public async Task<string> CenterOnNearestAvailablePitchAsync(int timeoutMs = 10_000)
-    {
-        await SetArcGisViewCenterAsync(51.5074, -0.1278, 17);
-        await Page.WaitForTimeoutAsync(1_000);
-        return "seeded-london-pitch";
-    }
-
     /// <summary>Click the center of the GeoBlazor drawing surface.</summary>
     public async Task ClickMapCenterAsync()
     {
@@ -229,6 +221,30 @@ public class MapPage : BasePage
             throw new InvalidOperationException("GeoBlazor map surface did not have a bounding box.");
 
         await Page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+    }
+
+    /// <summary>Click the first pitch graphic rendered in an app-owned GeoBlazor layer.</summary>
+    public async Task ClickFirstPitchGraphicAsync(int timeoutMs = 15_000)
+    {
+        var screenPoint = await Page.WaitForFunctionAsync(
+            @"() => {
+                const root = document.querySelector('[data-testid=""map-container""]');
+                const view = root?.querySelector('arcgis-map')?.view;
+                const layerTitles = new Set(['Training grounds', 'Pitches', 'Stadiums']);
+                const layers = view?.map?.layers?.items ?? [];
+                const layer = layers.find(candidate => layerTitles.has(candidate.title) && candidate.graphics?.length > 0);
+                const graphic = layer?.graphics?.items?.[0];
+                if (!view || !graphic?.geometry) return null;
+                const screen = view.toScreen(graphic.geometry);
+                return screen && Number.isFinite(screen.x) && Number.isFinite(screen.y)
+                    ? [screen.x, screen.y]
+                    : null;
+            }",
+            null,
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+
+        var point = await screenPoint.JsonValueAsync<double[]>();
+        await Page.Mouse.ClickAsync((float)point[0], (float)point[1]);
     }
 
     // ── Native map widgets ────────────────────────────────────────────
@@ -387,6 +403,7 @@ public class MapPage : BasePage
     {
         return await ExistsAsync("[data-testid='map-container']");
     }
+
 }
 
 
