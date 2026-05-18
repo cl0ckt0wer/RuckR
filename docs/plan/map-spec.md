@@ -97,7 +97,7 @@ GameMap.razor
 - **Fluxor** `LocationState`: user lat/lng, accuracy, GPS status, error message
 - **Page state** (local to GameMap.razor): loading flag, error flag, GPS disabled flag, onboarding flag, capture eligibility
 - **Reduction flags**: `Map:BasemapMode`, `Map:EnableArcGisWidgets`, `Map:EnableGameGraphics`, `Map:EnableMapDiagnostics`, and `Map:EnableAutoGpsWatch`. These can also be overridden per URL with `basemap`, `arcGisWidgets`, `mapGraphics`, `mapDiagnostics`, and `autoGps` query parameters. `Map:EnableArcGisWidgets` stays `false` by default; the current GeoBlazor widget wrappers are retained only for compatibility/debug testing until GeoBlazor exposes ArcGIS web component equivalents.
-- **GeoBlazor ownership**: pitch graphics are split into pitch-type `GraphicsLayer`s, graphics define `PopupTemplate`s for map-native marker summaries, and click handling delegates hit-test parsing to a small graphic-selection adapter.
+- **GeoBlazor ownership**: pitch graphics are split into pitch-type `GraphicsLayer`s, graphics carry RuckR selection attributes, and click handling delegates hit-test parsing to a small graphic-selection adapter. RuckR overlays are the canonical detail/action UI; map-native popup templates are intentionally omitted to avoid duplicate mobile detail surfaces.
 
 ### Data Flow
 

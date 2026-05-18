@@ -10,7 +10,7 @@ Date: 2026-05-18
 | Phase 2: Research Widget Replacement | Complete locally | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
 | Phase 3: Reduce Graphic Sync Plumbing | Complete locally | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. Local build passed. |
 | Phase 4: Reduce Selection Adapter | Complete locally | GeoBlazor selection path remains `MapView.HitTest` + `GraphicHit`; extracted RuckR graphic attribute parsing into `MapGraphicSelection`. Local build passed. |
-| Phase 5: Decide Popup Policy | Pending | Not started. |
+| Phase 5: Decide Popup Policy | Complete locally | RuckR overlays are canonical for marker details/actions; removed GeoBlazor popup templates from marker graphics to avoid duplicate mobile detail surfaces. Local build passed. |
 
 ## Goal
 
@@ -215,6 +215,8 @@ Verification:
 - Empty-map tap does not clear or corrupt selection unexpectedly.
 
 ### Phase 5: Decide Popup Policy
+
+Status: complete locally. RuckR overlays are the canonical detail and action UI for pitches, encounters, and candidate places. GeoBlazor graphics now carry symbols and RuckR selection attributes only; `PopupTemplate`s were removed to avoid duplicate native popup plus overlay behavior on mobile.
 
 Scope:
 

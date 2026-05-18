@@ -1,6 +1,5 @@
 using dymaptic.GeoBlazor.Core.Components;
 using dymaptic.GeoBlazor.Core.Components.Geometries;
-using dymaptic.GeoBlazor.Core.Components.Popups;
 using dymaptic.GeoBlazor.Core.Components.Symbols;
 using dymaptic.GeoBlazor.Core.Enums;
 using dymaptic.GeoBlazor.Core.Model;
@@ -25,7 +24,6 @@ public static class MapGraphicFactory
         new(
             geometry: new Point(longitude: pitch.Longitude, latitude: pitch.Latitude),
             symbol: GetPitchSymbol(pitch.Type),
-            popupTemplate: CreatePitchPopupTemplate(),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "pitch",
@@ -46,7 +44,6 @@ public static class MapGraphicFactory
                 color: EncounterRarityColor(encounter.Rarity),
                 size: new Dimension(14),
                 style: SimpleMarkerSymbolStyle.Circle),
-            popupTemplate: CreateEncounterPopupTemplate(),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "encounter",
@@ -64,7 +61,6 @@ public static class MapGraphicFactory
         new(
             geometry: new Point(longitude: candidate.Longitude, latitude: candidate.Latitude),
             symbol: GetCandidatePlaceSymbol(candidate.RecommendedPitchType),
-            popupTemplate: CreateCandidatePlacePopupTemplate(),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "candidate-place",
@@ -83,7 +79,6 @@ public static class MapGraphicFactory
         new(
             geometry: new Point(longitude: position.Longitude, latitude: position.Latitude),
             symbol: GetPlayerLocationSymbol(),
-            popupTemplate: CreatePlayerLocationPopupTemplate(),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "player-location",
@@ -98,26 +93,6 @@ public static class MapGraphicFactory
         "Legendary" => new MapColor(200, 30, 30),
         _ => new MapColor(107, 114, 128)
     };
-
-    private static PopupTemplate CreatePitchPopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "{pitchType}<br>{pitchRole}");
-
-    private static PopupTemplate CreateEncounterPopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "Level {level} {rarity}<br>{parkName}");
-
-    private static PopupTemplate CreateCandidatePlacePopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "{recommendedPitchType}<br>{confidence}% confidence<br>{matchReason}");
-
-    private static PopupTemplate CreatePlayerLocationPopupTemplate() =>
-        new(
-            title: "Your location",
-            stringContent: "Accuracy: {accuracyMeters}m");
 
     private static SimpleMarkerSymbol GetPitchSymbol(PitchType type) => type switch
     {
