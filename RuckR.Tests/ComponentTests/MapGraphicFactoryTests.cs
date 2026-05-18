@@ -57,6 +57,45 @@ public class MapGraphicFactoryTests
         AssertGraphicAttribute(graphics[1].Attributes, "positionTimestampUtc", timestamp);
     }
 
+    /// <summary>
+    /// Verifies recruitable player markers carry the attributes needed by map diagnostics and selection.
+    /// </summary>
+    [Fact]
+    public void CreateEncounterGraphic_ReturnsProminentMarkerWithDiagnostics()
+    {
+        var encounterId = Guid.Parse("7f4b9eb3-1d2d-4dd5-bd7a-06dddcbe6fe5");
+        var expiresAtUtc = new DateTime(2026, 5, 18, 14, 0, 0, DateTimeKind.Utc);
+        var encounter = new PlayerEncounterDto(
+            encounterId,
+            PlayerId: 42,
+            Name: "Scrum Sprinter",
+            Position: "Wing",
+            Rarity: "Rare",
+            Level: 6,
+            Latitude: 26.052688,
+            Longitude: -80.158062,
+            ExpiresAtUtc: expiresAtUtc,
+            SuccessChancePercent: 72,
+            ParkName: "Frost Park",
+            ParkPlaceId: "frost-park");
+
+        var graphic = MapGraphicFactory.CreateEncounterGraphic(encounter);
+
+        Assert.IsType<Point>(graphic.Geometry);
+        var symbol = Assert.IsType<SimpleMarkerSymbol>(graphic.Symbol);
+        Assert.Equal(dymaptic.GeoBlazor.Core.Enums.SimpleMarkerSymbolStyle.Diamond, symbol.Style);
+        AssertGraphicAttribute(graphic.Attributes, "_ruckrType", "encounter");
+        AssertGraphicAttribute(graphic.Attributes, "_ruckrEncounterId", encounterId.ToString());
+        AssertGraphicAttribute(graphic.Attributes, "_ruckrPlayerId", 42);
+        AssertGraphicAttribute(graphic.Attributes, "name", "Scrum Sprinter");
+        AssertGraphicAttribute(graphic.Attributes, "position", "Wing");
+        AssertGraphicAttribute(graphic.Attributes, "rarity", "Rare");
+        AssertGraphicAttribute(graphic.Attributes, "level", 6);
+        AssertGraphicAttribute(graphic.Attributes, "parkName", "Frost Park");
+        AssertGraphicAttribute(graphic.Attributes, "successChancePercent", 72);
+        AssertGraphicAttribute(graphic.Attributes, "expiresAtUtc", expiresAtUtc);
+    }
+
     private static void AssertGraphicAttribute(
         dymaptic.GeoBlazor.Core.Model.AttributesDictionary attributes,
         string key,

@@ -155,6 +155,11 @@
                 <span>Candidates</span>
                 <strong>@CandidatePlaceCount</strong>
             </div>
+            <div class="pitch-legend__row">
+                <span class="pitch-legend__marker pitch-legend__marker--encounter"></span>
+                <span>Recruits</span>
+                <strong data-testid="encounter-count">@_encounterGraphics.Count</strong>
+            </div>
         </div>
 
         @if (ShouldShowGpsNotice)
@@ -547,6 +552,12 @@
          background: #a855f7;
          border-color: #f5d0fe;
          box-shadow: 0 0 0 3px rgba(168,85,247,0.22);
+     }
+     .pitch-legend__marker--encounter {
+         transform: rotate(45deg);
+         border-width: 3px;
+         background: #2563eb;
+         box-shadow: 0 0 0 3px rgba(37,99,235,0.22);
      }
      .gps-readiness {
          position: absolute;
@@ -1351,12 +1362,26 @@
                 encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
                 if (_isDisposing) return;
 
+                Logger.LogInformation(
+                    "Map encounters loaded: count={EncounterCount}, authenticated={Authenticated}, lat={Latitude}, lng={Longitude}, radiusMeters={RadiusMeters}",
+                    encounters.Count,
+                    _isAuthenticated,
+                    lat,
+                    lng,
+                    EncounterBrowseRadiusMeters);
+
                 _statusMessage = encounters.Count == 0
                     ? "No recruitable players nearby. Head to a real-world park to find players."
                     : null;
             }
             else
             {
+                Logger.LogInformation(
+                    "Map encounters skipped: authenticated={Authenticated}, lat={Latitude}, lng={Longitude}, radiusMeters={RadiusMeters}",
+                    _isAuthenticated,
+                    lat,
+                    lng,
+                    EncounterBrowseRadiusMeters);
                 _statusMessage = "Log in to discover recruitable players at nearby real-world parks.";
             }
 
@@ -1461,6 +1486,10 @@
         try
         {
             await GraphicsLayerSync.ReplaceManyAsync(_encounterLayer, _encounterGraphics, graphics);
+            Logger.LogInformation(
+                "Encounter graphics synced: requested={RequestedCount}, retained={RetainedCount}",
+                encounters.Count,
+                _encounterGraphics.Count);
         }
         catch (Exception ex)
         {
@@ -2067,7 +2096,7 @@
         {
             try
             {
-                await _mapView.SetCenter(new Point(longitude: encounter.Longitude, latitude: encounter.Latitude));
+                await NavigateToPointAsync(encounter.Longitude, encounter.Latitude, _zoom);
             }
             catch (Exception ex)
             {

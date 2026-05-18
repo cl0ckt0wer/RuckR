@@ -249,6 +249,50 @@ function serializeError(error) {
     };
 }
 
+function collectionItems(collection) {
+    if (!collection) return [];
+    if (Array.isArray(collection.items)) return collection.items;
+    if (typeof collection.toArray === 'function') {
+        try { return collection.toArray(); } catch { return []; }
+    }
+    return [];
+}
+
+function graphicSummary(graphic) {
+    const geometry = graphic?.geometry;
+    const attributes = graphic?.attributes ?? {};
+    return {
+        geometryType: geometry?.type ?? null,
+        latitude: geometry?.latitude ?? null,
+        longitude: geometry?.longitude ?? null,
+        symbolType: graphic?.symbol?.type ?? null,
+        symbolStyle: graphic?.symbol?.style ?? null,
+        ruckrType: attributes._ruckrType ?? null,
+        name: attributes.name ?? null,
+        rarity: attributes.rarity ?? null,
+        level: attributes.level ?? null,
+        parkName: attributes.parkName ?? null,
+        gpsQuality: attributes.gpsQuality ?? null,
+        accuracyMeters: attributes.accuracyMeters ?? null
+    };
+}
+
+function layerSummary(layer) {
+    const graphics = collectionItems(layer?.graphics);
+    return {
+        id: layer?.id ?? null,
+        title: layer?.title ?? null,
+        type: layer?.type ?? null,
+        visible: layer?.visible ?? null,
+        opacity: layer?.opacity ?? null,
+        listMode: layer?.listMode ?? null,
+        loaded: layer?.loaded ?? null,
+        loadStatus: layer?.loadStatus ?? null,
+        graphicsCount: layer?.graphics?.length ?? graphics.length ?? null,
+        sampleGraphics: graphics.slice(0, 5).map(graphicSummary)
+    };
+}
+
 function arcGisViewSummary() {
     const arcgisMap = document.querySelector('arcgis-map');
     const view = arcgisMap?.view;
@@ -262,6 +306,9 @@ function arcGisViewSummary() {
     } catch {
         layerViews = null;
     }
+
+    const layers = collectionItems(view.map?.layers);
+    const allLayers = collectionItems(view.map?.allLayers);
 
     return {
         present: true,
@@ -293,7 +340,9 @@ function arcGisViewSummary() {
             basemapTitle: view.map.basemap?.title ?? null,
             basemapLoaded: view.map.basemap?.loaded ?? null,
             layers: view.map.layers?.length ?? null,
-            allLayers: view.map.allLayers?.length ?? null
+            allLayers: view.map.allLayers?.length ?? null,
+            layerSummaries: layers.map(layerSummary),
+            allLayerSummaries: allLayers.map(layerSummary)
         } : null,
         layerViews
     };
@@ -363,7 +412,10 @@ export function collectMapDiagnostics(reason) {
             loadingVisible: isVisible(document.querySelector('[data-testid="map-loading"]')),
             gpsChipVisible: isVisible(document.querySelector('[data-testid="gps-status-chip"]')),
             gpsNoticeVisible: isVisible(document.querySelector('[data-testid="gps-readiness"]')),
-            pitchLegendVisible: isVisible(document.querySelector('[data-testid="pitch-legend"]'))
+            pitchLegendVisible: isVisible(document.querySelector('[data-testid="pitch-legend"]')),
+            encounterRadarVisible: isVisible(document.querySelector('[data-testid="encounter-radar"]')),
+            encounterOverlayVisible: isVisible(document.querySelector('[data-testid="encounter-overlay"]')),
+            encounterCountText: document.querySelector('[data-testid="encounter-count"]')?.textContent?.trim() ?? null
         },
         css: {
             app: appCssRulesLoaded(),

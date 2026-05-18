@@ -43,18 +43,22 @@ public static class MapGraphicFactory
         new(
             geometry: new Point(longitude: encounter.Longitude, latitude: encounter.Latitude),
             symbol: new SimpleMarkerSymbol(
-                outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
+                outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(3)),
                 color: EncounterRarityColor(encounter.Rarity),
-                size: new Dimension(14),
-                style: SimpleMarkerSymbolStyle.Circle),
+                size: new Dimension(19),
+                style: SimpleMarkerSymbolStyle.Diamond),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "encounter",
                 ["_ruckrEncounterId"] = encounter.EncounterId.ToString(),
+                ["_ruckrPlayerId"] = encounter.PlayerId,
                 ["name"] = encounter.Name,
+                ["position"] = encounter.Position,
                 ["rarity"] = encounter.Rarity,
                 ["level"] = encounter.Level,
-                ["parkName"] = encounter.ParkName
+                ["parkName"] = encounter.ParkName,
+                ["successChancePercent"] = encounter.SuccessChancePercent,
+                ["expiresAtUtc"] = encounter.ExpiresAtUtc
             }));
 
     /// <summary>Create a candidate pitch place marker graphic.</summary>
