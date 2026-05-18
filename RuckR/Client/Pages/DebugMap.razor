@@ -153,6 +153,8 @@
     private string _markerStatus = "not requested";
     private bool _markerAdded;
     private bool _diagnosticsStarted;
+    private bool _isDisposing;
+    private readonly CancellationTokenSource _diagnosticsCts = new();
 
     private DebugMapMode Mode { get; set; } = DebugMapMode.Baseline;
 
@@ -259,13 +261,21 @@
 
     private async Task CaptureMapDiagnosticsAfterDelayAsync(string reason, TimeSpan delay)
     {
-        await Task.Delay(delay);
+        try
+        {
+            await Task.Delay(delay, _diagnosticsCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         await CaptureMapDiagnosticsAsync(reason);
     }
 
     private async Task CaptureMapDiagnosticsAsync(string reason)
     {
-        if (!_diagnosticsStarted || _mapDiagnosticsModule is null)
+        if (_isDisposing || !_diagnosticsStarted || _mapDiagnosticsModule is null)
         {
             return;
         }
@@ -277,17 +287,37 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedMapDiagnosticsDisposal(ex))
+            {
+                return;
+            }
+
             Logger.LogWarning(ex, "DebugMap diagnostics failed for {Reason}", reason);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        _isDisposing = true;
+        await _diagnosticsCts.CancelAsync();
+
         if (_mapDiagnosticsModule is not null)
         {
             try { await _mapDiagnosticsModule.InvokeVoidAsync("stopMapDiagnosticsCapture"); } catch { }
             try { await _mapDiagnosticsModule.DisposeAsync(); } catch { }
         }
+
+        _diagnosticsCts.Dispose();
+    }
+
+    private bool IsExpectedMapDiagnosticsDisposal(Exception ex)
+    {
+        return _isDisposing
+            || ex is ObjectDisposedException
+            || ex is OperationCanceledException
+            || ex is TaskCanceledException
+            || ex.Message.Contains("ObjectDisposed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("JSObjectReference", StringComparison.OrdinalIgnoreCase);
     }
 
     private string ModeLinkClass(DebugMapMode mode) => mode == Mode

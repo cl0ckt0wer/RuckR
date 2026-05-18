@@ -966,6 +966,7 @@
     private bool _enableAutoGpsWatch;
     private bool _enableVerboseMapDiagnostics;
     private bool _isDisposing;
+    private readonly CancellationTokenSource _diagnosticsCts = new();
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
     protected override void OnInitialized()
@@ -1113,7 +1114,20 @@
 
     private async Task DismissStaleLoadingIndicatorAsync()
     {
-        await Task.Delay(TimeSpan.FromSeconds(8));
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8), _diagnosticsCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_isDisposing)
+        {
+            return;
+        }
+
         if (!_viewReady && _hasApiKey)
         {
             _viewReady = true;
@@ -1148,13 +1162,21 @@
 
     private async Task CaptureMapDiagnosticsAfterDelayAsync(string reason, TimeSpan delay)
     {
-        await Task.Delay(delay);
+        try
+        {
+            await Task.Delay(delay, _diagnosticsCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
         await CaptureMapDiagnosticsAsync(reason);
     }
 
     private async Task CaptureMapDiagnosticsAsync(string reason)
     {
-        if (!_enableMapDiagnostics || _mapDiagnosticsModule is null)
+        if (_isDisposing || !_enableMapDiagnostics || _mapDiagnosticsModule is null)
         {
             return;
         }
@@ -1166,6 +1188,11 @@
         }
         catch (Exception ex)
         {
+            if (IsExpectedMapDiagnosticsDisposal(ex))
+            {
+                return;
+            }
+
             Logger.LogWarning(ex, "MapDiagnostics failed for {Reason}", reason);
         }
     }
@@ -2556,9 +2583,20 @@
             || ex.Message.Contains("Cannot read properties of null (reading 'reject')", StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsExpectedMapDiagnosticsDisposal(Exception ex)
+    {
+        return _isDisposing
+            || ex is ObjectDisposedException
+            || ex is OperationCanceledException
+            || ex is TaskCanceledException
+            || ex.Message.Contains("ObjectDisposed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("JSObjectReference", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _isDisposing = true;
+        await _diagnosticsCts.CancelAsync();
 
         if (_subscriptionsActive)
         {
@@ -2590,5 +2628,6 @@
         _pitchGraphics.Clear();
         _encounterGraphics.Clear();
         _candidatePlaceGraphics.Clear();
+        _diagnosticsCts.Dispose();
     }
 }

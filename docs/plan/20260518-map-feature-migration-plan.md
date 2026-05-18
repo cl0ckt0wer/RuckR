@@ -2,6 +2,16 @@
 
 Date: 2026-05-18
 
+## Progress
+
+| Phase | Status | Notes |
+|---|---|---|
+| Phase 1: Stabilize Diagnostics Noise | Complete locally | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; local build passed. Deploy/Jaeger verification pending. |
+| Phase 2: Research Widget Replacement | Pending | Not started. |
+| Phase 3: Reduce Graphic Sync Plumbing | Pending | Not started. |
+| Phase 4: Reduce Selection Adapter | Pending | Not started. |
+| Phase 5: Decide Popup Policy | Pending | Not started. |
+
 ## Goal
 
 Reduce custom map infrastructure now that the Pixel map issue is resolved and the GeoBlazor baseline is proven. The target is not "everything must be GeoBlazor." The target is: use GeoBlazor or ArcGIS component APIs for map behavior, keep RuckR-specific game rules in RuckR code, and remove code that acts like a framework around GeoBlazor.
