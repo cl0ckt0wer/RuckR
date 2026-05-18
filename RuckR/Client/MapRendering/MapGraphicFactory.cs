@@ -13,6 +13,7 @@ namespace RuckR.Client.MapRendering;
 public static class MapGraphicFactory
 {
     private const double EarthRadiusMeters = 6378137;
+    private const double ReadyAccuracyMeters = 50;
 
     /// <summary>Create a pitch marker graphic.</summary>
     /// <param name="pitch">Pitch model to render.</param>
@@ -80,12 +81,25 @@ public static class MapGraphicFactory
     public static Graphic CreatePlayerLocationGraphic(GeoPosition position) =>
         new(
             geometry: new Point(longitude: position.Longitude, latitude: position.Latitude),
-            symbol: GetPlayerLocationSymbol(),
+            symbol: GetPlayerLocationSymbol(ResolvePlayerLocationQuality(position.Accuracy)),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "player-location",
-                ["accuracyMeters"] = position.Accuracy
+                ["accuracyMeters"] = position.Accuracy,
+                ["gpsQuality"] = ResolvePlayerLocationQuality(position.Accuracy),
+                ["positionTimestampUtc"] = position.Timestamp
             }));
+
+    /// <summary>Resolve the visual quality bucket for a player GPS fix.</summary>
+    /// <param name="accuracyMeters">Horizontal GPS accuracy in meters.</param>
+    /// <returns>A stable quality bucket for layer styling and diagnostics.</returns>
+    public static string ResolvePlayerLocationQuality(double? accuracyMeters) =>
+        accuracyMeters switch
+        {
+            null => "unknown",
+            <= ReadyAccuracyMeters => "ready",
+            _ => "weak"
+        };
 
     /// <summary>Create the current player location accuracy circle and marker graphics.</summary>
     /// <param name="position">Latest GPS position.</param>
@@ -100,17 +114,20 @@ public static class MapGraphicFactory
     {
         var accuracyMeters = Math.Max(position.Accuracy ?? 0, 5);
         var center = new Point(longitude: position.Longitude, latitude: position.Latitude);
+        var quality = ResolvePlayerLocationQuality(position.Accuracy);
 
         return new Graphic(
             geometry: new Polygon(
                 rings: [CreateGeodesicRing(position.Latitude, position.Longitude, accuracyMeters)],
                 spatialReference: SpatialReference.Wgs84,
                 centroid: center),
-            symbol: GetPlayerAccuracySymbol(),
+            symbol: GetPlayerAccuracySymbol(quality),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "player-location-accuracy",
-                ["accuracyMeters"] = position.Accuracy
+                ["accuracyMeters"] = position.Accuracy,
+                ["gpsQuality"] = quality,
+                ["positionTimestampUtc"] = position.Timestamp
             }));
     }
 
@@ -194,16 +211,44 @@ public static class MapGraphicFactory
             style: SimpleMarkerSymbolStyle.Circle);
     }
 
-    private static SimpleMarkerSymbol GetPlayerLocationSymbol() =>
+    private static SimpleMarkerSymbol GetPlayerLocationSymbol(string quality) =>
         new(
-            outline: new Outline(color: new MapColor("#EFF6FF"), width: new Dimension(3)),
-            color: new MapColor("#2563EB"),
+            outline: new Outline(color: PlayerLocationOutlineColor(quality), width: new Dimension(3)),
+            color: PlayerLocationColor(quality),
             size: new Dimension(16),
             style: SimpleMarkerSymbolStyle.Circle);
 
-    private static SimpleFillSymbol GetPlayerAccuracySymbol() =>
+    private static SimpleFillSymbol GetPlayerAccuracySymbol(string quality) =>
         new(
-            outline: new Outline(color: new MapColor(new double[] { 37, 99, 235, 0.45 }), width: new Dimension(1.5)),
-            color: new MapColor(new double[] { 37, 99, 235, 0.16 }),
+            outline: new Outline(color: PlayerAccuracyOutlineColor(quality), width: new Dimension(1.5)),
+            color: PlayerAccuracyFillColor(quality),
             style: SimpleFillSymbolStyle.Solid);
+
+    private static MapColor PlayerLocationColor(string quality) => quality switch
+    {
+        "ready" => new MapColor("#2563EB"),
+        "weak" => new MapColor("#D97706"),
+        _ => new MapColor("#64748B")
+    };
+
+    private static MapColor PlayerLocationOutlineColor(string quality) => quality switch
+    {
+        "ready" => new MapColor("#EFF6FF"),
+        "weak" => new MapColor("#FFF7ED"),
+        _ => new MapColor("#F8FAFC")
+    };
+
+    private static MapColor PlayerAccuracyOutlineColor(string quality) => quality switch
+    {
+        "ready" => new MapColor(new double[] { 37, 99, 235, 0.45 }),
+        "weak" => new MapColor(new double[] { 217, 119, 6, 0.5 }),
+        _ => new MapColor(new double[] { 100, 116, 139, 0.45 })
+    };
+
+    private static MapColor PlayerAccuracyFillColor(string quality) => quality switch
+    {
+        "ready" => new MapColor(new double[] { 37, 99, 235, 0.16 }),
+        "weak" => new MapColor(new double[] { 217, 119, 6, 0.18 }),
+        _ => new MapColor(new double[] { 100, 116, 139, 0.14 })
+    };
 }
