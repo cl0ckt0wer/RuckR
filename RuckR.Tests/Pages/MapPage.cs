@@ -19,6 +19,13 @@ public class MapPage : BasePage
     /// <summary>Navigate to the map page and wait for Blazor + map container.</summary>
     public async Task GoToAsync() => await NavigateToAsync("/map");
 
+    /// <summary>Navigate to the map page with a query string and wait for Blazor + map container.</summary>
+    public async Task GoToAsync(string queryString)
+    {
+        var normalizedQuery = queryString.StartsWith('?') ? queryString : $"?{queryString}";
+        await NavigateToAsync($"/map{normalizedQuery}");
+    }
+
     // ── Map loading ────────────────────────────────────────────────────
 
     /// <summary>
@@ -54,6 +61,53 @@ public class MapPage : BasePage
     /// <summary>Check whether the map container exists in the DOM.</summary>
     public async Task<bool> IsMapRenderedAsync()
         => await ExistsAsync("[data-testid='map-container']");
+
+    /// <summary>
+    /// Wait for GeoBlazor/ArcGIS to attach a map view with a visible drawing surface.
+    /// </summary>
+    public async Task<bool> WaitForGeoBlazorSurfaceAsync(int timeoutMs = 30_000)
+    {
+        try
+        {
+            await Page.WaitForFunctionAsync(
+                @"() => {
+                    const root = document.querySelector('[data-testid=""map-container""]');
+                    const arcgisMap = root?.querySelector('arcgis-map');
+                    const view = root?.querySelector('.esri-view');
+                    const surface = root?.querySelector('.esri-view-surface');
+                    const canvas = root?.querySelector('canvas');
+                    const target = canvas || surface || arcgisMap;
+                    const rect = target?.getBoundingClientRect();
+                    return !!arcgisMap
+                        && !!view
+                        && !!target
+                        && !!rect
+                        && rect.width > 100
+                        && rect.height > 100;
+                }",
+                null,
+                new PageWaitForFunctionOptions { Timeout = timeoutMs });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            await ScreenshotAsync("geoblazor-surface-timeout");
+            var html = await Page.ContentAsync();
+            Directory.CreateDirectory("screenshots");
+            await File.WriteAllTextAsync($"screenshots/geoblazor-surface-timeout_{DateTime.UtcNow:yyyyMMdd_HHmmss}.html", html);
+            return false;
+        }
+    }
+
+    /// <summary>Return the rendered map container dimensions.</summary>
+    public async Task<(float Width, float Height)> GetMapContainerSizeAsync()
+    {
+        var box = await Page.GetByTestId("map-container").BoundingBoxAsync();
+        if (box is null)
+            throw new InvalidOperationException("Map container did not have a bounding box.");
+
+        return ((float)box.Width, (float)box.Height);
+    }
 
     /// <summary>Check whether the loading spinner is currently visible.</summary>
     public async Task<bool> IsLoadingSpinnerVisibleAsync() => await ExistsAsync("[data-testid='map-loading']");
@@ -153,10 +207,71 @@ public class MapPage : BasePage
         }
     }
 
+    /// <summary>
+    /// Center the map on a deterministic seeded pitch using the first available nearest-pitch shortcut.
+    /// </summary>
+    public async Task<string> CenterOnNearestAvailablePitchAsync(int timeoutMs = 10_000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        var testIds = new[] { "nearest-training-btn", "nearest-standard-btn", "nearest-stadium-btn" };
+
+        while (DateTime.UtcNow < deadline)
+        {
+            foreach (var testId in testIds)
+            {
+                var button = Page.GetByTestId(testId);
+                if (await button.CountAsync() == 0)
+                    continue;
+
+                if (await button.IsEnabledAsync())
+                {
+                    await button.ClickAsync();
+                    await Page.WaitForTimeoutAsync(1_000);
+                    return testId;
+                }
+            }
+
+            await Page.WaitForTimeoutAsync(500);
+        }
+
+        throw new InvalidOperationException("No nearest-pitch shortcut button was enabled.");
+    }
+
+    /// <summary>Click the center of the GeoBlazor drawing surface.</summary>
+    public async Task ClickMapCenterAsync()
+    {
+        var target = Page.Locator("[data-testid='map-container'] canvas").First;
+        if (await target.CountAsync() == 0)
+            target = Page.Locator("[data-testid='map-container'] arcgis-map").First;
+
+        var box = await target.BoundingBoxAsync();
+        if (box is null)
+            throw new InvalidOperationException("GeoBlazor map surface did not have a bounding box.");
+
+        await Page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+    }
+
     // ── Pitch detail overlay ──────────────────────────────────────────
 
     /// <summary>Check whether the pitch detail overlay (bottom sheet) is visible.</summary>
     public async Task<bool> IsPitchOverlayVisibleAsync() => await ExistsAsync("[data-testid='pitch-overlay']");
+
+    /// <summary>Wait for the RuckR pitch overlay to become visible.</summary>
+    public async Task WaitForPitchOverlayAsync(int timeoutMs = 5_000)
+    {
+        await Page.WaitForSelectorAsync("[data-testid='pitch-overlay']", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = timeoutMs
+        });
+    }
+
+    /// <summary>Check whether ArcGIS native popup UI is visible.</summary>
+    public async Task<bool> IsNativePopupVisibleAsync()
+    {
+        var popup = Page.Locator(".esri-popup").First;
+        return await popup.CountAsync() > 0 && await popup.IsVisibleAsync();
+    }
 
     /// <summary>Return the selected pitch name from the overlay heading.</summary>
     public async Task<string?> GetPitchOverlayNameAsync()

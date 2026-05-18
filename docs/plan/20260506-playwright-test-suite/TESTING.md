@@ -49,7 +49,7 @@ This is the current source-of-truth for website feature coverage. Keep this tabl
 | Authentication login | `/Identity/Account/Login` | Covered | `AuthTests.Root_Login_Root_Logout_CompletesSuccessfully`, `ProdLoginSmokeTest` | Local E2E uses generated test users; production smoke test requires `RUCKR_PROD_SMOKE_PASSWORD`. |
 | Logout | `/Identity/Account/LogOut`, nav logout | Covered | `AuthTests.Root_Login_Root_Logout_CompletesSuccessfully`, `AuthTests.Logout_RemovesAccessToAuthenticatedPages`, `ComponentTests.NavMenuTests.NavMenu_RendersLogout_WhenAuthenticated` | New focused test verifies logout removes access to authenticated pages by redirecting `/collection` to login. |
 | Navigation shell | Sidebar/nav menu | Covered | `E2E.NavMenuTests`, `ComponentTests.NavMenuTests` | Covers all visible nav links and auth-aware login/logout rendering. |
-| Map and GPS | `/map` | Covered | `MapTests`, `GpsTests`, `MobileTests.MapPage_OnPixel5_ShouldBeResponsive` | Covers map render, tile load, onboarding dismissal, GPS enabled marker, GPS disabled prompt, and mobile render. |
+| Map and GPS | `/map` | Covered | `MapTests`, `MapReductionTests`, `GpsTests`, `MobileTests.MapPage_OnPixel5_ShouldBeResponsive` | Covers GeoBlazor render, reduction flag combinations, mobile map surface, onboarding dismissal, GPS enabled/disabled states, pitch marker overlay selection, and no native popup duplication. |
 | Catalog | `/catalog`, `PlayersController` | Covered | `CatalogTests`, `PlayersApiTests` | Covers player cards, position filter, API list/filter/detail/nearby validation. UI rarity and name-search filters are API-covered partially but not separately E2E-covered. |
 | Recruitment / nearby players | `/players/nearby`, challenge buttons | Partially covered | `PvpTests.TwoUsers_ChallengeAndAccept_BothSeeResult`, `MobileTests.PlayerGrid_OnPixel5_ShouldRenderCards`, `PlayersApiTests.GetPlayersNearby_WithValidCoordinates_ReturnsSortedByDistance` | Recruitment grid renders and feeds battle challenge flow. Dedicated E2E tests for radius filter and distance labels are still desirable. |
 | Collection | `/collection`, `CollectionController` | Covered | `CollectionTests`, `CollectionApiTests` | Covers unauthenticated redirect, new-user empty state, retrieve, capture, duplicate capture, missing GPS, and favorite toggle. UI favorite/capture interactions are primarily API-covered. |
@@ -81,7 +81,8 @@ This is the current source-of-truth for website feature coverage. Keep this tabl
 - Slower: ~30 seconds per test (Blazor WASM cold starts + network idle waits)
 - Tests:
   - `AuthTests` — Register → Login → See navbar → Logout → Re-login; root → login → root → logout; logout blocks authenticated pages
-  - `MapTests` — Map loads with Leaflet tiles + onboarding banner dismiss
+  - `MapTests` — GeoBlazor map shell loads + onboarding banner dismiss
+  - `MapReductionTests` — Mobile GeoBlazor surface renders for the planned reduction flag combinations; pitch marker tap opens the RuckR overlay without an ArcGIS native popup
   - `CatalogTests` — Player cards render + filter by position
   - `CollectionTests` — Unauthenticated redirects to login + authenticated empty-state with CTA
   - `NavMenuTests` — All 7 nav links navigate to correct pages
@@ -106,6 +107,7 @@ RuckR.Tests/
 ├── E2E/
 │   ├── AuthTests.cs            # registration, login, logout, auth-page access
 │   ├── MapTests.cs             # 2 tests
+│   ├── MapReductionTests.cs    # reduction flag + mobile marker overlay regression tests
 │   ├── CatalogTests.cs         # 2 tests
 │   ├── CollectionTests.cs      # 2 tests
 │   └── NavMenuTests.cs         # 1 test
@@ -121,7 +123,7 @@ RuckR.Tests/
 │   ├── LoginPage.cs            # /Identity/Account/Login
 │   ├── RegisterPage.cs         # /Identity/Account/Register
 │   ├── NavMenu.cs              # Shared nav component (7 links + auth state)
-│   ├── MapPage.cs              # /map (Leaflet tiles, onboarding, pitch markers)
+│   ├── MapPage.cs              # /map (GeoBlazor surface, onboarding, pitch overlays)
 │   ├── CatalogPage.cs          # /catalog (filters, player cards)
 │   ├── CollectionPage.cs       # /collection (empty state, CTA)
 │   ├── PlayerGridPage.cs       # /players/nearby (radius, distances, challenge)
@@ -156,7 +158,7 @@ RuckR.Tests/
 - **`LoginPage`** — Fill username/password, anti-CSRF token extraction, submit, wait for post-login redirect
 - **`RegisterPage`** — Fill username/password/confirm, submit, wait for post-registration redirect
 - **`NavMenu`** — Auth-state detection, username display, 7 individual nav links (Map, Catalog, Collection, Nearby Players, Battles, Battle History, Create Pitch), login/logout clicks
-- **`MapPage`** — Map container detection, Leaflet tile load wait, onboarding banner dismiss, pitch marker counting, GPS-disabled banner detection
+- **`MapPage`** — Map container detection, GeoBlazor/ArcGIS surface wait, onboarding banner dismiss, pitch overlay assertions, GPS-disabled banner detection
 - **`CatalogPage`** — Player card counting, position/rarity filters, wait for catalog loaded
 - **`CollectionPage`** — Empty state detection, "Explore Map" CTA visibility
 - **`PlayerGridPage`** — Nearby player grid, radius selection, distance verification

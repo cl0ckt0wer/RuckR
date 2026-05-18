@@ -11,6 +11,7 @@ Date: 2026-05-18
 | Phase 3: Reduce Graphic Sync Plumbing | Deployed | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. |
 | Phase 4: Reduce Selection Adapter | Deployed | GeoBlazor selection path remains `MapView.HitTest` + `GraphicHit`; extracted RuckR graphic attribute parsing into `MapGraphicSelection`. |
 | Phase 5: Decide Popup Policy | Deployed | RuckR overlays are canonical for marker details/actions; removed GeoBlazor popup templates from marker graphics to avoid duplicate mobile detail surfaces. |
+| Automated Map Regression Tests | In progress | Added Playwright coverage for the three reduction flag combinations on mobile and pitch-marker tap behavior with no native ArcGIS popup duplication. |
 
 ## Goal
 
@@ -191,6 +192,7 @@ Verification:
   - `/map?basemap=styled&mapGraphics=false&autoGps=true`
   - `/map?basemap=styled&mapGraphics=true&autoGps=true`
 - Pitch, encounter, candidate, and player markers still update.
+- Automated coverage: `MapReductionTests.MapReductionFlags_OnMobile_RenderGeoBlazorSurface`.
 
 ### Phase 4: Reduce Selection Adapter
 
@@ -228,10 +230,12 @@ Verification:
 
 - Mobile tap behavior remains predictable on Pixel.
 - No duplicate/conflicting detail UI.
+- Automated coverage: `MapReductionTests.PitchMarkerTap_OnMobile_OpensRuckROverlayWithoutNativePopup`.
 
 ## Definition Of Done
 
 - The map remains healthy on Pixel for baseline, graphics-only, GPS-only, and full gameplay routes.
+- Planned map changes are covered by automated Playwright tests; manual device checks are reserved for user-reported issues or new device-specific regressions.
 - `GameMap.razor` no longer grows as a framework wrapper around GeoBlazor.
 - Custom code exists only for RuckR game behavior, product UI, data loading, and diagnostics.
 - ArcGIS/GeoBlazor rendering behavior is handled through GeoBlazor or documented ArcGIS component APIs.
