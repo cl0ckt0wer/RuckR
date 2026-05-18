@@ -8,7 +8,7 @@ Date: 2026-05-18
 |---|---|---|
 | Phase 1: Stabilize Diagnostics Noise | Complete locally | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; local build passed. Deploy/Jaeger verification pending. |
 | Phase 2: Research Widget Replacement | Complete locally | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
-| Phase 3: Reduce Graphic Sync Plumbing | In progress | First slice complete locally: extracted `MapGraphicFactory` for pitch, encounter, candidate-place, and player-location graphics. Layer sync consolidation remains. |
+| Phase 3: Reduce Graphic Sync Plumbing | Complete locally | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. Local build passed. |
 | Phase 4: Reduce Selection Adapter | Pending | Not started. |
 | Phase 5: Decide Popup Policy | Pending | Not started. |
 
@@ -170,7 +170,7 @@ Verification:
 
 ### Phase 3: Reduce Graphic Sync Plumbing
 
-Status: in progress. The first low-risk slice extracted GeoBlazor `Graphic` creation into `RuckR.Client.MapRendering.MapGraphicFactory` while leaving `GraphicsLayer` ownership and update ordering unchanged in `GameMap`.
+Status: complete locally. GeoBlazor `Graphic` creation now lives in `RuckR.Client.MapRendering.MapGraphicFactory`, and repeated layer replacement/grouping mechanics now live in `RuckR.Client.MapRendering.GraphicsLayerSync`. `GameMap` still owns game decisions, data fetch cadence, and which entities belong in which layers.
 
 Scope:
 

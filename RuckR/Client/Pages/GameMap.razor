@@ -1366,10 +1366,7 @@
     {
         if (_isDisposing || _stadiumPitchLayer is null || _standardPitchLayer is null || _trainingPitchLayer is null) return;
 
-        await ClearPitchLayersAsync();
-        if (_isDisposing) return;
-
-        _pitchGraphics.Clear();
+        var pitchTypesById = pitches.ToDictionary(p => p.Id, p => p.Type);
 
         var graphics = new List<KeyValuePair<int, Graphic>>(pitches.Count);
         foreach (var pitch in pitches)
@@ -1384,11 +1381,16 @@
 
         try
         {
-            await AddPitchGraphicsByTypeAsync(pitches, graphics);
-            foreach (var (pitchId, graphic) in graphics)
-            {
-                _pitchGraphics[pitchId] = graphic;
-            }
+            await GraphicsLayerSync.ReplaceGroupedAsync(
+                new Dictionary<PitchType, GraphicsLayer>
+                {
+                    [PitchType.Stadium] = _stadiumPitchLayer,
+                    [PitchType.Standard] = _standardPitchLayer,
+                    [PitchType.Training] = _trainingPitchLayer
+                },
+                _pitchGraphics,
+                graphics,
+                item => pitchTypesById[item.Key]);
         }
         catch (Exception ex)
         {
@@ -1422,51 +1424,9 @@
         }
     }
 
-    private async Task AddPitchGraphicsByTypeAsync(
-        IReadOnlyList<PitchModel> pitches,
-        IReadOnlyList<KeyValuePair<int, Graphic>> graphics)
-    {
-        if (_isDisposing) return;
-
-        var pitchById = pitches.ToDictionary(p => p.Id);
-
-        var stadiumGraphics = graphics
-            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Stadium)
-            .Select(g => g.Value)
-            .ToArray();
-        var standardGraphics = graphics
-            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Standard)
-            .Select(g => g.Value)
-            .ToArray();
-        var trainingGraphics = graphics
-            .Where(g => pitchById.TryGetValue(g.Key, out var pitch) && pitch.Type == PitchType.Training)
-            .Select(g => g.Value)
-            .ToArray();
-
-        if (stadiumGraphics.Length > 0 && _stadiumPitchLayer is not null)
-        {
-            await _stadiumPitchLayer.AddMany(stadiumGraphics);
-        }
-
-        if (standardGraphics.Length > 0 && _standardPitchLayer is not null)
-        {
-            await _standardPitchLayer.AddMany(standardGraphics);
-        }
-
-        if (trainingGraphics.Length > 0 && _trainingPitchLayer is not null)
-        {
-            await _trainingPitchLayer.AddMany(trainingGraphics);
-        }
-    }
-
     private async Task UpdateEncounterGraphicsAsync(IReadOnlyList<PlayerEncounterDto> encounters)
     {
         if (_isDisposing || _encounterLayer is null) return;
-
-        await _encounterLayer.Clear();
-        if (_isDisposing) return;
-
-        _encounterGraphics.Clear();
 
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
         foreach (var encounter in encounters)
@@ -1478,11 +1438,7 @@
 
         try
         {
-            await _encounterLayer.AddMany(graphics.Select(g => g.Value).ToArray());
-            foreach (var (encounterId, graphic) in graphics)
-            {
-                _encounterGraphics[encounterId] = graphic;
-            }
+            await GraphicsLayerSync.ReplaceManyAsync(_encounterLayer, _encounterGraphics, graphics);
         }
         catch (Exception ex)
         {
@@ -1500,9 +1456,6 @@
     {
         if (_isDisposing || _candidatePlaceLayer is null) return;
 
-        await ClearCandidatePlaceGraphicsAsync();
-        if (_isDisposing) return;
-
         var graphics = new List<KeyValuePair<string, Graphic>>(candidates.Count);
         foreach (var candidate in candidates)
         {
@@ -1513,12 +1466,8 @@
 
         try
         {
-            await _candidatePlaceLayer.AddMany(graphics.Select(g => g.Value).ToArray());
+            await GraphicsLayerSync.ReplaceManyAsync(_candidatePlaceLayer, _candidatePlaceGraphics, graphics);
             await SetCandidatePlaceLayerVisibleAsync(true);
-            foreach (var (placeId, graphic) in graphics)
-            {
-                _candidatePlaceGraphics[placeId] = graphic;
-            }
         }
         catch (Exception ex)
         {
@@ -1599,10 +1548,7 @@
 
         try
         {
-            await _playerLocationLayer.Clear();
-            if (_isDisposing) return;
-
-            await _playerLocationLayer.Add(graphic);
+            await GraphicsLayerSync.ReplaceOneAsync(_playerLocationLayer, graphic);
         }
         catch (Exception ex)
         {
