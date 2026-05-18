@@ -226,25 +226,45 @@ public class MapPage : BasePage
     /// <summary>Click the first pitch graphic rendered in an app-owned GeoBlazor layer.</summary>
     public async Task ClickFirstPitchGraphicAsync(int timeoutMs = 15_000)
     {
-        var screenPoint = await Page.WaitForFunctionAsync(
-            @"() => {
-                const root = document.querySelector('[data-testid=""map-container""]');
-                const view = root?.querySelector('arcgis-map')?.view;
-                const layerTitles = new Set(['Training grounds', 'Pitches', 'Stadiums']);
-                const layers = view?.map?.layers?.items ?? [];
-                const layer = layers.find(candidate => layerTitles.has(candidate.title) && candidate.graphics?.length > 0);
-                const graphic = layer?.graphics?.items?.[0];
-                if (!view || !graphic?.geometry) return null;
-                const screen = view.toScreen(graphic.geometry);
-                return screen && Number.isFinite(screen.x) && Number.isFinite(screen.y)
-                    ? [screen.x, screen.y]
-                    : null;
-            }",
-            null,
-            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+        await SetArcGisViewCenterAsync(51.5074, -0.1278, 17);
+        await Page.WaitForTimeoutAsync(1_000);
 
-        var point = await screenPoint.JsonValueAsync<double[]>();
-        await Page.Mouse.ClickAsync((float)point[0], (float)point[1]);
+        var target = Page.Locator("[data-testid='map-container'] canvas").First;
+        if (await target.CountAsync() == 0)
+            target = Page.Locator("[data-testid='map-container'] arcgis-map").First;
+
+        var box = await target.BoundingBoxAsync();
+        if (box is null)
+            throw new InvalidOperationException("GeoBlazor map surface did not have a bounding box.");
+
+        var offsets = new (float X, float Y)[]
+        {
+            (0, 0),
+            (0, -12),
+            (12, 0),
+            (0, 12),
+            (-12, 0),
+            (12, -12),
+            (12, 12),
+            (-12, 12),
+            (-12, -12)
+        };
+
+        foreach (var (xOffset, yOffset) in offsets)
+        {
+            await Page.Mouse.ClickAsync(
+                (float)(box.X + box.Width / 2 + xOffset),
+                (float)(box.Y + box.Height / 2 + yOffset));
+
+            await Page.WaitForTimeoutAsync(500);
+            if (await Page.GetByTestId("pitch-overlay").IsVisibleAsync())
+            {
+                return;
+            }
+        }
+
+        await ScreenshotAsync("pitch-graphic-click-missed");
+        throw new TimeoutException($"No pitch overlay appeared after tapping the seeded pitch area within {timeoutMs}ms.");
     }
 
     // ── Native map widgets ────────────────────────────────────────────
