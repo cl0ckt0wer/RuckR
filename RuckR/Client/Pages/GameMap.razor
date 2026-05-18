@@ -1592,42 +1592,41 @@
 
     private bool TryApplyGraphicHitSelection(Graphic graphic)
     {
-        var attrs = graphic.Attributes;
-        if (!attrs.TryGetValue("_ruckrType", out var type))
+        var selection = MapGraphicSelection.FromGraphic(graphic);
+        if (selection is null)
         {
             return false;
         }
 
-        return type?.ToString() switch
+        return selection.Kind switch
         {
-            "pitch" => TrySelectPitchGraphic(attrs),
-            "encounter" => TrySelectEncounterGraphic(attrs),
-            "candidate-place" => TrySelectCandidatePlaceGraphic(attrs),
+            MapSelectionKind.Pitch => TrySelectPitchGraphic(selection.PitchId),
+            MapSelectionKind.Encounter => TrySelectEncounterGraphic(selection.EncounterId),
+            MapSelectionKind.CandidatePlace => TrySelectCandidatePlaceGraphic(selection),
             _ => false
         };
     }
 
-    private bool TrySelectPitchGraphic(AttributesDictionary attrs)
+    private bool TrySelectPitchGraphic(int? pitchId)
     {
-        if (!attrs.TryGetValue("_ruckrId", out var idObj) || idObj is not int pitchId)
+        if (!pitchId.HasValue)
         {
             return false;
         }
 
         ClearCandidateSelection();
-        Dispatcher.Dispatch(new SelectPitchAction(pitchId));
+        Dispatcher.Dispatch(new SelectPitchAction(pitchId.Value));
         return true;
     }
 
-    private bool TrySelectEncounterGraphic(AttributesDictionary attrs)
+    private bool TrySelectEncounterGraphic(Guid? encounterId)
     {
-        if (!attrs.TryGetValue("_ruckrEncounterId", out var encIdObj)
-            || !Guid.TryParse(encIdObj?.ToString(), out var encounterId))
+        if (!encounterId.HasValue)
         {
             return false;
         }
 
-        var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId);
+        var encounter = MapState.Value.VisibleEncounters.FirstOrDefault(e => e.EncounterId == encounterId.Value);
         if (encounter is null)
         {
             return false;
@@ -1637,23 +1636,22 @@
         _selectedEncounter = encounter;
         UpdateRecruitEligibility();
         _recruitMessage = null;
-        Dispatcher.Dispatch(new SelectEncounterAction(encounterId));
+        Dispatcher.Dispatch(new SelectEncounterAction(encounterId.Value));
         return true;
     }
 
-    private bool TrySelectCandidatePlaceGraphic(AttributesDictionary attrs)
+    private bool TrySelectCandidatePlaceGraphic(MapSelection selection)
     {
-        if (attrs.TryGetValue("_ruckrPlaceId", out var placeIdObj)
-            && placeIdObj?.ToString() is { Length: > 0 } placeId)
+        if (selection.CandidatePlaceId is { Length: > 0 } placeId)
         {
             SelectCandidatePlace(placeId);
         }
 
-        var name = attrs.TryGetValue("name", out var nameObj) ? nameObj?.ToString() : _selectedCandidatePlace?.Name ?? "Candidate place";
-        var recommendedType = attrs.TryGetValue("recommendedPitchType", out var typeObj) ? typeObj?.ToString() : _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
-        var confidence = attrs.TryGetValue("confidence", out var confidenceObj) ? confidenceObj?.ToString() : "?";
-        var reason = attrs.TryGetValue("matchReason", out var reasonObj) ? reasonObj?.ToString() : "matched place category";
-        var category = attrs.TryGetValue("categoryLabel", out var categoryObj) ? categoryObj?.ToString() : "Place";
+        var name = selection.CandidateName ?? _selectedCandidatePlace?.Name ?? "Candidate place";
+        var recommendedType = selection.CandidateRecommendedPitchType ?? _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
+        var confidence = selection.CandidateConfidence ?? "?";
+        var reason = selection.CandidateMatchReason ?? "matched place category";
+        var category = selection.CandidateCategoryLabel ?? "Place";
         _statusMessage = $"Candidate: {name} -> {recommendedType} ({confidence}%). {reason}; {category}.";
         Dispatcher.Dispatch(new ClearSelectionAction());
         StateHasChanged();

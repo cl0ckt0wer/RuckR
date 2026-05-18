@@ -9,7 +9,7 @@ Date: 2026-05-18
 | Phase 1: Stabilize Diagnostics Noise | Complete locally | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; local build passed. Deploy/Jaeger verification pending. |
 | Phase 2: Research Widget Replacement | Complete locally | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
 | Phase 3: Reduce Graphic Sync Plumbing | Complete locally | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. Local build passed. |
-| Phase 4: Reduce Selection Adapter | Pending | Not started. |
+| Phase 4: Reduce Selection Adapter | Complete locally | GeoBlazor selection path remains `MapView.HitTest` + `GraphicHit`; extracted RuckR graphic attribute parsing into `MapGraphicSelection`. Local build passed. |
 | Phase 5: Decide Popup Policy | Pending | Not started. |
 
 ## Goal
@@ -193,6 +193,8 @@ Verification:
 - Pitch, encounter, candidate, and player markers still update.
 
 ### Phase 4: Reduce Selection Adapter
+
+Status: complete locally. GeoBlazor Core 4.4.4 exposes `MapView.HitTest(...)` returning `GraphicHit`; there is not a more direct typed RuckR entity click API. The app now keeps the GeoBlazor hit-test call in `GameMap`, but parses RuckR marker attributes through `RuckR.Client.MapRendering.MapGraphicSelection`.
 
 Scope:
 
