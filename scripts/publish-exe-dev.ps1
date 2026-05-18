@@ -39,10 +39,22 @@ function Quote-BashArg {
     return "'" + $Value.Replace("'", "'\''") + "'"
 }
 
+function ConvertTo-WslPath {
+    param([string]$WindowsPath)
+
+    if ($WindowsPath -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $Matches[1].ToLowerInvariant()
+        $path = $Matches[2].Replace('\', '/')
+        return "/mnt/$drive/$path"
+    }
+
+    return $WindowsPath.Replace('\', '/')
+}
+
 $wsl = Get-Command wsl -ErrorAction SilentlyContinue
 if ($wsl) {
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-    $wslRepoRoot = (& $wsl.Source wslpath -a $repoRoot).Trim()
+    $wslRepoRoot = ConvertTo-WslPath $repoRoot
     if ([string]::IsNullOrWhiteSpace($wslRepoRoot)) {
         throw "Unable to resolve WSL path for $repoRoot."
     }
