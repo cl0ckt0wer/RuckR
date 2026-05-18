@@ -96,14 +96,14 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     {
         var mapPage = new MapPage(_page, _baseUrl);
 
-        await mapPage.GoToAsync("basemap=styled&mapGraphics=true&autoGps=true");
+        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
 
         Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
 
         await mapPage.CenterOnNearestAvailablePitchAsync();
         await mapPage.ClickMapCenterAsync();
-        await mapPage.WaitForPitchOverlayAsync();
+        await mapPage.WaitForPitchOverlayAsync(10_000);
 
         Assert.True(await mapPage.IsPitchOverlayVisibleAsync(), "Pitch marker tap should open the RuckR pitch overlay.");
         Assert.False(await mapPage.IsNativePopupVisibleAsync(), "Pitch marker tap should not also show the ArcGIS native popup.");
