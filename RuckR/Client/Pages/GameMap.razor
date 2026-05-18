@@ -70,10 +70,10 @@
                 }
                 @if (_enableGameGraphics)
                 {
-                    <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
+                    <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
                     <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
                     <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
-                    <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
+                    <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
                 }
             </Map>
             @if (_enableArcGisWidgets)
