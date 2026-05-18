@@ -480,6 +480,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         var candidates = new[]
         {
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "RuckR", "Client", "bin", configuration, "net10.0", "wwwroot")),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "RuckR", "Client", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "Client", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
