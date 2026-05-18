@@ -333,6 +333,20 @@ public class MapPage : BasePage
                 return !!layer?.visible;
             }");
 
+    /// <summary>Wait for the GeoBlazor candidate places layer to reach a visibility state.</summary>
+    public async Task WaitForCandidatePlacesLayerVisibilityAsync(bool visible, int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"({ visible }) => {
+                const view = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view;
+                const layers = view?.map?.allLayers?.items ?? view?.map?.layers?.items ?? [];
+                const layer = layers.find(l => l.title === 'Candidate places');
+                return !!layer && layer.visible === visible;
+            }",
+            new { visible },
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
     /// <summary>Set the ArcGIS view center directly for deterministic button tests.</summary>
     public async Task SetArcGisViewCenterAsync(double latitude, double longitude, int zoom)
     {

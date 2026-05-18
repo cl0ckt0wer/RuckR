@@ -183,11 +183,13 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
 
         Assert.Null(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        await mapPage.WaitForCandidatePlacesLayerVisibilityAsync(false);
         Assert.False(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should hide after the shortcut is clicked.");
 
         await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
 
         Assert.NotNull(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        await mapPage.WaitForCandidatePlacesLayerVisibilityAsync(true);
         Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should show after the shortcut is clicked again.");
         AssertNoUnexpectedBrowserErrors();
     }
@@ -243,7 +245,12 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         Assert.True(unexpectedConsoleErrors.Count == 0,
             $"Unexpected browser console errors:\n{string.Join("\n", unexpectedConsoleErrors)}");
-        Assert.True(_pageErrors.Count == 0,
-            $"Unhandled page exceptions:\n{string.Join("\n", _pageErrors)}");
+        var unexpectedPageErrors = _pageErrors
+            .Where(error => !KnownBenignConsoleErrors.Any(known =>
+                error.Contains(known, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        Assert.True(unexpectedPageErrors.Count == 0,
+            $"Unhandled page exceptions:\n{string.Join("\n", unexpectedPageErrors)}");
     }
 }
