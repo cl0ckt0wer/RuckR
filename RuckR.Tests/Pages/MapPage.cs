@@ -299,23 +299,25 @@ public class MapPage : BasePage
         }
     }
 
-    /// <summary>Wait for the native ArcGIS legend widget to become visible.</summary>
-    public async Task<bool> WaitForNativeLegendAsync(int timeoutMs = 10_000)
+    /// <summary>Wait for the RuckR map key to become visible with useful symbol rows.</summary>
+    public async Task<bool> WaitForMapKeyAsync(int timeoutMs = 10_000)
     {
         try
         {
             await Page.WaitForFunctionAsync(
                 @"() => {
                     const root = document.querySelector('[data-testid=""map-container""]');
-                    const legend = root?.querySelector('.esri-legend');
-                    const rect = legend?.getBoundingClientRect();
-                    const style = legend ? getComputedStyle(legend) : null;
-                    return !!legend
+                    const key = root?.querySelector('[data-testid=""map-key""]');
+                    const rect = key?.getBoundingClientRect();
+                    const style = key ? getComputedStyle(key) : null;
+                    const rows = key?.querySelectorAll('.map-key__row') ?? [];
+                    return !!key
                         && !!rect
                         && style.display !== 'none'
                         && style.visibility !== 'hidden'
                         && rect.width > 0
-                        && rect.height > 0;
+                        && rect.height > 0
+                        && rows.length >= 4;
                 }",
                 null,
                 new PageWaitForFunctionOptions { Timeout = timeoutMs });
@@ -323,7 +325,7 @@ public class MapPage : BasePage
         }
         catch (TimeoutException)
         {
-            await ScreenshotAsync("native-map-legend-timeout");
+            await ScreenshotAsync("map-key-timeout");
             return false;
         }
     }

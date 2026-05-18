@@ -5,4 +5,15 @@
     <NoWarn Condition="'$(EnforcePublicApiXmlDocs)' != 'true'">$(NoWarn);CS1591;CS1587</NoWarn>
     <NoWarn Condition="'$(EnforcePublicApiXmlDocs)' == 'true'">$(NoWarn);CS1587</NoWarn>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuckRIsolatedBuild)' == 'true'">
+    <!--
+      Local test wrappers set RuckRIsolatedBuild to keep overlapping dotnet test
+      processes from writing the same referenced-project bin/obj files.
+    -->
+    <RuckRBuildInstance Condition="'$(RuckRBuildInstance)' == ''">$([System.Diagnostics.Process]::GetCurrentProcess().Id)</RuckRBuildInstance>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)\bin\**;$(MSBuildProjectDirectory)\obj\**;$(MSBuildThisFileDirectory).artifacts\**</DefaultItemExcludes>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).artifacts\obj\$(RuckRBuildInstance)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory).artifacts\bin\$(RuckRBuildInstance)\$(MSBuildProjectName)\</BaseOutputPath>
+  </PropertyGroup>
 </Project>

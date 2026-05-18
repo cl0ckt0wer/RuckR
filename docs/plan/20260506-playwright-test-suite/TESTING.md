@@ -25,18 +25,20 @@ Tests use `Testcontainers.MsSql` (image: `mcr.microsoft.com/mssql/server:2022-la
 ### 3. Run tests
 ```bash
 # Run all tests (API + E2E)
-dotnet test RuckR.Tests
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests
 
 # Run specific test project
-dotnet test RuckR.Tests\RuckR.Tests.csproj
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests\RuckR.Tests.csproj
 
 # Run tests filtered by fully-qualified name
-dotnet test RuckR.Tests --filter "FullyQualifiedName~PlayersApiTests"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~PlayersApiTests"
 
 # Run tests filtered by namespace
-dotnet test RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.Api"
-dotnet test RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.E2E"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.Api"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.E2E"
 ```
+
+Use the wrapper for local test runs. It enables isolated build outputs and holds a repo-local lock so overlapping `dotnet test` processes do not race while writing Blazor client build artifacts.
 
 ## Feature Coverage Matrix
 
@@ -174,10 +176,10 @@ E2E tests run against the `CustomWebApplicationFactory`'s internal Kestrel serve
 
 ```bash
 # Run all E2E tests
-dotnet test RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.E2E"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~RuckR.Tests.E2E"
 
 # Run a specific E2E test
-dotnet test RuckR.Tests --filter "FullyQualifiedName~AuthTests"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~AuthTests"
 ```
 
 ### E2E Test Lifecycle
@@ -217,7 +219,7 @@ The `CustomWebApplicationFactory` starts the server automatically. If you see co
 By default, Chromium runs headless. To debug visually, set the environment variable:
 ```powershell
 $env:PLAYWRIGHT_HEADED = "1"
-dotnet test RuckR.Tests --filter "FullyQualifiedName~YourTest"
+pwsh ./scripts/test-ruckr.ps1 RuckR.Tests --filter "FullyQualifiedName~YourTest"
 ```
 The `PlaywrightFixture` checks this env var and switches to headed mode. Combine with `--no-headless` or slow-motion debugging by modifying `BrowserTypeLaunchOptions` in the fixture.
 

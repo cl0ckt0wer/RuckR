@@ -381,5 +381,6 @@ apm_modules/
 .gstack/
 
 # Generated diagnostics/deploy artifacts
+.artifacts/
 _diagnostics/
 publish.tar.gz

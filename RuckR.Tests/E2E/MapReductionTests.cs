@@ -113,7 +113,7 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     }
 
     /// <summary>
-    /// Verifies native ArcGIS widgets render and RuckR custom shortcut controls are absent on mobile.
+    /// Verifies native ArcGIS widgets render, the RuckR map key is useful, and custom shortcut controls are absent on mobile.
     /// </summary>
     [Fact]
     public async Task NativeMapWidgets_OnMobile_RenderWithoutCustomShortcutControls()
@@ -126,7 +126,7 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
 
         Assert.True(await mapPage.WaitForNativeWidgetsAsync(20_000), "ArcGIS widget controls should render by default.");
-        Assert.True(await mapPage.WaitForNativeLegendAsync(20_000), "ArcGIS legend widget should render when native widgets are enabled.");
+        Assert.True(await mapPage.WaitForMapKeyAsync(20_000), "RuckR map key should render useful symbol rows.");
         Assert.False(await mapPage.HasCustomShortcutControlsAsync(), "RuckR custom map shortcut overlay should not render.");
 
         AssertNoUnexpectedBrowserErrors();

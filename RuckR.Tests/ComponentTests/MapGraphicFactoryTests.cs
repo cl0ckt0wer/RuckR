@@ -42,10 +42,11 @@ public class MapGraphicFactoryTests
         var graphics = MapGraphicFactory.CreatePlayerLocationGraphics(position);
 
         Assert.Equal(2, graphics.Count);
-        Assert.IsType<Polygon>(graphics[0].Geometry);
+        var accuracyArea = Assert.IsType<Polygon>(graphics[0].Geometry);
         Assert.IsType<Point>(graphics[1].Geometry);
         Assert.IsType<SimpleFillSymbol>(graphics[0].Symbol);
         Assert.IsType<SimpleMarkerSymbol>(graphics[1].Symbol);
+        Assert.Single(accuracyArea.Rings);
 
         AssertGraphicAttribute(graphics[0].Attributes, "_ruckrType", "player-location-accuracy");
         AssertGraphicAttribute(graphics[1].Attributes, "_ruckrType", "player-location");

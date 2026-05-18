@@ -79,7 +79,7 @@
             </Map>
             @if (_enableArcGisWidgets)
             {
-                <HomeWidget Position="OverlayPosition.TopLeft" Viewpoint="@HomeViewpoint" />
+                <HomeWidget Position="OverlayPosition.TopLeft" />
                 <CompassWidget Position="OverlayPosition.TopLeft" />
                 <LocateWidget Position="OverlayPosition.TopLeft" />
                 <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
@@ -89,6 +89,37 @@
                               RespectLayerVisibility="true" />
             }
         </MapView>
+
+        @if (_enableArcGisWidgets)
+        {
+            <div class="map-key" data-testid="map-key" aria-label="Map key">
+                <div class="map-key__title">Map key</div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--standard"></span>
+                    <span>Standard pitch</span>
+                </div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--training"></span>
+                    <span>Training pitch</span>
+                </div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--stadium"></span>
+                    <span>Stadium</span>
+                </div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--encounter"></span>
+                    <span>Recruit</span>
+                </div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--candidate"></span>
+                    <span>Candidate place</span>
+                </div>
+                <div class="map-key__row">
+                    <span class="map-key__symbol map-key__symbol--player"></span>
+                    <span>You</span>
+                </div>
+            </div>
+        }
 
         @if (ShouldShowGpsNotice)
         {
@@ -2155,12 +2186,6 @@
             spatialReference: SpatialReference.Wgs84));
         await _mapView.SetZoom(zoom);
     }
-
-    private Viewpoint HomeViewpoint =>
-        new(new Point(longitude: _homeLongitude, latitude: _homeLatitude), ScaleForZoom(_zoom), 0, null);
-
-    private static double ScaleForZoom(int zoom) =>
-        591657527.591555 / Math.Pow(2, zoom);
 
     private bool ShouldRefreshPitches(GeoPosition current)
     {

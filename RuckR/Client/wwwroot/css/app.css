@@ -312,6 +312,100 @@ a, .btn-link {
     font-weight: 800;
 }
 
+.map-key {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 2.75rem;
+    z-index: 12;
+    display: grid;
+    gap: 0.34rem;
+    width: max-content;
+    max-width: min(220px, calc(100vw - 1.5rem));
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.15;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+}
+
+.map-shell .esri-legend,
+.map-shell .esri-legend__service {
+    display: none !important;
+}
+
+.map-key__title {
+    margin-bottom: 0.1rem;
+    color: #475569;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.map-key__row {
+    display: grid;
+    grid-template-columns: 1rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 1rem;
+}
+
+.map-key__symbol {
+    width: 0.82rem;
+    height: 0.82rem;
+    justify-self: center;
+    border: 2px solid #f8fafc;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+}
+
+.map-key__symbol--standard {
+    background: #22c55e;
+    border-radius: 0.12rem;
+}
+
+.map-key__symbol--training {
+    width: 0;
+    height: 0;
+    border-right: 0.48rem solid transparent;
+    border-bottom: 0.86rem solid #38bdf8;
+    border-left: 0.48rem solid transparent;
+    box-shadow: none;
+}
+
+.map-key__symbol--stadium,
+.map-key__symbol--encounter {
+    transform: rotate(45deg);
+}
+
+.map-key__symbol--stadium {
+    background: #f59e0b;
+    border-color: #111827;
+}
+
+.map-key__symbol--encounter {
+    background: #2563eb;
+}
+
+.map-key__symbol--candidate,
+.map-key__symbol--player {
+    border-radius: 999px;
+}
+
+.map-key__symbol--candidate {
+    background: #a855f7;
+    border-color: #f5d0fe;
+}
+
+.map-key__symbol--player {
+    background: #2563eb;
+    border-color: #eff6ff;
+}
+
 .gps-status-chip--ready .gps-status-chip__dot {
     background: #16a34a;
     box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
@@ -473,6 +567,14 @@ a, .btn-link {
         min-height: 2rem;
         padding: 0.32rem 0.55rem;
         font-size: 0.78rem;
+    }
+
+    .map-key {
+        right: 0.5rem;
+        bottom: 5.5rem;
+        max-width: 10.5rem;
+        padding: 0.55rem 0.6rem;
+        font-size: 0.72rem;
     }
 
     .map-center-buttons {
