@@ -225,7 +225,7 @@ public class MapPage : BasePage
 
                 if (await button.IsEnabledAsync())
                 {
-                    await button.ClickAsync();
+                    await button.ClickAsync(new LocatorClickOptions { Force = true });
                     await Page.WaitForTimeoutAsync(1_000);
                     return testId;
                 }
