@@ -11,6 +11,7 @@
 @using dymaptic.GeoBlazor.Core.Events
 @using dymaptic.GeoBlazor.Core.Model
 @using Fluxor
+@using RuckR.Client.MapRendering
 @using RuckR.Client.Services
 @using RuckR.Client.Store.MapFeature
 @using RuckR.Client.Store.LocationFeature
@@ -1375,19 +1376,10 @@
         {
             graphics.Add(new KeyValuePair<int, Graphic>(
                 pitch.Id,
-                new Graphic(
-                geometry: new Point(longitude: pitch.Longitude, latitude: pitch.Latitude),
-                symbol: GetPitchSymbol(pitch.Type),
-                popupTemplate: CreatePitchPopupTemplate(),
-                attributes: new AttributesDictionary(new Dictionary<string, object?>
-                {
-                    ["_ruckrType"] = "pitch",
-                    ["_ruckrId"] = pitch.Id,
-                    ["name"] = pitch.Name,
-                    ["pitchType"] = PitchTypeDisplayName(pitch.Type),
-                    ["pitchRole"] = PitchTypeDescription(pitch.Type)
-                })
-            )));
+                MapGraphicFactory.CreatePitchGraphic(
+                    pitch,
+                    PitchTypeDisplayName(pitch.Type),
+                    PitchTypeDescription(pitch.Type))));
         }
 
         try
@@ -1479,28 +1471,9 @@
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
         foreach (var encounter in encounters)
         {
-            var symbol = new SimpleMarkerSymbol(
-                outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
-                color: EncounterRarityColor(encounter.Rarity),
-                size: new Dimension(14),
-                style: SimpleMarkerSymbolStyle.Circle);
-
             graphics.Add(new KeyValuePair<Guid, Graphic>(
                 encounter.EncounterId,
-                new Graphic(
-                    geometry: new Point(longitude: encounter.Longitude, latitude: encounter.Latitude),
-                    symbol: symbol,
-                    popupTemplate: CreateEncounterPopupTemplate(),
-                    attributes: new AttributesDictionary(new Dictionary<string, object?>
-                    {
-                        ["_ruckrType"] = "encounter",
-                        ["_ruckrEncounterId"] = encounter.EncounterId.ToString(),
-                        ["name"] = encounter.Name,
-                        ["rarity"] = encounter.Rarity,
-                        ["level"] = encounter.Level,
-                        ["parkName"] = encounter.ParkName
-                    })
-                )));
+                MapGraphicFactory.CreateEncounterGraphic(encounter)));
         }
 
         try
@@ -1535,21 +1508,7 @@
         {
             graphics.Add(new KeyValuePair<string, Graphic>(
                 candidate.PlaceId,
-                new Graphic(
-                geometry: new Point(longitude: candidate.Longitude, latitude: candidate.Latitude),
-                symbol: GetCandidatePlaceSymbol(candidate.RecommendedPitchType),
-                popupTemplate: CreateCandidatePlacePopupTemplate(),
-                attributes: new AttributesDictionary(new Dictionary<string, object?>
-                {
-                    ["_ruckrType"] = "candidate-place",
-                    ["_ruckrPlaceId"] = candidate.PlaceId,
-                    ["name"] = candidate.Name,
-                    ["recommendedPitchType"] = candidate.RecommendedPitchType,
-                    ["confidence"] = candidate.Confidence,
-                    ["categoryLabel"] = candidate.CategoryLabel,
-                    ["matchReason"] = candidate.MatchReason
-                })
-            )));
+                MapGraphicFactory.CreateCandidatePlaceGraphic(candidate)));
         }
 
         try
@@ -1636,15 +1595,7 @@
     {
         if (_isDisposing || _playerLocationLayer is null) return;
 
-        var graphic = new Graphic(
-            geometry: new Point(longitude: position.Longitude, latitude: position.Latitude),
-            symbol: GetPlayerLocationSymbol(),
-            popupTemplate: CreatePlayerLocationPopupTemplate(),
-            attributes: new AttributesDictionary(new Dictionary<string, object?>
-            {
-                ["_ruckrType"] = "player-location",
-                ["accuracyMeters"] = position.Accuracy
-            }));
+        var graphic = MapGraphicFactory.CreatePlayerLocationGraphic(position);
 
         try
         {
@@ -1664,35 +1615,6 @@
             Logger.LogDebug(ex, "Failed to update player location graphic");
         }
     }
-
-    private static MapColor EncounterRarityColor(string rarity) => rarity switch
-    {
-        "Uncommon" => new MapColor(47, 133, 90),
-        "Rare" => new MapColor(37, 99, 235),
-        "Epic" => new MapColor(217, 119, 6),
-        "Legendary" => new MapColor(200, 30, 30),
-        _ => new MapColor(107, 114, 128)
-    };
-
-    private static PopupTemplate CreatePitchPopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "{pitchType}<br>{pitchRole}");
-
-    private static PopupTemplate CreateEncounterPopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "Level {level} {rarity}<br>{parkName}");
-
-    private static PopupTemplate CreateCandidatePlacePopupTemplate() =>
-        new(
-            title: "{name}",
-            stringContent: "{recommendedPitchType}<br>{confidence}% confidence<br>{matchReason}");
-
-    private static PopupTemplate CreatePlayerLocationPopupTemplate() =>
-        new(
-            title: "Your location",
-            stringContent: "Accuracy: {accuracyMeters}m");
 
     private async Task HandleMapClick(ClickEvent clickEvent)
     {
@@ -2516,56 +2438,6 @@
         PitchType.Training => "training",
         _ => "standard"
     };
-
-    private static SimpleMarkerSymbol GetPitchSymbol(PitchType type) => type switch
-    {
-        PitchType.Standard => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#F8FAFC"), width: new Dimension(2)),
-            color: new MapColor("#22C55E"),
-            size: new Dimension(15),
-            style: SimpleMarkerSymbolStyle.Square),
-        PitchType.Training => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#082F49"), width: new Dimension(2)),
-            color: new MapColor("#38BDF8"),
-            size: new Dimension(15),
-            style: SimpleMarkerSymbolStyle.Triangle),
-        PitchType.Stadium => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#111827"), width: new Dimension(3)),
-            color: new MapColor("#F59E0B"),
-            size: new Dimension(19),
-            style: SimpleMarkerSymbolStyle.Diamond),
-        _ => new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(2)),
-            color: new MapColor(107, 114, 128),
-            size: new Dimension(12),
-            style: SimpleMarkerSymbolStyle.Circle)
-    };
-
-    private static SimpleMarkerSymbol GetCandidatePlaceSymbol(string recommendedPitchType)
-    {
-        var fill = Enum.TryParse<PitchType>(recommendedPitchType, ignoreCase: true, out var parsed)
-            ? parsed switch
-            {
-                PitchType.Stadium => "#F59E0B",
-                PitchType.Standard => "#22C55E",
-                PitchType.Training => "#38BDF8",
-                _ => "#A855F7"
-            }
-            : "#A855F7";
-
-        return new SimpleMarkerSymbol(
-            outline: new Outline(color: new MapColor("#F5D0FE"), width: new Dimension(3)),
-            color: new MapColor(fill),
-            size: new Dimension(13),
-            style: SimpleMarkerSymbolStyle.Circle);
-    }
-
-    private static SimpleMarkerSymbol GetPlayerLocationSymbol() =>
-        new(
-            outline: new Outline(color: new MapColor("#EFF6FF"), width: new Dimension(3)),
-            color: new MapColor("#2563EB"),
-            size: new Dimension(16),
-            style: SimpleMarkerSymbolStyle.Circle);
 
     private static string PitchTypeBadgeClass(PitchType type) => type switch
     {
