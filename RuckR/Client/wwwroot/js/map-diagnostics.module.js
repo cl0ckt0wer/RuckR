@@ -174,7 +174,7 @@ function elementStackAtMapCenter() {
     }));
 }
 
-function readCanvasVisualSummary() {
+function readCanvasElementSummary() {
     const selected = getBestCanvas();
     const canvas = selected?.canvas;
     if (!canvas) {
@@ -182,72 +182,62 @@ function readCanvasVisualSummary() {
     }
 
     const rect = rectOf(canvas);
-    const summary = {
+    return {
         present: true,
         selectedCanvasIndex: selected.index,
         selectedCanvasScore: selected.score,
         rect,
         width: canvas.width,
-        height: canvas.height,
-        method: null,
-        error: null,
-        samples: 0,
-        transparentRatio: null,
-        whiteRatio: null,
-        darkRatio: null,
-        variedRatio: null,
-        center: null
+        height: canvas.height
     };
+}
 
-    try {
-        const context = canvas.getContext('webgl2') || canvas.getContext('webgl');
-        if (!context || canvas.width <= 0 || canvas.height <= 0) {
-            summary.error = 'No readable WebGL context or empty canvas.';
-            return summary;
-        }
+function surfaceSummary() {
+    const esriView = document.querySelector('.esri-view');
+    const surface = document.querySelector('.esri-view-surface');
+    const canvas = getBestCanvas()?.canvas ?? null;
+    const viewRect = rectOf(esriView);
+    const surfaceRect = rectOf(surface);
+    const canvasRect = rectOf(canvas);
 
-        summary.method = 'webgl.readPixels';
-        const points = [
-            [0.5, 0.5],
-            [0.25, 0.25],
-            [0.75, 0.25],
-            [0.25, 0.75],
-            [0.75, 0.75],
-            [0.5, 0.25],
-            [0.5, 0.75],
-            [0.25, 0.5],
-            [0.75, 0.5]
-        ];
-        let transparent = 0;
-        let white = 0;
-        let dark = 0;
-        let varied = 0;
+    return {
+        viewVisible: isVisible(esriView),
+        surfaceVisible: isVisible(surface),
+        canvasVisible: isVisible(canvas),
+        viewRect,
+        surfaceRect,
+        canvasRect,
+        surfaceMatchesView: !!(viewRect && surfaceRect
+            && Math.abs(viewRect.width - surfaceRect.width) < 2
+            && Math.abs(viewRect.height - surfaceRect.height) < 2),
+        canvasMatchesView: !!(viewRect && canvasRect
+            && Math.abs(viewRect.width - canvasRect.width) < 4
+            && Math.abs(viewRect.height - canvasRect.height) < 4)
+    };
+}
 
-        for (const [px, py] of points) {
-            const x = Math.max(0, Math.min(canvas.width - 1, Math.round(canvas.width * px)));
-            const y = Math.max(0, Math.min(canvas.height - 1, Math.round(canvas.height * py)));
-            const pixel = new Uint8Array(4);
-            context.readPixels(x, y, 1, 1, context.RGBA, context.UNSIGNED_BYTE, pixel);
-            const [r, g, b, a] = pixel;
-            if (px === 0.5 && py === 0.5) {
-                summary.center = { r, g, b, a };
-            }
-            summary.samples++;
-            if (a < 10) transparent++;
-            if (r > 245 && g > 245 && b > 245 && a > 10) white++;
-            if (r < 35 && g < 35 && b < 35 && a > 10) dark++;
-            if ((Math.max(r, g, b) - Math.min(r, g, b) > 8 || r < 235 || g < 235 || b < 235) && a > 10) varied++;
-        }
+function healthSummary() {
+    const arcgis = arcGisViewSummary();
+    const surface = surfaceSummary();
+    const webGl = webGlSummary();
 
-        summary.transparentRatio = transparent / summary.samples;
-        summary.whiteRatio = white / summary.samples;
-        summary.darkRatio = dark / summary.samples;
-        summary.variedRatio = varied / summary.samples;
-    } catch (error) {
-        summary.error = error instanceof Error ? error.message : String(error);
-    }
-
-    return summary;
+    return {
+        ready: !!arcgis.ready,
+        basemapLoaded: !!arcgis.map?.basemapLoaded,
+        viewSized: (arcgis.width ?? 0) > 0 && (arcgis.height ?? 0) > 0,
+        surfaceVisible: surface.surfaceVisible,
+        canvasVisible: surface.canvasVisible,
+        webGlContext: !!webGl.context,
+        hasFatalError: !!arcgis.fatalError,
+        healthy: !!arcgis.ready
+            && !!arcgis.map?.basemapLoaded
+            && (arcgis.width ?? 0) > 0
+            && (arcgis.height ?? 0) > 0
+            && surface.surfaceVisible
+            && surface.canvasVisible
+            && !!webGl.context
+            && !arcgis.fatalError
+    };
 }
 
 function serializeError(error) {
@@ -379,6 +369,7 @@ export function collectMapDiagnostics(reason) {
             app: appCssRulesLoaded(),
             links: [...document.querySelectorAll('link[rel="stylesheet"]')].map(link => link.href)
         },
+        health: healthSummary(),
         webGl: webGlSummary(),
         resources: {
             total: resources.length,
@@ -393,7 +384,8 @@ export function collectMapDiagnostics(reason) {
                 }))
         },
         visual: {
-            canvas: readCanvasVisualSummary(),
+            surface: surfaceSummary(),
+            canvas: readCanvasElementSummary(),
             elementStackAtCenter: elementStackAtMapCenter()
         },
         arcgis: arcGisViewSummary(),

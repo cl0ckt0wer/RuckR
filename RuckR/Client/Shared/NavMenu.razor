@@ -1,4 +1,5 @@
 ﻿@inject NavigationManager Navigation
+@inject IConfiguration Configuration
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -16,16 +17,19 @@
                 <span class="oi oi-map" aria-hidden="true"></span> Map
             </NavLink>
         </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="debug-map" data-testid="nav-debug-map">
-                <span class="oi oi-map-marker" aria-hidden="true"></span> Debug Map
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="debug-layers" data-testid="nav-debug-layers">
-                <span class="oi oi-layers" aria-hidden="true"></span> Debug Layers
-            </NavLink>
-        </div>
+        @if (ShowDebugMapLinks)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="debug-map" data-testid="nav-debug-map">
+                    <span class="oi oi-map-marker" aria-hidden="true"></span> Debug Map
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="debug-layers" data-testid="nav-debug-layers">
+                    <span class="oi oi-layers" aria-hidden="true"></span> Debug Layers
+                </NavLink>
+            </div>
+        }
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="catalog" data-testid="nav-catalog">
                 <span class="oi oi-list" aria-hidden="true"></span> Catalog
@@ -83,6 +87,9 @@
     private bool collapseNavMenu = true;
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private bool ShowDebugMapLinks =>
+        bool.TryParse(Configuration["Map:ShowDebugNav"], out var showDebugNav) && showDebugNav;
 
     private void ToggleNavMenu()
     {

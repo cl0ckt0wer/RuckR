@@ -964,6 +964,7 @@
     private bool _enableMapDiagnostics;
     private bool _enableGameGraphics;
     private bool _enableAutoGpsWatch;
+    private bool _enableVerboseMapDiagnostics;
     private bool _isDisposing;
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
@@ -978,6 +979,7 @@
         _enableMapDiagnostics = reductionOptions.EnableMapDiagnostics;
         _enableGameGraphics = reductionOptions.EnableGameGraphics;
         _enableAutoGpsWatch = reductionOptions.EnableAutoGpsWatch;
+        _enableVerboseMapDiagnostics = ResolveMapFeatureFlag(Configuration, new Uri(Navigation.Uri, UriKind.Absolute), "EnableVerboseMapDiagnostics", "mapDiagnosticsVerbose", defaultValue: false);
     }
 
     public static MapReductionOptions ResolveMapReductionOptions(IConfiguration configuration, string currentUri)
@@ -1100,9 +1102,12 @@
             }
 
             _ = DismissStaleLoadingIndicatorAsync();
-            _ = CaptureMapDiagnosticsAfterDelayAsync("first-render", TimeSpan.FromSeconds(2));
             _ = CaptureMapDiagnosticsAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
-            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-30s", TimeSpan.FromSeconds(30));
+            if (_enableVerboseMapDiagnostics)
+            {
+                _ = CaptureMapDiagnosticsAfterDelayAsync("first-render", TimeSpan.FromSeconds(2));
+                _ = CaptureMapDiagnosticsAfterDelayAsync("settled-30s", TimeSpan.FromSeconds(30));
+            }
         }
     }
 
