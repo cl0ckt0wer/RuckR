@@ -6,11 +6,11 @@ Date: 2026-05-18
 
 | Phase | Status | Notes |
 |---|---|---|
-| Phase 1: Stabilize Diagnostics Noise | Complete locally | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; local build passed. Deploy/Jaeger verification pending. |
-| Phase 2: Research Widget Replacement | Complete locally | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
-| Phase 3: Reduce Graphic Sync Plumbing | Complete locally | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. Local build passed. |
-| Phase 4: Reduce Selection Adapter | Complete locally | GeoBlazor selection path remains `MapView.HitTest` + `GraphicHit`; extracted RuckR graphic attribute parsing into `MapGraphicSelection`. Local build passed. |
-| Phase 5: Decide Popup Policy | Complete locally | RuckR overlays are canonical for marker details/actions; removed GeoBlazor popup templates from marker graphics to avoid duplicate mobile detail surfaces. Local build passed. |
+| Phase 1: Stabilize Diagnostics Noise | Deployed | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; release `20260518074821` health passed. Pixel/Jaeger behavior verification pending. |
+| Phase 2: Research Widget Replacement | Deployed | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
+| Phase 3: Reduce Graphic Sync Plumbing | Deployed | Extracted `MapGraphicFactory` and `GraphicsLayerSync`; `GameMap` now owns map decisions while helpers own graphic construction and layer replacement mechanics. |
+| Phase 4: Reduce Selection Adapter | Deployed | GeoBlazor selection path remains `MapView.HitTest` + `GraphicHit`; extracted RuckR graphic attribute parsing into `MapGraphicSelection`. |
+| Phase 5: Decide Popup Policy | Deployed | RuckR overlays are canonical for marker details/actions; removed GeoBlazor popup templates from marker graphics to avoid duplicate mobile detail surfaces. |
 
 ## Goal
 
