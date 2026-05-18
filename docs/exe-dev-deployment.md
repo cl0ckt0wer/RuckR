@@ -11,6 +11,7 @@
 | Service | `ruckr.service` |
 | Listen | `http://127.0.0.1:5000` |
 | Health | `https://ruckr.exe.xyz/api/telemetry/health` |
+| Jaeger | SSH tunnel only; public `/jaeger` is disabled |
 
 ## Canonical Command
 
@@ -46,3 +47,28 @@ The PowerShell entrypoint `scripts/publish-exe-dev.ps1` is a thin wrapper around
 - Production secrets must not be committed. Use user-secrets locally and environment files on the VM.
 - Logs: `ssh ruckr.exe.xyz 'journalctl -u ruckr.service -f'`
 - SQL shell: `ssh ruckr.exe.xyz 'docker exec -it ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C'`
+
+## Jaeger Access
+
+Jaeger runs on the VM with its UI and OTLP ports bound to `127.0.0.1`. The public app route `/jaeger` is disabled by default through `Observability:EnableJaegerProxy=false`, so `https://ruckr.exe.xyz/jaeger/*` should return `404`.
+
+Use an SSH tunnel when trace inspection is needed:
+
+```bash
+ssh -L 16686:127.0.0.1:16686 ruckr.exe.xyz
+```
+
+Then open:
+
+```text
+http://localhost:16686/jaeger
+```
+
+Useful checks:
+
+```bash
+curl -I https://ruckr.exe.xyz/jaeger/api/services
+ssh ruckr.exe.xyz 'curl -I http://127.0.0.1:16686/jaeger/api/services'
+```
+
+Expected result: the public URL is blocked, while the VM-local URL is reachable.
