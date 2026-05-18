@@ -1566,11 +1566,11 @@
     {
         if (_isDisposing || _playerLocationLayer is null) return;
 
-        var graphic = MapGraphicFactory.CreatePlayerLocationGraphic(position);
+        var graphics = MapGraphicFactory.CreatePlayerLocationGraphics(position);
 
         try
         {
-            await GraphicsLayerSync.ReplaceOneAsync(_playerLocationLayer, graphic);
+            await GraphicsLayerSync.ReplaceAllAsync(_playerLocationLayer, graphics);
         }
         catch (Exception ex)
         {

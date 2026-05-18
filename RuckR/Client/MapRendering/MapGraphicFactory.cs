@@ -12,6 +12,8 @@ namespace RuckR.Client.MapRendering;
 /// </summary>
 public static class MapGraphicFactory
 {
+    private const double EarthRadiusMeters = 6378137;
+
     /// <summary>Create a pitch marker graphic.</summary>
     /// <param name="pitch">Pitch model to render.</param>
     /// <param name="pitchTypeDisplayName">Display label for the pitch type.</param>
@@ -85,6 +87,61 @@ public static class MapGraphicFactory
                 ["accuracyMeters"] = position.Accuracy
             }));
 
+    /// <summary>Create the current player location accuracy circle and marker graphics.</summary>
+    /// <param name="position">Latest GPS position.</param>
+    /// <returns>Accuracy circle followed by the player-location marker graphic.</returns>
+    public static IReadOnlyList<Graphic> CreatePlayerLocationGraphics(GeoPosition position) =>
+    [
+        CreatePlayerAccuracyGraphic(position),
+        CreatePlayerLocationGraphic(position)
+    ];
+
+    private static Graphic CreatePlayerAccuracyGraphic(GeoPosition position)
+    {
+        var accuracyMeters = Math.Max(position.Accuracy ?? 0, 5);
+        var center = new Point(longitude: position.Longitude, latitude: position.Latitude);
+
+        return new Graphic(
+            geometry: new Polygon(
+                rings: [CreateGeodesicRing(position.Latitude, position.Longitude, accuracyMeters)],
+                spatialReference: SpatialReference.Wgs84,
+                centroid: center),
+            symbol: GetPlayerAccuracySymbol(),
+            attributes: new AttributesDictionary(new Dictionary<string, object?>
+            {
+                ["_ruckrType"] = "player-location-accuracy",
+                ["accuracyMeters"] = position.Accuracy
+            }));
+    }
+
+    private static MapPath CreateGeodesicRing(double latitude, double longitude, double radiusMeters)
+    {
+        const int segments = 80;
+        var centerLatitude = DegreesToRadians(latitude);
+        var centerLongitude = DegreesToRadians(longitude);
+        var angularDistance = radiusMeters / EarthRadiusMeters;
+        var ring = new MapPoint[segments + 1];
+
+        for (var i = 0; i <= segments; i++)
+        {
+            var bearing = 2 * Math.PI * i / segments;
+            var latitudeRadians = Math.Asin(
+                Math.Sin(centerLatitude) * Math.Cos(angularDistance)
+                + Math.Cos(centerLatitude) * Math.Sin(angularDistance) * Math.Cos(bearing));
+            var longitudeRadians = centerLongitude + Math.Atan2(
+                Math.Sin(bearing) * Math.Sin(angularDistance) * Math.Cos(centerLatitude),
+                Math.Cos(angularDistance) - Math.Sin(centerLatitude) * Math.Sin(latitudeRadians));
+
+            ring[i] = new MapPoint([RadiansToDegrees(longitudeRadians), RadiansToDegrees(latitudeRadians)]);
+        }
+
+        return new MapPath(ring);
+    }
+
+    private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180;
+
+    private static double RadiansToDegrees(double radians) => radians * 180 / Math.PI;
+
     private static MapColor EncounterRarityColor(string rarity) => rarity switch
     {
         "Uncommon" => new MapColor(47, 133, 90),
@@ -143,4 +200,10 @@ public static class MapGraphicFactory
             color: new MapColor("#2563EB"),
             size: new Dimension(16),
             style: SimpleMarkerSymbolStyle.Circle);
+
+    private static SimpleFillSymbol GetPlayerAccuracySymbol() =>
+        new(
+            outline: new Outline(color: new MapColor(new double[] { 37, 99, 235, 0.45 }), width: new Dimension(1.5)),
+            color: new MapColor(new double[] { 37, 99, 235, 0.16 }),
+            style: SimpleFillSymbolStyle.Solid);
 }

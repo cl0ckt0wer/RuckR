@@ -45,6 +45,19 @@ public static class GraphicsLayerSync
         await layer.Add(graphic);
     }
 
+    /// <summary>Replace a layer with an ordered set of graphics.</summary>
+    /// <param name="layer">Layer to replace.</param>
+    /// <param name="graphics">Graphics to add after clearing the layer.</param>
+    /// <returns>A task that completes after the layer is updated.</returns>
+    public static async Task ReplaceAllAsync(GraphicsLayer layer, IReadOnlyList<Graphic> graphics)
+    {
+        await layer.Clear();
+        if (graphics.Count > 0)
+        {
+            await layer.AddMany(graphics.ToArray());
+        }
+    }
+
     /// <summary>Replace several layers with keyed graphics grouped by an app value.</summary>
     /// <typeparam name="TKey">Graphic lookup key type.</typeparam>
     /// <typeparam name="TGroup">Layer grouping value type.</typeparam>
