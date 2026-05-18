@@ -70,9 +70,7 @@
                 }
                 @if (_enableGameGraphics)
                 {
-                    <GraphicsLayer @ref="_stadiumPitchLayer" Title="Stadiums" />
-                    <GraphicsLayer @ref="_standardPitchLayer" Title="Pitches" />
-                    <GraphicsLayer @ref="_trainingPitchLayer" Title="Training grounds" />
+                    <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
                     <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
                     <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
                     <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
@@ -837,9 +835,7 @@
         bool EnableAutoGpsWatch);
 
     private MapView? _mapView;
-    private GraphicsLayer? _stadiumPitchLayer;
-    private GraphicsLayer? _standardPitchLayer;
-    private GraphicsLayer? _trainingPitchLayer;
+    private GraphicsLayer? _pitchLayer;
     private GraphicsLayer? _encounterLayer;
     private GraphicsLayer? _candidatePlaceLayer;
     private GraphicsLayer? _playerLocationLayer;
@@ -1316,9 +1312,7 @@
 
     private async Task UpdatePitchGraphicsAsync(List<PitchModel> pitches)
     {
-        if (_isDisposing || _stadiumPitchLayer is null || _standardPitchLayer is null || _trainingPitchLayer is null) return;
-
-        var pitchTypesById = pitches.ToDictionary(p => p.Id, p => p.Type);
+        if (_isDisposing || _pitchLayer is null) return;
 
         var graphics = new List<KeyValuePair<int, Graphic>>(pitches.Count);
         foreach (var pitch in pitches)
@@ -1333,16 +1327,7 @@
 
         try
         {
-            await GraphicsLayerSync.ReplaceGroupedAsync(
-                new Dictionary<PitchType, GraphicsLayer>
-                {
-                    [PitchType.Stadium] = _stadiumPitchLayer,
-                    [PitchType.Standard] = _standardPitchLayer,
-                    [PitchType.Training] = _trainingPitchLayer
-                },
-                _pitchGraphics,
-                graphics,
-                item => pitchTypesById[item.Key]);
+            await GraphicsLayerSync.ReplaceManyAsync(_pitchLayer, _pitchGraphics, graphics);
         }
         catch (Exception ex)
         {
@@ -1360,19 +1345,9 @@
     {
         if (_isDisposing) return;
 
-        if (_stadiumPitchLayer is not null)
+        if (_pitchLayer is not null)
         {
-            await _stadiumPitchLayer.Clear();
-        }
-
-        if (_standardPitchLayer is not null)
-        {
-            await _standardPitchLayer.Clear();
-        }
-
-        if (_trainingPitchLayer is not null)
-        {
-            await _trainingPitchLayer.Clear();
+            await _pitchLayer.Clear();
         }
     }
 
