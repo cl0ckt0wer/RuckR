@@ -250,22 +250,21 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             if (path.StartsWith("/appsettings") && path.EndsWith(".json"))
             {
                 var filePath = ResolveClientAppSettingsPath(_kestrelApp.Environment, path);
-                if (filePath is not null)
-                {
-                    var json = await System.IO.File.ReadAllTextAsync(filePath);
-                    var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
+                var json = filePath is not null
+                    ? await System.IO.File.ReadAllTextAsync(filePath)
+                    : "{}";
+                var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
 
-                    root["ArcGISApiKey"] = TestArcGisApiKey;
-                    root["ArcGISPortalItemId"] = TestArcGisPortalItemId;
+                root["ArcGISApiKey"] = TestArcGisApiKey;
+                root["ArcGISPortalItemId"] = TestArcGisPortalItemId;
 
-                    var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
-                    geoBlazor["LicenseKey"] = TestGeoBlazorLicenseKey;
-                    root["GeoBlazor"] = geoBlazor;
+                var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
+                geoBlazor["LicenseKey"] = TestGeoBlazorLicenseKey;
+                root["GeoBlazor"] = geoBlazor;
 
-                    context.Response.ContentType = "application/json; charset=utf-8";
-                    await context.Response.WriteAsync(root.ToJsonString());
-                    return;
-                }
+                context.Response.ContentType = "application/json; charset=utf-8";
+                await context.Response.WriteAsync(root.ToJsonString());
+                return;
             }
             await next();
         });
