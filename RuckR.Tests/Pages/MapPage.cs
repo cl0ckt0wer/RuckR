@@ -9,6 +9,21 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class MapPage : BasePage
 {
+    public const string GpsCenterButtonTestId = "gps-center-btn";
+    public const string NearestStadiumButtonTestId = "nearest-stadium-btn";
+    public const string NearestStandardButtonTestId = "nearest-standard-btn";
+    public const string NearestTrainingButtonTestId = "nearest-training-btn";
+    public const string CandidatePlacesToggleTestId = "candidate-places-toggle";
+
+    public static readonly string[] ShortcutButtonTestIds =
+    [
+        GpsCenterButtonTestId,
+        NearestStadiumButtonTestId,
+        NearestStandardButtonTestId,
+        NearestTrainingButtonTestId,
+        CandidatePlacesToggleTestId
+    ];
+
     /// <summary>
     /// Initializes a new instance of the <see cref="""MapPage"""/> class.
     /// </summary>
@@ -249,6 +264,119 @@ public class MapPage : BasePage
             throw new InvalidOperationException("GeoBlazor map surface did not have a bounding box.");
 
         await Page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
+    }
+
+    // ── Map shortcut controls ─────────────────────────────────────────
+
+    /// <summary>Wait for every RuckR map shortcut button to become visible.</summary>
+    public async Task WaitForShortcutButtonsAsync(int timeoutMs = 10_000)
+    {
+        foreach (var testId in ShortcutButtonTestIds)
+        {
+            await Page.WaitForSelectorAsync($"[data-testid='{testId}']", new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = timeoutMs
+            });
+        }
+    }
+
+    /// <summary>Return the shortcut button's rendered size.</summary>
+    public async Task<(float Width, float Height)> GetShortcutButtonSizeAsync(string testId)
+    {
+        var box = await Page.GetByTestId(testId).BoundingBoxAsync();
+        if (box is null)
+            throw new InvalidOperationException($"Shortcut button '{testId}' did not have a bounding box.");
+
+        return ((float)box.Width, (float)box.Height);
+    }
+
+    /// <summary>Return a computed CSS property for a shortcut button.</summary>
+    public async Task<string> GetShortcutButtonCssAsync(string testId, string propertyName)
+        => await Page.GetByTestId(testId).EvaluateAsync<string>(
+            "(element, propertyName) => getComputedStyle(element).getPropertyValue(propertyName)",
+            propertyName);
+
+    /// <summary>Return a shortcut button attribute value.</summary>
+    public async Task<string?> GetShortcutButtonAttributeAsync(string testId, string attributeName)
+        => await Page.GetByTestId(testId).GetAttributeAsync(attributeName);
+
+    /// <summary>Check whether a shortcut button is enabled.</summary>
+    public async Task<bool> IsShortcutButtonEnabledAsync(string testId)
+        => await Page.GetByTestId(testId).IsEnabledAsync();
+
+    /// <summary>Click a shortcut button.</summary>
+    public async Task ClickShortcutButtonAsync(string testId)
+    {
+        await Page.GetByTestId(testId).ClickAsync(new LocatorClickOptions { Force = true });
+    }
+
+    /// <summary>Wait until a shortcut button is enabled.</summary>
+    public async Task WaitForShortcutButtonEnabledAsync(string testId, int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"testId => {
+                const button = document.querySelector(`[data-testid='${testId}']`);
+                return !!button && !button.disabled;
+            }",
+            testId,
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
+    /// <summary>Return whether the GeoBlazor candidate places layer is visible.</summary>
+    public async Task<bool> IsCandidatePlacesLayerVisibleAsync()
+        => await Page.EvaluateAsync<bool>(
+            @"() => {
+                const view = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view;
+                const layers = view?.map?.allLayers?.items ?? view?.map?.layers?.items ?? [];
+                const layer = layers.find(l => l.title === 'Candidate places');
+                return !!layer?.visible;
+            }");
+
+    /// <summary>Set the ArcGIS view center directly for deterministic button tests.</summary>
+    public async Task SetArcGisViewCenterAsync(double latitude, double longitude, int zoom)
+    {
+        await Page.EvaluateAsync(
+            @"async ({ latitude, longitude, zoom }) => {
+                const view = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view;
+                if (!view) throw new Error('ArcGIS view is not available.');
+                await view.goTo({ center: [longitude, latitude], zoom }, { animate: false });
+            }",
+            new { latitude, longitude, zoom });
+    }
+
+    /// <summary>Return the current ArcGIS view center as latitude/longitude.</summary>
+    public async Task<(double Latitude, double Longitude)> GetArcGisViewCenterAsync()
+    {
+        var values = await Page.EvaluateAsync<double[]>(
+            @"() => {
+                const center = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view?.center;
+                if (!center) return [];
+                return [center.latitude, center.longitude];
+            }");
+
+        if (values.Length < 2)
+            throw new InvalidOperationException("ArcGIS view center is not available.");
+
+        return (values[0], values[1]);
+    }
+
+    /// <summary>Wait until the ArcGIS view center is near a target coordinate.</summary>
+    public async Task WaitForArcGisViewCenterNearAsync(
+        double latitude,
+        double longitude,
+        double toleranceDegrees = 0.001,
+        int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"({ latitude, longitude, toleranceDegrees }) => {
+                const center = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view?.center;
+                return !!center
+                    && Math.abs(center.latitude - latitude) <= toleranceDegrees
+                    && Math.abs(center.longitude - longitude) <= toleranceDegrees;
+            }",
+            new { latitude, longitude, toleranceDegrees },
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
     }
 
     // ── Pitch detail overlay ──────────────────────────────────────────

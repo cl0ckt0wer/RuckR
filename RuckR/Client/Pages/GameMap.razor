@@ -2336,7 +2336,13 @@
             return;
         }
 
-        await _mapView.SetCenter(new Point(longitude: longitude, latitude: latitude));
+        const double navigationExtentPaddingDegrees = 0.001;
+        await _mapView.GoTo(new Extent(
+            xmax: longitude + navigationExtentPaddingDegrees,
+            xmin: longitude - navigationExtentPaddingDegrees,
+            ymax: latitude + navigationExtentPaddingDegrees,
+            ymin: latitude - navigationExtentPaddingDegrees,
+            spatialReference: SpatialReference.Wgs84));
         await _mapView.SetZoom(zoom);
     }
 

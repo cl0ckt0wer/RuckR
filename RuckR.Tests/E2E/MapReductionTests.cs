@@ -10,6 +10,9 @@ namespace RuckR.Tests.E2E;
 [Collection(nameof(TestCollection))]
 public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
+    private const double TestGpsLatitude = 51.5074;
+    private const double TestGpsLongitude = -0.1278;
+
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
     private readonly List<IConsoleMessage> _consoleErrors = [];
@@ -48,8 +51,8 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         _context = await _playwright.NewContextAsync(
             deviceName: "Pixel 5",
             grantGeolocation: true,
-            latitude: 51.5074,
-            longitude: -0.1278);
+            latitude: TestGpsLatitude,
+            longitude: TestGpsLongitude);
         _page = await _context.NewPageAsync();
         _page.Console += OnConsole;
         _page.PageError += OnPageError;
@@ -107,6 +110,105 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         Assert.True(await mapPage.IsPitchOverlayVisibleAsync(), "Pitch marker tap should open the RuckR pitch overlay.");
         Assert.False(await mapPage.IsNativePopupVisibleAsync(), "Pitch marker tap should not also show the ArcGIS native popup.");
+        AssertNoUnexpectedBrowserErrors();
+    }
+
+    /// <summary>
+    /// Verifies the RuckR shortcut controls render as compact ArcGIS-style buttons on mobile.
+    /// </summary>
+    [Fact]
+    public async Task MapShortcutButtons_OnMobile_RenderAsCompactMapControls()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+
+        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
+
+        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
+        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
+        await mapPage.WaitForShortcutButtonsAsync();
+
+        var expectedLabels = new Dictionary<string, string>
+        {
+            [MapPage.GpsCenterButtonTestId] = "Return to GPS location",
+            [MapPage.NearestStadiumButtonTestId] = "Nearest stadium",
+            [MapPage.NearestStandardButtonTestId] = "Nearest pitch",
+            [MapPage.NearestTrainingButtonTestId] = "Nearest training ground",
+            [MapPage.CandidatePlacesToggleTestId] = "Hide candidate places"
+        };
+
+        foreach (var testId in MapPage.ShortcutButtonTestIds)
+        {
+            var (width, height) = await mapPage.GetShortcutButtonSizeAsync(testId);
+            var backgroundColor = await mapPage.GetShortcutButtonCssAsync(testId, "background-color");
+            var ariaLabel = await mapPage.GetShortcutButtonAttributeAsync(testId, "aria-label");
+            var title = await mapPage.GetShortcutButtonAttributeAsync(testId, "title");
+
+            Assert.InRange(width, 30, 36);
+            Assert.InRange(height, 30, 36);
+            Assert.Contains("255, 255, 255", backgroundColor);
+            Assert.Equal(expectedLabels[testId], ariaLabel);
+            Assert.Equal(expectedLabels[testId], title);
+        }
+
+        AssertNoUnexpectedBrowserErrors();
+    }
+
+    /// <summary>
+    /// Verifies the candidate place shortcut updates both pressed state and layer visibility.
+    /// </summary>
+    [Fact]
+    public async Task CandidatePlacesButton_OnMobile_TogglesPressedStateAndLayerVisibility()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+
+        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
+
+        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
+        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
+        await mapPage.WaitForShortcutButtonsAsync();
+
+        Assert.Equal("true", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should start visible.");
+
+        await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
+
+        Assert.Equal("false", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        Assert.False(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should hide after the shortcut is clicked.");
+
+        await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
+
+        Assert.Equal("true", await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
+        Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should show after the shortcut is clicked again.");
+        AssertNoUnexpectedBrowserErrors();
+    }
+
+    /// <summary>
+    /// Verifies the GPS shortcut recenters the ArcGIS view to the last known browser geolocation.
+    /// </summary>
+    [Fact]
+    public async Task GpsCenterButton_OnMobile_RecentersMapToLastKnownGpsLocation()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+
+        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
+
+        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
+        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
+        await mapPage.WaitForShortcutButtonsAsync();
+        await mapPage.WaitForShortcutButtonEnabledAsync(MapPage.GpsCenterButtonTestId, 20_000);
+
+        await mapPage.SetArcGisViewCenterAsync(40.7128, -74.0060, 4);
+        var displacedCenter = await mapPage.GetArcGisViewCenterAsync();
+
+        Assert.True(Math.Abs(displacedCenter.Latitude - TestGpsLatitude) > 1,
+            "The map should be displaced from the mocked GPS location before pressing the GPS shortcut.");
+
+        await mapPage.ClickShortcutButtonAsync(MapPage.GpsCenterButtonTestId);
+        await mapPage.WaitForArcGisViewCenterNearAsync(TestGpsLatitude, TestGpsLongitude, toleranceDegrees: 0.01);
+
+        var gpsCenter = await mapPage.GetArcGisViewCenterAsync();
+        Assert.InRange(Math.Abs(gpsCenter.Latitude - TestGpsLatitude), 0, 0.01);
+        Assert.InRange(Math.Abs(gpsCenter.Longitude - TestGpsLongitude), 0, 0.01);
         AssertNoUnexpectedBrowserErrors();
     }
 
