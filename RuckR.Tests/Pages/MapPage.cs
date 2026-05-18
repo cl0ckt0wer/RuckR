@@ -117,7 +117,9 @@ public class MapPage : BasePage
     /// <summary>Return the rendered map container dimensions.</summary>
     public async Task<(float Width, float Height)> GetMapContainerSizeAsync()
     {
-        var box = await Page.GetByTestId("map-container").BoundingBoxAsync();
+        var box = await Page.GetByTestId("map-container").BoundingBoxAsync()
+            ?? await Page.Locator("[data-testid='map-container'] canvas").First.BoundingBoxAsync()
+            ?? await Page.Locator("[data-testid='map-container'] arcgis-map").First.BoundingBoxAsync();
         if (box is null)
             throw new InvalidOperationException("Map container did not have a bounding box.");
 
