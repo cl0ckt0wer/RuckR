@@ -23,11 +23,6 @@ param(
 $ErrorActionPreference = "Stop"
 $scriptPath = Join-Path $PSScriptRoot "publish-exe-dev.sh"
 
-$bash = Get-Command bash -ErrorAction SilentlyContinue
-if (-not $bash) {
-    throw "bash is required. Run scripts/publish-exe-dev.sh from Git Bash/WSL, or install bash on PATH."
-}
-
 $argsForBash = @()
 if ($AppOnly) { $argsForBash += "--app-only" }
 if ($NoRestore) { $argsForBash += "--no-restore" }
@@ -36,6 +31,40 @@ if ($Yes) { $argsForBash += "--yes" }
 if (-not [string]::IsNullOrWhiteSpace($Ref)) {
     $argsForBash += "--ref"
     $argsForBash += $Ref
+}
+
+function Quote-BashArg {
+    param([string]$Value)
+
+    return "'" + $Value.Replace("'", "'\''") + "'"
+}
+
+$wsl = Get-Command wsl -ErrorAction SilentlyContinue
+if ($wsl) {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $wslRepoRoot = (& $wsl.Source wslpath -a $repoRoot).Trim()
+    if ([string]::IsNullOrWhiteSpace($wslRepoRoot)) {
+        throw "Unable to resolve WSL path for $repoRoot."
+    }
+
+    $quotedArgs = ($argsForBash | ForEach-Object { Quote-BashArg $_ }) -join " "
+    $command = @"
+cd $(Quote-BashArg $wslRepoRoot) &&
+tr -d '\r' < scripts/publish-exe-dev.sh > scripts/.publish-exe-dev.tmp.sh &&
+chmod +x scripts/.publish-exe-dev.tmp.sh
+./scripts/.publish-exe-dev.tmp.sh $quotedArgs
+code=`$?
+rm -f scripts/.publish-exe-dev.tmp.sh
+exit `$code
+"@
+
+    & $wsl.Source bash -lc $command
+    exit $LASTEXITCODE
+}
+
+$bash = Get-Command bash -ErrorAction SilentlyContinue
+if (-not $bash) {
+    throw "bash or WSL is required. Run scripts/publish-exe-dev.sh from Git Bash/WSL, or install bash on PATH."
 }
 
 & $bash.Source $scriptPath @argsForBash
