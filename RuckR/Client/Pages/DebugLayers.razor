@@ -57,7 +57,7 @@
                     <tr>
                         <td><code>arcGisWidgets</code></td>
                         <td><code>true</code>, <code>false</code></td>
-                        <td>Shows or hides ArcGIS widgets such as home, compass, locate, and scale bar.</td>
+                        <td>Shows or hides GeoBlazor ArcGIS widget wrappers. These are disabled by default because ArcGIS now recommends web components for those controls.</td>
                     </tr>
                 </tbody>
             </table>
@@ -74,7 +74,7 @@
         new("No game graphics", "/map?mapGraphics=false", "Keeps the styled basemap and removes RuckR layers."),
         new("Basemap only", "/map?basemap=styled&mapGraphics=false&autoGps=false", "Closest styled GeoBlazor surface without game layers or GPS."),
         new("Empty map shell", "/map?basemap=empty&mapGraphics=false&autoGps=false", "Removes the basemap, game layers, and automatic GPS."),
-        new("Widgets enabled", "/map?arcGisWidgets=true", "Turns on ArcGIS widgets that are disabled by default."),
+        new("Widgets enabled", "/map?arcGisWidgets=true", "Turns on deprecated ArcGIS widget wrappers for compatibility testing."),
         new("Full debug", "/map?basemap=styled&mapGraphics=true&autoGps=true&mapDiagnostics=true&arcGisWidgets=true", "Forces every optional GameMap feature on."),
         new("Quiet render", "/map?basemap=styled&mapGraphics=false&autoGps=false&mapDiagnostics=false", "Checks rendering with diagnostics and game features disabled.")
     ];

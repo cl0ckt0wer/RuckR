@@ -45,7 +45,7 @@ The full game map (backed up as `Map.full.razor.bak`) has all game features but 
 
 ### P1 — Should Have
 
-9. **Locate-me button** — Centers and zooms to player position. Already provided by `LocateWidget`.
+9. **Locate-me button** — Centers and zooms to player position. Prefer RuckR's own GPS state and center controls for now; the GeoBlazor `LocateWidget` path is disabled by default because ArcGIS now recommends web components instead of the legacy widget classes.
 
 10. **Proximity-aware marker styling** — Pitches within 100m get a glow/pulse animation to indicate they are "discoverable."
 
@@ -80,10 +80,10 @@ GameMap.razor
 │   ├── GraphicsLayer "Encounters" (only when Map:EnableGameGraphics=true)
 │   ├── GraphicsLayer "Candidate places" (only when Map:EnableGameGraphics=true)
 │   ├── GraphicsLayer "Player location" (only when Map:EnableGameGraphics=true)
-│   ├── HomeWidget (only when Map:EnableArcGisWidgets=true)
-│   ├── CompassWidget (only when Map:EnableArcGisWidgets=true)
-│   ├── LocateWidget (only when Map:EnableArcGisWidgets=true)
-│   └── ScaleBarWidget (only when Map:EnableArcGisWidgets=true)
+│   ├── HomeWidget (compatibility/debug only when Map:EnableArcGisWidgets=true)
+│   ├── CompassWidget (compatibility/debug only when Map:EnableArcGisWidgets=true)
+│   ├── LocateWidget (compatibility/debug only when Map:EnableArcGisWidgets=true)
+│   └── ScaleBarWidget (compatibility/debug only when Map:EnableArcGisWidgets=true)
 ├── Pitch selection overlay (bottom sheet)
 ├── Encounter selection overlay (bottom sheet)
 ├── Game progress chip
@@ -96,7 +96,7 @@ GameMap.razor
 - **Fluxor** `MapState`: visible pitches, visible encounters, selected pitch ID, selected encounter ID, map readiness
 - **Fluxor** `LocationState`: user lat/lng, accuracy, GPS status, error message
 - **Page state** (local to GameMap.razor): loading flag, error flag, GPS disabled flag, onboarding flag, capture eligibility
-- **Reduction flags**: `Map:BasemapMode`, `Map:EnableArcGisWidgets`, `Map:EnableGameGraphics`, `Map:EnableMapDiagnostics`, and `Map:EnableAutoGpsWatch`. These can also be overridden per URL with `basemap`, `arcGisWidgets`, `mapGraphics`, `mapDiagnostics`, and `autoGps` query parameters.
+- **Reduction flags**: `Map:BasemapMode`, `Map:EnableArcGisWidgets`, `Map:EnableGameGraphics`, `Map:EnableMapDiagnostics`, and `Map:EnableAutoGpsWatch`. These can also be overridden per URL with `basemap`, `arcGisWidgets`, `mapGraphics`, `mapDiagnostics`, and `autoGps` query parameters. `Map:EnableArcGisWidgets` stays `false` by default; the current GeoBlazor widget wrappers are retained only for compatibility/debug testing until GeoBlazor exposes ArcGIS web component equivalents.
 - **GeoBlazor ownership**: pitch graphics are split into pitch-type `GraphicsLayer`s, graphics define `PopupTemplate`s for map-native marker summaries, and click handling delegates hit-test parsing to a small graphic-selection adapter.
 
 ### Data Flow

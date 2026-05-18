@@ -7,7 +7,7 @@ Date: 2026-05-18
 | Phase | Status | Notes |
 |---|---|---|
 | Phase 1: Stabilize Diagnostics Noise | Complete locally | Added cancellation/disposal handling for delayed diagnostics in `GameMap` and `DebugMap`; local build passed. Deploy/Jaeger verification pending. |
-| Phase 2: Research Widget Replacement | Pending | Not started. |
+| Phase 2: Research Widget Replacement | Complete locally | GeoBlazor Core 4.4.4 exposes legacy widget wrappers, not direct ArcGIS web-component replacements. Kept widgets disabled by default and documented as compatibility/debug only. |
 | Phase 3: Reduce Graphic Sync Plumbing | Pending | Not started. |
 | Phase 4: Reduce Selection Adapter | Pending | Not started. |
 | Phase 5: Decide Popup Policy | Pending | Not started. |
@@ -147,6 +147,8 @@ Verification:
 - `dotnet build RuckR/Server/RuckR.Server.csproj --no-restore`.
 
 ### Phase 2: Research Widget Replacement
+
+Status: complete locally. GeoBlazor Core 4.4.4 includes `HomeWidget`, `CompassWidget`, `LocateWidget`, and `ScaleBarWidget`, plus view models that reference the newer ArcGIS web components in documentation, but it does not expose direct Blazor components for `<arcgis-home>`, `<arcgis-locate>`, `<arcgis-scale-bar>`, or `<arcgis-compass>`. The current project keeps `Map:EnableArcGisWidgets=false` by default and treats `arcGisWidgets=true` as a compatibility/debug path only.
 
 Scope:
 
