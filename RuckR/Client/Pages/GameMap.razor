@@ -751,6 +751,7 @@
 
     private const double BrowseRadiusMeters = 5000.0;
     private const double MinPitchRefreshDistanceMeters = 50.0;
+    private const double MapTapSelectionRadiusMeters = 100.0;
     private const int MaxGpsNoticeRetryAttempts = 5;
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
@@ -1391,6 +1392,13 @@
                 }
             }
 
+            if (clickEvent.MapPoint.Latitude.HasValue
+                && clickEvent.MapPoint.Longitude.HasValue
+                && TryApplyNearestMapSelection(clickEvent.MapPoint.Latitude.Value, clickEvent.MapPoint.Longitude.Value))
+            {
+                return;
+            }
+
             Dispatcher.Dispatch(new ClearSelectionAction());
             _statusMessage = $"Clicked: {clickEvent.MapPoint.Latitude:F5}, {clickEvent.MapPoint.Longitude:F5}";
             StateHasChanged();
@@ -1419,6 +1427,64 @@
             _ => false
         };
     }
+
+    private bool TryApplyNearestMapSelection(double latitude, double longitude)
+    {
+        var clickedPosition = new GeoPosition { Latitude = latitude, Longitude = longitude };
+
+        var nearestEncounter = MapState.Value.VisibleEncounters
+            .Select(encounter => new
+            {
+                Encounter = encounter,
+                DistanceMeters = DistanceMeters(clickedPosition, encounter.Latitude, encounter.Longitude)
+            })
+            .Where(item => item.DistanceMeters <= MapTapSelectionRadiusMeters)
+            .OrderBy(item => item.DistanceMeters)
+            .FirstOrDefault();
+        if (nearestEncounter is not null)
+        {
+            return TrySelectEncounterGraphic(nearestEncounter.Encounter.EncounterId);
+        }
+
+        var nearestCandidate = _candidatePlaces
+            .Select(candidate => new
+            {
+                Candidate = candidate,
+                DistanceMeters = DistanceMeters(clickedPosition, candidate.Latitude, candidate.Longitude)
+            })
+            .Where(item => item.DistanceMeters <= MapTapSelectionRadiusMeters)
+            .OrderBy(item => item.DistanceMeters)
+            .FirstOrDefault();
+        if (nearestCandidate is not null)
+        {
+            return TrySelectCandidatePlaceGraphic(MapSelection.CandidatePlace(
+                nearestCandidate.Candidate.PlaceId,
+                nearestCandidate.Candidate.Name,
+                nearestCandidate.Candidate.RecommendedPitchType,
+                nearestCandidate.Candidate.Confidence.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                nearestCandidate.Candidate.MatchReason,
+                nearestCandidate.Candidate.CategoryLabel));
+        }
+
+        var nearestPitch = MapState.Value.VisiblePitches
+            .Select(pitch => new
+            {
+                Pitch = pitch,
+                DistanceMeters = DistanceMeters(clickedPosition, pitch.Latitude, pitch.Longitude)
+            })
+            .Where(item => item.DistanceMeters <= MapTapSelectionRadiusMeters)
+            .OrderBy(item => item.DistanceMeters)
+            .FirstOrDefault();
+        if (nearestPitch is not null)
+        {
+            return TrySelectPitchGraphic(nearestPitch.Pitch.Id);
+        }
+
+        return false;
+    }
+
+    private static double DistanceMeters(GeoPosition origin, double latitude, double longitude) =>
+        GeoPosition.HaversineDistance(origin, new GeoPosition { Latitude = latitude, Longitude = longitude });
 
     private bool TrySelectPitchGraphic(int? pitchId)
     {

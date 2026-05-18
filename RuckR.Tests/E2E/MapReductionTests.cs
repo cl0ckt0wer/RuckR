@@ -94,7 +94,7 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     /// <summary>
     /// Verifies a pitch marker tap opens the RuckR overlay without also showing an ArcGIS native popup.
     /// </summary>
-    [Fact(Skip = "Pending GeoBlazor marker hit-test repair after removing custom shortcut preselection.")]
+    [Fact]
     public async Task PitchMarkerTap_OnMobile_OpensRuckROverlayWithoutNativePopup()
     {
         var mapPage = new MapPage(_page, _baseUrl);
@@ -126,7 +126,25 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
 
         Assert.True(await mapPage.WaitForNativeWidgetsAsync(20_000), "ArcGIS widget controls should render by default.");
+        Assert.True(await mapPage.WaitForNativeLegendAsync(20_000), "ArcGIS legend widget should render when native widgets are enabled.");
         Assert.False(await mapPage.HasCustomShortcutControlsAsync(), "RuckR custom map shortcut overlay should not render.");
+
+        AssertNoUnexpectedBrowserErrors();
+    }
+
+    /// <summary>
+    /// Verifies mocked GPS produces the player location dot and accuracy circle in the player layer.
+    /// </summary>
+    [Fact]
+    public async Task PlayerLocationLayer_OnMobile_RendersGpsDotAndAccuracyCircle()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+
+        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
+
+        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
+        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
+        await mapPage.WaitForLayerGraphicCountAsync("Player location", 2, 20_000);
 
         AssertNoUnexpectedBrowserErrors();
     }

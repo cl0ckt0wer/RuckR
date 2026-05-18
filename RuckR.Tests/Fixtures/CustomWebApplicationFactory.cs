@@ -50,7 +50,10 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             "GeoBlazor__LicenseKey",
             "GeoBlazor:LicenseKey",
             "GeoBlazor__RegistrationKey",
-            "GeoBlazor:RegistrationKey") ?? "test-geoblazor-license-key-for-e2e";
+            "GeoBlazor:RegistrationKey",
+            "GEOBLAZOR_LICENSE_KEY",
+            "GEOBLAZOR_REGISTRATION_KEY",
+            "GEOBLAZOR_API") ?? "test-geoblazor-license-key-for-e2e";
 
     /// <summary>
     /// Initializes a new instance of the <see cref="""CustomWebApplicationFactory"""/> class.
@@ -260,6 +263,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
                 var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
                 geoBlazor["LicenseKey"] = TestGeoBlazorLicenseKey;
+                geoBlazor["RegistrationKey"] = TestGeoBlazorLicenseKey;
                 root["GeoBlazor"] = geoBlazor;
 
                 context.Response.ContentType = "application/json; charset=utf-8";

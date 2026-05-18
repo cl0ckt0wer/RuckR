@@ -226,6 +226,7 @@ public class MapPage : BasePage
     /// <summary>Click the first pitch graphic rendered in an app-owned GeoBlazor layer.</summary>
     public async Task ClickFirstPitchGraphicAsync(int timeoutMs = 15_000)
     {
+        await WaitForLayerGraphicCountAsync("Pitches", 1, timeoutMs);
         await SetArcGisViewCenterAsync(51.5074, -0.1278, 17);
         await Page.WaitForTimeoutAsync(1_000);
 
@@ -296,6 +297,51 @@ public class MapPage : BasePage
             await ScreenshotAsync("native-map-widgets-timeout");
             return false;
         }
+    }
+
+    /// <summary>Wait for the native ArcGIS legend widget to become visible.</summary>
+    public async Task<bool> WaitForNativeLegendAsync(int timeoutMs = 10_000)
+    {
+        try
+        {
+            await Page.WaitForFunctionAsync(
+                @"() => {
+                    const root = document.querySelector('[data-testid=""map-container""]');
+                    const legend = root?.querySelector('.esri-legend');
+                    const rect = legend?.getBoundingClientRect();
+                    const style = legend ? getComputedStyle(legend) : null;
+                    return !!legend
+                        && !!rect
+                        && style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && rect.width > 0
+                        && rect.height > 0;
+                }",
+                null,
+                new PageWaitForFunctionOptions { Timeout = timeoutMs });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            await ScreenshotAsync("native-map-legend-timeout");
+            return false;
+        }
+    }
+
+    /// <summary>Wait until an app-owned ArcGIS graphics layer has at least the requested graphics count.</summary>
+    public async Task WaitForLayerGraphicCountAsync(string layerTitle, int minimumCount, int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"({ layerTitle, minimumCount }) => {
+                const view = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view;
+                const layers = view?.map?.allLayers?.items ?? view?.map?.layers?.items ?? [];
+                const layer = layers.find(l => l.title === layerTitle);
+                const graphics = layer?.graphics;
+                const count = graphics?.length ?? graphics?.items?.length ?? 0;
+                return count >= minimumCount;
+            }",
+            new { layerTitle, minimumCount },
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
     }
 
     /// <summary>Return whether any removed RuckR shortcut controls remain in the DOM.</summary>
