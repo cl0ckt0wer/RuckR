@@ -59,6 +59,7 @@
                  Zoom="@_zoom"
                  OnClick="HandleMapClick"
                  OnViewInitialized="OnViewInitializedAsync"
+                 OnViewRendered="OnViewRenderedAsync"
                  ShowZoomWidget="true"
                  Style="height: calc(100dvh - 3.5rem); min-height: 480px; width: 100%;">
             <Map>
@@ -734,6 +735,8 @@
     private int _zoom = 13;
     private string? _statusMessage;
     private bool _viewReady;
+    private bool _viewRendered;
+    private bool _initialLayerSyncStarted;
     private bool _subscriptionsActive;
     private bool _initialCenterPerformed;
     private double _homeLatitude = 51.5074;
@@ -968,8 +971,31 @@
     private async Task OnViewInitializedAsync()
     {
         _viewReady = true;
-        Logger.LogInformation("MapView initialized, loading pitches near London");
+        Logger.LogInformation("MapView initialized");
         _ = CaptureMapDiagnosticsAfterDelayAsync("view-initialized", TimeSpan.FromSeconds(1));
+
+        await RefreshAuthenticationStateAsync();
+        await RefreshGameProgress();
+    }
+
+    private async Task OnViewRenderedAsync()
+    {
+        if (_isDisposing)
+        {
+            return;
+        }
+
+        _viewReady = true;
+        _viewRendered = true;
+
+        if (_initialLayerSyncStarted)
+        {
+            return;
+        }
+
+        _initialLayerSyncStarted = true;
+        Logger.LogInformation("MapView rendered, syncing initial graphics layers");
+        _ = CaptureMapDiagnosticsAfterDelayAsync("view-rendered", TimeSpan.FromSeconds(1));
 
         await RefreshAuthenticationStateAsync();
         if (_enableGameGraphics && _lastKnownPosition is not null)
@@ -980,7 +1006,6 @@
         {
             await LoadPitchMarkersAsync(_latitude, _longitude);
         }
-        await RefreshGameProgress();
     }
 
     private async Task CaptureMapDiagnosticsAfterDelayAsync(string reason, TimeSpan delay)
@@ -1119,7 +1144,7 @@
 
     private async Task LoadPitchMarkersAsync(double lat, double lng)
     {
-        if (_isDisposing || !_enableGameGraphics || !_viewReady || _mapView is null)
+        if (_isDisposing || !_enableGameGraphics || !_viewRendered || _mapView is null)
             return;
 
         try
