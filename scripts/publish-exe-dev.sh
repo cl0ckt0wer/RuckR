@@ -364,6 +364,40 @@ ln -sfn "\$release_dir" "$ABS_DEPLOY_DIR/current"
 SSHEOF
 ok "Built and linked current → releases/$RELEASE_ID"
 
+step "7a/9  Ensuring Playwright is available on VM"
+ssh "$SSH_HOST" "bash -se" <<'SSHEOF'
+set -euo pipefail
+repo='/home/exedev/ruckr/src'
+tests_project="$repo/RuckR.Tests/RuckR.Tests.csproj"
+
+if [ ! -f "$tests_project" ]; then
+  echo "Playwright setup skipped (RuckR.Tests project not found)"
+  exit 0
+fi
+
+if ! command -v pwsh >/dev/null 2>&1; then
+  echo "Installing PowerShell (required for playwright.ps1)..."
+  wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb
+  sudo dpkg -i /tmp/packages-microsoft-prod.deb >/dev/null
+  rm -f /tmp/packages-microsoft-prod.deb
+  sudo apt-get update -qq
+  sudo apt-get install -y powershell >/dev/null
+fi
+
+build_out="$repo/RuckR.Tests/bin/Release/net10.0"
+/usr/share/dotnet/dotnet build "$tests_project" -c Release -p:CI=true >/dev/null
+playwright_script="$build_out/playwright.ps1"
+
+if [ ! -f "$playwright_script" ]; then
+  echo "Playwright setup skipped (playwright.ps1 missing at $playwright_script)"
+  exit 0
+fi
+
+pwsh -NoProfile -NonInteractive -File "$playwright_script" install --with-deps chromium >/dev/null
+echo "Playwright Chromium installed on VM"
+SSHEOF
+ok "Playwright runtime prepared on VM"
+
 step "7b/9  Pruning old releases"
 ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases && current=\$(readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
 ok "Kept newest $RELEASES_TO_KEEP releases"
