@@ -205,6 +205,7 @@ Blazor WASM cold starts take 5-15 seconds for .NET runtime download and JIT comp
 - Blazor WASM has a cold-start penalty on first navigation. Tests within the same class reuse the `BrowserContext`, so the WASM runtime stays warm after the first navigation.
 - NetworkIdle waits can be slow. Consider reducing `WaitForLoadStateAsync` timeouts in performance-sensitive scenarios.
 - xUnit parallelization is disabled (`xunit.runner.json`: `parallelizeTestCollections=false`, `maxParallelThreads=1`) to avoid Blazor WASM memory contention and rate-limit state conflicts.
+- `MapReductionTests` tolerate the specific ArcGIS styled-basemap "Token Invalid" console error because VM E2E runs from a localhost Kestrel origin while production ArcGIS keys may be restricted to the public host. The tests still require the GeoBlazor view surface and RuckR overlays to render.
 
 ### E2E tests fail with "Connection refused"
 The `CustomWebApplicationFactory` starts the server automatically. If you see connection refused:

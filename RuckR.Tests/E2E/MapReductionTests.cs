@@ -23,7 +23,11 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         "AggregateException_ctor_DefaultMessage",
         "Arg_PlatformNotSupported",
         "401 (Unauthorized)",
-        "Failed to load resource"
+        "Failed to load resource",
+        // The deployment ArcGIS key can be referrer-restricted to the public host.
+        // E2E runs from a localhost Kestrel origin, so styled basemap auth may fail
+        // while the GeoBlazor view and RuckR overlay behavior are still testable.
+        "Token Invalid.: Failed to load basemap"
     };
 
     /// <summary>
