@@ -9,21 +9,6 @@ namespace RuckR.Tests.Pages;
 /// </summary>
 public class MapPage : BasePage
 {
-    public const string GpsCenterButtonTestId = "gps-center-btn";
-    public const string NearestStadiumButtonTestId = "nearest-stadium-btn";
-    public const string NearestStandardButtonTestId = "nearest-standard-btn";
-    public const string NearestTrainingButtonTestId = "nearest-training-btn";
-    public const string CandidatePlacesToggleTestId = "candidate-places-toggle";
-
-    public static readonly string[] ShortcutButtonTestIds =
-    [
-        GpsCenterButtonTestId,
-        NearestStadiumButtonTestId,
-        NearestStandardButtonTestId,
-        NearestTrainingButtonTestId,
-        CandidatePlacesToggleTestId
-    ];
-
     /// <summary>
     /// Initializes a new instance of the <see cref="""MapPage"""/> class.
     /// </summary>
@@ -224,34 +209,12 @@ public class MapPage : BasePage
         }
     }
 
-    /// <summary>
-    /// Center the map on a deterministic seeded pitch using the first available nearest-pitch shortcut.
-    /// </summary>
+    /// <summary>Center the map on the deterministic seeded London pitch.</summary>
     public async Task<string> CenterOnNearestAvailablePitchAsync(int timeoutMs = 10_000)
     {
-        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        var testIds = new[] { "nearest-training-btn", "nearest-standard-btn", "nearest-stadium-btn" };
-
-        while (DateTime.UtcNow < deadline)
-        {
-            foreach (var testId in testIds)
-            {
-                var button = Page.GetByTestId(testId);
-                if (await button.CountAsync() == 0)
-                    continue;
-
-                if (await button.IsEnabledAsync())
-                {
-                    await button.ClickAsync(new LocatorClickOptions { Force = true });
-                    await Page.WaitForTimeoutAsync(1_000);
-                    return testId;
-                }
-            }
-
-            await Page.WaitForTimeoutAsync(500);
-        }
-
-        throw new InvalidOperationException("No nearest-pitch shortcut button was enabled.");
+        await SetArcGisViewCenterAsync(51.5074, -0.1278, 17);
+        await Page.WaitForTimeoutAsync(1_000);
+        return "seeded-london-pitch";
     }
 
     /// <summary>Click the center of the GeoBlazor drawing surface.</summary>
@@ -268,62 +231,40 @@ public class MapPage : BasePage
         await Page.Mouse.ClickAsync(box.X + box.Width / 2, box.Y + box.Height / 2);
     }
 
-    // ── Map shortcut controls ─────────────────────────────────────────
+    // ── Native map widgets ────────────────────────────────────────────
 
-    /// <summary>Wait for every RuckR map shortcut button to become visible.</summary>
-    public async Task WaitForShortcutButtonsAsync(int timeoutMs = 10_000)
+    /// <summary>Wait for native ArcGIS/GeoBlazor map widgets to become visible.</summary>
+    public async Task<bool> WaitForNativeWidgetsAsync(int timeoutMs = 10_000)
     {
-        foreach (var testId in ShortcutButtonTestIds)
+        try
         {
-            await Page.WaitForSelectorAsync($"[data-testid='{testId}']", new PageWaitForSelectorOptions
-            {
-                State = WaitForSelectorState.Visible,
-                Timeout = timeoutMs
-            });
+            await Page.WaitForFunctionAsync(
+                @"() => {
+                    const root = document.querySelector('[data-testid=""map-container""]');
+                    const controls = root?.querySelectorAll('.esri-ui .esri-widget, .esri-zoom, calcite-action') ?? [];
+                    return [...controls].filter(control => {
+                        const rect = control.getBoundingClientRect();
+                        const style = getComputedStyle(control);
+                        return style.display !== 'none'
+                            && style.visibility !== 'hidden'
+                            && rect.width > 0
+                            && rect.height > 0;
+                    }).length >= 2;
+                }",
+                null,
+                new PageWaitForFunctionOptions { Timeout = timeoutMs });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            await ScreenshotAsync("native-map-widgets-timeout");
+            return false;
         }
     }
 
-    /// <summary>Return the shortcut button's rendered size.</summary>
-    public async Task<(float Width, float Height)> GetShortcutButtonSizeAsync(string testId)
-    {
-        var box = await Page.GetByTestId(testId).BoundingBoxAsync();
-        if (box is null)
-            throw new InvalidOperationException($"Shortcut button '{testId}' did not have a bounding box.");
-
-        return ((float)box.Width, (float)box.Height);
-    }
-
-    /// <summary>Return a computed CSS property for a shortcut button.</summary>
-    public async Task<string> GetShortcutButtonCssAsync(string testId, string propertyName)
-        => await Page.GetByTestId(testId).EvaluateAsync<string>(
-            "(element, propertyName) => getComputedStyle(element).getPropertyValue(propertyName)",
-            propertyName);
-
-    /// <summary>Return a shortcut button attribute value.</summary>
-    public async Task<string?> GetShortcutButtonAttributeAsync(string testId, string attributeName)
-        => await Page.GetByTestId(testId).GetAttributeAsync(attributeName);
-
-    /// <summary>Check whether a shortcut button is enabled.</summary>
-    public async Task<bool> IsShortcutButtonEnabledAsync(string testId)
-        => await Page.GetByTestId(testId).IsEnabledAsync();
-
-    /// <summary>Click a shortcut button.</summary>
-    public async Task ClickShortcutButtonAsync(string testId)
-    {
-        await Page.GetByTestId(testId).ClickAsync(new LocatorClickOptions { Force = true });
-    }
-
-    /// <summary>Wait until a shortcut button is enabled.</summary>
-    public async Task WaitForShortcutButtonEnabledAsync(string testId, int timeoutMs = 10_000)
-    {
-        await Page.WaitForFunctionAsync(
-            @"testId => {
-                const button = document.querySelector(`[data-testid='${testId}']`);
-                return !!button && !button.disabled;
-            }",
-            testId,
-            new PageWaitForFunctionOptions { Timeout = timeoutMs });
-    }
+    /// <summary>Return whether any removed RuckR shortcut controls remain in the DOM.</summary>
+    public async Task<bool> HasCustomShortcutControlsAsync()
+        => await Page.Locator(".ruckr-map-control-stack, .ruckr-map-control").CountAsync() > 0;
 
     /// <summary>Return whether the GeoBlazor candidate places layer is visible.</summary>
     public async Task<bool> IsCandidatePlacesLayerVisibleAsync()

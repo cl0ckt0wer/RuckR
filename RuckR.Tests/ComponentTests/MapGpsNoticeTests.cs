@@ -203,7 +203,7 @@ public class MapGpsNoticeTests
             "https://example.test/map");
 
         Assert.Equal(MapPage.MapBasemapMode.Styled, options.BasemapMode);
-        Assert.False(options.EnableArcGisWidgets);
+        Assert.True(options.EnableArcGisWidgets);
         Assert.True(options.EnableMapDiagnostics);
         Assert.True(options.EnableGameGraphics);
         Assert.True(options.EnableAutoGpsWatch);

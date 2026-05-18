@@ -86,53 +86,6 @@
                 <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
             }
         </MapView>
-        <div class="ruckr-map-control-stack" aria-label="RuckR map shortcuts">
-            <button class="ruckr-map-control"
-                    type="button"
-                    data-testid="gps-center-btn"
-                    @onclick="CenterOnUserLocationAsync"
-                    disabled="@(_lastKnownPosition is null)"
-                    title="Return to GPS location"
-                    aria-label="Return to GPS location">
-                &#x25CE;
-            </button>
-            <button class="ruckr-map-control"
-                    type="button"
-                    data-testid="nearest-stadium-btn"
-                    @onclick="() => CenterOnNearestPitchByTypeAsync(PitchType.Stadium)"
-                    disabled="@(!_pitchGraphics.Any(p => MapState.Value.VisiblePitches.FirstOrDefault(v => v.Id == p.Key)?.Type == PitchType.Stadium))"
-                    title="Nearest stadium"
-                    aria-label="Nearest stadium">
-                &#x1F3DF;
-            </button>
-            <button class="ruckr-map-control"
-                    type="button"
-                    data-testid="nearest-standard-btn"
-                    @onclick="() => CenterOnNearestPitchByTypeAsync(PitchType.Standard)"
-                    disabled="@(!_pitchGraphics.Any(p => MapState.Value.VisiblePitches.FirstOrDefault(v => v.Id == p.Key)?.Type == PitchType.Standard))"
-                    title="Nearest pitch"
-                    aria-label="Nearest pitch">
-                &#x26BD;
-            </button>
-            <button class="ruckr-map-control"
-                    type="button"
-                    data-testid="nearest-training-btn"
-                    @onclick="() => CenterOnNearestPitchByTypeAsync(PitchType.Training)"
-                    disabled="@(!_pitchGraphics.Any(p => MapState.Value.VisiblePitches.FirstOrDefault(v => v.Id == p.Key)?.Type == PitchType.Training))"
-                    title="Nearest training ground"
-                    aria-label="Nearest training ground">
-                &#x1F4A1;
-            </button>
-            <button class="ruckr-map-control ruckr-map-control--candidate @(_showCandidatePlaces ? "ruckr-map-control--active" : "")"
-                    type="button"
-                    data-testid="candidate-places-toggle"
-                    @onclick="ToggleCandidatePlacesAsync"
-                    title="@(_showCandidatePlaces ? "Hide candidate places" : "Show candidate places")"
-                    aria-label="@(_showCandidatePlaces ? "Hide candidate places" : "Show candidate places")"
-                    aria-pressed="@_showCandidatePlaces">
-                &#x2726;
-            </button>
-        </div>
         <div class="pitch-legend" data-testid="pitch-legend">
             <div class="pitch-legend__title">Pitches</div>
             <div class="pitch-legend__row">
@@ -416,55 +369,6 @@
 </div>
 
 <style>
-     .ruckr-map-control-stack {
-         position: absolute;
-         top: 0.75rem;
-         left: 3.6rem;
-         z-index: 10;
-         display: flex;
-         flex-direction: column;
-         box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-     }
-     .ruckr-map-control {
-         width: 2rem;
-         height: 2rem;
-         padding: 0;
-         display: flex;
-         align-items: center;
-         justify-content: center;
-         border: 0;
-         border-bottom: 1px solid rgba(110,110,110,0.3);
-         border-radius: 0;
-         background: #fff;
-         color: #323232;
-         font-family: Arial, Helvetica, sans-serif;
-         font-size: 1rem;
-         line-height: 1;
-     }
-     .ruckr-map-control:first-child {
-         border-radius: 2px 2px 0 0;
-     }
-     .ruckr-map-control:last-child {
-         border-bottom: 0;
-         border-radius: 0 0 2px 2px;
-     }
-     .ruckr-map-control:hover:not(:disabled),
-     .ruckr-map-control:focus-visible {
-         background: #f3f3f3;
-         color: #2e2e2e;
-         outline: none;
-     }
-     .ruckr-map-control:disabled {
-         color: #9f9f9f;
-         cursor: default;
-      }
-     .ruckr-map-control--candidate {
-         color: #6b21a8;
-     }
-     .ruckr-map-control--active {
-         background: #e9ddf5;
-         color: #581c87;
-     }
      .onboarding-banner {
          position: fixed;
          top: 0.75rem;
@@ -1024,7 +928,7 @@
 
         return new MapReductionOptions(
             BasemapMode: ResolveBasemapMode(configuration, uri),
-            EnableArcGisWidgets: ResolveMapFeatureFlag(configuration, uri, "EnableArcGisWidgets", "arcGisWidgets", defaultValue: false),
+            EnableArcGisWidgets: ResolveMapFeatureFlag(configuration, uri, "EnableArcGisWidgets", "arcGisWidgets", defaultValue: true),
             EnableMapDiagnostics: ResolveMapFeatureFlag(configuration, uri, "EnableMapDiagnostics", "mapDiagnostics", defaultValue: true),
             EnableGameGraphics: ResolveMapFeatureFlag(configuration, uri, "EnableGameGraphics", "mapGraphics", defaultValue: true),
             EnableAutoGpsWatch: ResolveMapFeatureFlag(configuration, uri, "EnableAutoGpsWatch", "autoGps", defaultValue: true));
@@ -1558,37 +1462,6 @@
             }
 
             Logger.LogDebug(ex, "Failed to update candidate place layer visibility");
-        }
-    }
-
-    private async Task ToggleCandidatePlacesAsync()
-    {
-        if (_isDisposing) return;
-
-        _showCandidatePlaces = !_showCandidatePlaces;
-        if (!_showCandidatePlaces)
-        {
-            _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
-            _candidatePlaceGraphics.Clear();
-            ClearCandidateSelection();
-            await SetCandidatePlaceLayerVisibleAsync(false);
-            _statusMessage = "Candidate place overlay hidden.";
-            await InvokeAsync(StateHasChanged);
-            return;
-        }
-
-        var lat = _lastKnownPosition?.Latitude ?? _lastPitchFetchPosition?.Latitude ?? _latitude;
-        var lng = _lastKnownPosition?.Longitude ?? _lastPitchFetchPosition?.Longitude ?? _longitude;
-        _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
-        if (_isDisposing) return;
-
-        await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
-        _statusMessage = _candidatePlaces.Count == 0
-            ? "No candidate places found in this map area."
-            : $"{_candidatePlaces.Count} candidate places visible.";
-        if (!_isDisposing)
-        {
-            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -2311,53 +2184,6 @@
     }
 
     private int LevelForXp(int xp) => Math.Clamp(1 + (xp / 100), 1, 100);
-
-    private async Task CenterOnNearestPitchByTypeAsync(PitchType? filterType = null)
-    {
-        if (_mapView is null || _pitchGraphics.Count == 0)
-            return;
-
-        var currentLat = _lastKnownPosition?.Latitude ?? _latitude;
-        var currentLng = _lastKnownPosition?.Longitude ?? _longitude;
-
-        var candidates = filterType.HasValue
-            ? MapState.Value.VisiblePitches.Where(p => p.Type == filterType.Value)
-            : MapState.Value.VisiblePitches;
-
-        var nearest = candidates
-            .OrderBy(p => GeoPosition.HaversineDistance(
-                new GeoPosition { Latitude = currentLat, Longitude = currentLng },
-                new GeoPosition { Latitude = p.Latitude, Longitude = p.Longitude }))
-            .FirstOrDefault();
-
-        if (nearest is null)
-            return;
-
-        try
-        {
-            await NavigateToPointAsync(nearest.Longitude, nearest.Latitude, _zoom);
-            Dispatcher.Dispatch(new SelectPitchAction(nearest.Id));
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to center on nearest pitch");
-        }
-    }
-
-    private async Task CenterOnUserLocationAsync()
-    {
-        if (_lastKnownPosition is null)
-            return;
-
-        try
-        {
-            await NavigateToPointAsync(_lastKnownPosition.Longitude, _lastKnownPosition.Latitude, _zoom);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to center on GPS location");
-        }
-    }
 
     private async Task NavigateToPointAsync(double longitude, double latitude, int zoom)
     {

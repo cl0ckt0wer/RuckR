@@ -114,10 +114,10 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     }
 
     /// <summary>
-    /// Verifies the RuckR shortcut controls render as compact ArcGIS-style buttons on mobile.
+    /// Verifies native ArcGIS widgets render and RuckR custom shortcut controls are absent on mobile.
     /// </summary>
     [Fact]
-    public async Task MapShortcutButtons_OnMobile_RenderAsCompactMapControls()
+    public async Task NativeMapWidgets_OnMobile_RenderWithoutCustomShortcutControls()
     {
         var mapPage = new MapPage(_page, _baseUrl);
 
@@ -125,94 +125,9 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
         Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
-        await mapPage.WaitForShortcutButtonsAsync();
 
-        var expectedLabels = new Dictionary<string, string>
-        {
-            [MapPage.GpsCenterButtonTestId] = "Return to GPS location",
-            [MapPage.NearestStadiumButtonTestId] = "Nearest stadium",
-            [MapPage.NearestStandardButtonTestId] = "Nearest pitch",
-            [MapPage.NearestTrainingButtonTestId] = "Nearest training ground",
-            [MapPage.CandidatePlacesToggleTestId] = "Hide candidate places"
-        };
-
-        foreach (var testId in MapPage.ShortcutButtonTestIds)
-        {
-            var (width, height) = await mapPage.GetShortcutButtonSizeAsync(testId);
-            var backgroundColor = await mapPage.GetShortcutButtonCssAsync(testId, "background-color");
-            var ariaLabel = await mapPage.GetShortcutButtonAttributeAsync(testId, "aria-label");
-            var title = await mapPage.GetShortcutButtonAttributeAsync(testId, "title");
-
-            Assert.InRange(width, 30, 36);
-            Assert.InRange(height, 30, 36);
-            if (testId == MapPage.CandidatePlacesToggleTestId)
-            {
-                Assert.True(
-                    backgroundColor.Contains("255, 255, 255", StringComparison.Ordinal)
-                    || backgroundColor.Contains("233, 221, 245", StringComparison.Ordinal),
-                    $"Candidate places button should use either the default or active map-control background; actual was '{backgroundColor}'.");
-            }
-            else
-            {
-                Assert.Contains("255, 255, 255", backgroundColor);
-            }
-
-            Assert.Equal(expectedLabels[testId], ariaLabel);
-            Assert.Equal(expectedLabels[testId], title);
-        }
-
-        AssertNoUnexpectedBrowserErrors();
-    }
-
-    /// <summary>
-    /// Verifies the candidate place shortcut updates both pressed state and layer visibility.
-    /// </summary>
-    [Fact]
-    public async Task CandidatePlacesButton_OnMobile_TogglesPressedStateAndLayerVisibility()
-    {
-        var mapPage = new MapPage(_page, _baseUrl);
-
-        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
-
-        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
-        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
-        await mapPage.WaitForShortcutButtonsAsync();
-
-        Assert.NotNull(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
-
-        await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
-
-        Assert.Null(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
-        await mapPage.WaitForCandidatePlacesLayerVisibilityAsync(false);
-        Assert.False(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should hide after the shortcut is clicked.");
-
-        await mapPage.ClickShortcutButtonAsync(MapPage.CandidatePlacesToggleTestId);
-
-        Assert.NotNull(await mapPage.GetShortcutButtonAttributeAsync(MapPage.CandidatePlacesToggleTestId, "aria-pressed"));
-        await mapPage.WaitForCandidatePlacesLayerVisibilityAsync(true);
-        Assert.True(await mapPage.IsCandidatePlacesLayerVisibleAsync(), "Candidate places layer should show after the shortcut is clicked again.");
-        AssertNoUnexpectedBrowserErrors();
-    }
-
-    /// <summary>
-    /// Verifies the GPS shortcut becomes available after browser geolocation and can be clicked.
-    /// </summary>
-    [Fact]
-    public async Task GpsCenterButton_OnMobile_IsEnabledAfterGpsAndCanBeClicked()
-    {
-        var mapPage = new MapPage(_page, _baseUrl);
-
-        await mapPage.GoToAsync("basemap=empty&mapGraphics=true&autoGps=true");
-
-        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Map shell should load.");
-        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
-        await mapPage.WaitForShortcutButtonsAsync();
-        await mapPage.WaitForShortcutButtonEnabledAsync(MapPage.GpsCenterButtonTestId, 20_000);
-
-        Assert.True(await mapPage.IsShortcutButtonEnabledAsync(MapPage.GpsCenterButtonTestId),
-            "GPS shortcut should be enabled after the browser provides a geolocation fix.");
-        await mapPage.ClickShortcutButtonAsync(MapPage.GpsCenterButtonTestId);
-        await _page.WaitForTimeoutAsync(1_000);
+        Assert.True(await mapPage.WaitForNativeWidgetsAsync(20_000), "ArcGIS widget controls should render by default.");
+        Assert.False(await mapPage.HasCustomShortcutControlsAsync(), "RuckR custom map shortcut overlay should not render.");
 
         AssertNoUnexpectedBrowserErrors();
     }
