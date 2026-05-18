@@ -217,7 +217,10 @@ function surfaceSummary() {
 }
 
 function overlaySummary(selector) {
-    const element = document.querySelector(selector);
+    return overlaySummaryForElement(document.querySelector(selector));
+}
+
+function overlaySummaryForElement(element) {
     return {
         visible: isVisible(element),
         rect: rectOf(element),
@@ -235,12 +238,13 @@ function rectsOverlap(a, b) {
 }
 
 function mapOverlayLayoutSummary() {
-    const legend = overlaySummary('[data-testid="pitch-legend"]');
+    const legendElement = document.querySelector('.esri-legend');
+    const legend = overlaySummaryForElement(legendElement?.closest('.esri-expand') ?? legendElement);
     const radar = overlaySummary('[data-testid="encounter-radar"]');
     return {
-        pitchLegend: legend,
+        nativeLegend: legend,
         encounterRadar: radar,
-        pitchLegendOverlapsEncounterRadar: rectsOverlap(legend.rect, radar.rect)
+        nativeLegendOverlapsEncounterRadar: rectsOverlap(legend.rect, radar.rect)
     };
 }
 
@@ -440,10 +444,10 @@ export function collectMapDiagnostics(reason) {
             loadingVisible: isVisible(document.querySelector('[data-testid="map-loading"]')),
             gpsChipVisible: isVisible(document.querySelector('[data-testid="gps-status-chip"]')),
             gpsNoticeVisible: isVisible(document.querySelector('[data-testid="gps-readiness"]')),
-            pitchLegendVisible: isVisible(document.querySelector('[data-testid="pitch-legend"]')),
+            nativeLegendVisible: isVisible(document.querySelector('.esri-legend')),
+            nativeLegendExpandVisible: isVisible(document.querySelector('.esri-legend')?.closest('.esri-expand')),
             encounterRadarVisible: isVisible(document.querySelector('[data-testid="encounter-radar"]')),
-            encounterOverlayVisible: isVisible(document.querySelector('[data-testid="encounter-overlay"]')),
-            encounterCountText: document.querySelector('[data-testid="encounter-count"]')?.textContent?.trim() ?? null
+            encounterOverlayVisible: isVisible(document.querySelector('[data-testid="encounter-overlay"]'))
         },
         css: {
             app: appCssRulesLoaded(),

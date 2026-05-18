@@ -82,36 +82,12 @@
                 <CompassWidget Position="OverlayPosition.TopLeft" />
                 <LocateWidget Position="OverlayPosition.TopLeft" />
                 <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
+                <LegendWidget Position="OverlayPosition.BottomRight"
+                              BasemapLegendVisible="false"
+                              HideLayersNotInCurrentView="false"
+                              RespectLayerVisibility="true" />
             }
         </MapView>
-        <div class="pitch-legend" data-testid="pitch-legend">
-            <div class="pitch-legend__title">Pitches</div>
-            <div class="pitch-legend__row">
-                <span class="pitch-legend__marker pitch-legend__marker--stadium"></span>
-                <span>Stadium</span>
-                <strong>@PitchCount(PitchType.Stadium)</strong>
-            </div>
-            <div class="pitch-legend__row">
-                <span class="pitch-legend__marker pitch-legend__marker--standard"></span>
-                <span>Standard</span>
-                <strong>@PitchCount(PitchType.Standard)</strong>
-            </div>
-            <div class="pitch-legend__row">
-                <span class="pitch-legend__marker pitch-legend__marker--training"></span>
-                <span>Training</span>
-                <strong>@PitchCount(PitchType.Training)</strong>
-            </div>
-            <div class="pitch-legend__row">
-                <span class="pitch-legend__marker pitch-legend__marker--candidate"></span>
-                <span>Candidates</span>
-                <strong>@CandidatePlaceCount</strong>
-            </div>
-            <div class="pitch-legend__row">
-                <span class="pitch-legend__marker pitch-legend__marker--encounter"></span>
-                <span>Recruits</span>
-                <strong data-testid="encounter-count">@_encounterGraphics.Count</strong>
-            </div>
-        </div>
 
         @if (ShouldShowGpsNotice)
         {
@@ -389,77 +365,6 @@
          min-width: 0;
          font-size: 0.9rem;
          line-height: 1.35;
-     }
-     .pitch-legend {
-         position: absolute;
-         top: 18rem;
-         left: 0.75rem;
-         z-index: 10;
-         min-width: 148px;
-         padding: 0.6rem 0.7rem;
-         border: 1px solid rgba(255,255,255,0.14);
-         border-radius: 0.75rem;
-         background: linear-gradient(145deg, rgba(9, 24, 30, 0.88), rgba(17, 24, 39, 0.8));
-         color: #f8fafc;
-         box-shadow: 0 14px 34px rgba(0,0,0,0.28);
-         backdrop-filter: blur(8px);
-     }
-     .pitch-legend__title {
-         margin-bottom: 0.35rem;
-         font-size: 0.72rem;
-         font-weight: 800;
-         letter-spacing: 0.08em;
-         text-transform: uppercase;
-         color: rgba(226,232,240,0.78);
-     }
-     .pitch-legend__row {
-         display: grid;
-         grid-template-columns: 18px 1fr auto;
-         align-items: center;
-         gap: 0.4rem;
-         font-size: 0.78rem;
-         line-height: 1.45;
-     }
-     .pitch-legend__row strong {
-         font-size: 0.78rem;
-         color: #fff;
-     }
-     .pitch-legend__marker {
-         display: inline-block;
-         width: 12px;
-         height: 12px;
-         border: 2px solid #f8fafc;
-         box-shadow: 0 0 0 2px rgba(15,23,42,0.5);
-     }
-     .pitch-legend__marker--stadium {
-         transform: rotate(45deg);
-         background: #f59e0b;
-     }
-     .pitch-legend__marker--standard {
-         border-radius: 0.15rem;
-         background: #22c55e;
-     }
-     .pitch-legend__marker--training {
-         width: 0;
-         height: 0;
-         border-left: 7px solid transparent;
-         border-right: 7px solid transparent;
-         border-bottom: 13px solid #38bdf8;
-         border-top: 0;
-         background: transparent;
-         box-shadow: none;
-     }
-     .pitch-legend__marker--candidate {
-         border-radius: 999px;
-         background: #a855f7;
-         border-color: #f5d0fe;
-         box-shadow: 0 0 0 3px rgba(168,85,247,0.22);
-     }
-     .pitch-legend__marker--encounter {
-         transform: rotate(45deg);
-         border-width: 3px;
-         background: #2563eb;
-         box-shadow: 0 0 0 3px rgba(37,99,235,0.22);
      }
      .gps-readiness {
          position: absolute;
@@ -751,23 +656,6 @@
      }
 
      @@media (max-width: 640px) {
-         .pitch-legend {
-             top: auto;
-             bottom: 2.45rem;
-             left: 0.75rem;
-             min-width: 132px;
-             max-width: 160px;
-             padding: 0.5rem 0.55rem;
-         }
-         .pitch-legend__title {
-             margin-bottom: 0.2rem;
-             font-size: 0.68rem;
-         }
-         .pitch-legend__row {
-             grid-template-columns: 16px 1fr auto;
-             gap: 0.3rem;
-             font-size: 0.72rem;
-         }
          .gps-readiness {
              top: 3.55rem;
              left: 0.5rem;
@@ -2190,11 +2078,6 @@
 
         var moved = GeoPosition.HaversineDistance(_lastPitchFetchPosition, current);
         return moved >= MinPitchRefreshDistanceMeters;
-    }
-
-    private int PitchCount(PitchType type)
-    {
-        return MapState.Value.VisiblePitches.Count(p => p.Type == type);
     }
 
     private int CandidatePlaceCount => _showCandidatePlaces ? _candidatePlaceGraphics.Count : 0;
