@@ -18,12 +18,13 @@
     <span class="status-text" data-testid="status-text">@StatusText</span>
     <span class="status-detail status-detail--gps gps-status-inline gps-status-inline--@GpsStatus.CssClass"
           data-testid="gps-status-chip"
+          role="status"
           title="@GpsStatus.Detail">
         <span class="gps-status-inline__dot" aria-hidden="true"></span>
         <span>@GpsStatus.Label</span>
         @if (GpsStatus.AccuracyText is not null)
         {
-            <small>@GpsStatus.AccuracyText</small>
+            <small> @GpsStatus.AccuracyText</small>
         }
     </span>
     <span class="status-detail" data-testid="online-status">@OnlineStatusText</span>
