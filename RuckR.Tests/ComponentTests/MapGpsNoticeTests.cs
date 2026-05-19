@@ -234,6 +234,32 @@ public class MapGpsNoticeTests
     }
 
     /// <summary>
+    /// Verifies local development defaults to the token-free basemap mode.
+    /// </summary>
+    [Fact]
+    public void DevelopmentAppSettings_DefaultsToEmptyBasemap()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..",
+            "..",
+            "..",
+            "..",
+            "RuckR",
+            "Client",
+            "wwwroot",
+            "appsettings.Development.json"));
+
+        var options = MapPage.ResolveMapReductionOptions(
+            new ConfigurationBuilder()
+                .AddJsonFile(path, optional: false)
+                .Build(),
+            "https://example.test/map");
+
+        Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
+    }
+
+    /// <summary>
     /// Verifies resolve Map Reduction Options Lets Query Override Config.
     /// </summary>
     [Fact]

@@ -1,6 +1,9 @@
 using Microsoft.Playwright;
+using Microsoft.EntityFrameworkCore;
+using RuckR.Server.Services;
 using RuckR.Tests.Fixtures;
 using RuckR.Tests.Pages;
+using RuckR.Shared.Models;
 
 namespace RuckR.Tests.E2E;
 
@@ -90,6 +93,59 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await mapPage.WaitForMapLoadedAsync();
         var hasOnboardingAfterReload = await mapPage.IsOnboardingBannerVisibleAsync();
         Assert.False(hasOnboardingAfterReload, "Onboarding banner should not reappear after reload");
+    }
+
+    /// <summary>
+    /// Verifies an authenticated map session surfaces a deterministic nearby rare sighting.
+    /// </summary>
+    [Fact]
+    public async Task MapPage_AuthenticatedUser_ShowsSpotlightSightingWithoutMobileOverlap()
+    {
+        await _page.SetViewportSizeAsync(390, 844);
+        var username = $"spotlight_{Guid.NewGuid():N}@test.com";
+        var password = "TestPass123!";
+        var registerPage = new RegisterPage(_page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync(username, password);
+
+        _factory.ParkService.UseParks(new RealWorldPark("spotlight-park", "Spotlight Park", 51.5074, -0.1278, 0));
+        await SeedRareNearbyEncounterAsync(username);
+
+        var mapPage = new MapPage(_page, _baseUrl);
+        await mapPage.GoToAsync("?basemap=empty&arcGisWidgets=false&mapDiagnostics=false");
+        await mapPage.WaitForMapLoadedAsync();
+        await mapPage.WaitForSpotlightEncounterAsync();
+
+        await mapPage.SelectSpotlightEncounterAsync();
+        Assert.Equal("Recruit window", await mapPage.GetSpotlightRecruitStateAsync());
+        Assert.Contains("left", await mapPage.GetSpotlightTimerTextAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recruit before the bell", await mapPage.GetSpotlightCopyTextAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.False(await mapPage.HasIncoherentSpotlightOverlapAsync());
+    }
+
+    private async Task SeedRareNearbyEncounterAsync(string username)
+    {
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var user = await db.Users.SingleAsync(u => u.UserName == username);
+            var player = await db.Players.FirstAsync();
+            player.Name = "Brass Boot";
+            player.Rarity = PlayerRarity.Legendary;
+            player.Level = 8;
+
+            db.PlayerEncounters.Add(new PlayerEncounterModel
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                PlayerId = player.Id,
+                Latitude = 51.5074,
+                Longitude = -0.1278,
+                CreatedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(10)
+            });
+
+            await db.SaveChangesAsync();
+        });
     }
 }
 

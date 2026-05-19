@@ -86,6 +86,7 @@ public class MapGraphicFactoryTests
         var symbol = Assert.IsType<SimpleMarkerSymbol>(graphic.Symbol);
         Assert.Equal(dymaptic.GeoBlazor.Core.Enums.SimpleMarkerSymbolStyle.Diamond, symbol.Style);
         AssertGraphicAttribute(graphic.Attributes, "_ruckrType", "encounter");
+        AssertGraphicAttribute(graphic.Attributes, "_ruckrSpotlight", false);
         AssertGraphicAttribute(graphic.Attributes, "_ruckrEncounterId", encounterId.ToString());
         AssertGraphicAttribute(graphic.Attributes, "_ruckrPlayerId", 42);
         AssertGraphicAttribute(graphic.Attributes, "name", "Scrum Sprinter");
@@ -95,6 +96,31 @@ public class MapGraphicFactoryTests
         AssertGraphicAttribute(graphic.Attributes, "parkName", "Frost Park");
         AssertGraphicAttribute(graphic.Attributes, "successChancePercent", 72);
         AssertGraphicAttribute(graphic.Attributes, "expiresAtUtc", expiresAtUtc);
+    }
+
+    /// <summary>
+    /// Verifies spotlight encounter markers carry distinct styling and diagnostics.
+    /// </summary>
+    [Fact]
+    public void CreateEncounterGraphic_WhenSpotlight_ReturnsDistinctMarkerWithDiagnostics()
+    {
+        var encounter = new PlayerEncounterDto(
+            Guid.Parse("92527b83-f4d9-4e80-802a-738a0f5f3795"),
+            PlayerId: 99,
+            Name: "Brass Boot",
+            Position: "FlyHalf",
+            Rarity: "Legendary",
+            Level: 12,
+            Latitude: 51.5074,
+            Longitude: -0.1278,
+            ExpiresAtUtc: new DateTime(2026, 5, 19, 12, 0, 0, DateTimeKind.Utc),
+            SuccessChancePercent: 44);
+
+        var graphic = MapGraphicFactory.CreateEncounterGraphic(encounter, isSpotlight: true);
+
+        var symbol = Assert.IsType<SimpleMarkerSymbol>(graphic.Symbol);
+        Assert.Equal(dymaptic.GeoBlazor.Core.Enums.SimpleMarkerSymbolStyle.Diamond, symbol.Style);
+        AssertGraphicAttribute(graphic.Attributes, "_ruckrSpotlight", true);
     }
 
     private static void AssertGraphicAttribute(

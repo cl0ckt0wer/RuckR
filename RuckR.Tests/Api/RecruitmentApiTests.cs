@@ -121,6 +121,74 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies get Encounters Keeps Active Encounters Stable Across Refreshes.
+    /// </summary>
+    [Fact]
+    public async Task GetEncounters_KeepsActiveEncountersStableAcrossRefreshes()
+    {
+        var anchor = await GetAnyPlayerLocationAsync();
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var firstResponse = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+        var firstEncounters = await firstResponse.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(firstEncounters);
+        Assert.NotEmpty(firstEncounters);
+
+        var secondResponse = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        var secondEncounters = await secondResponse.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(secondEncounters);
+
+        var secondIds = secondEncounters!.Select(e => e.EncounterId).ToHashSet();
+        Assert.All(firstEncounters!, encounter => Assert.Contains(encounter.EncounterId, secondIds));
+    }
+
+    /// <summary>
+    /// Verifies deterministic demo fixtures can expose a nearby rare encounter without changing spawn rules.
+    /// </summary>
+    [Fact]
+    public async Task GetEncounters_ReturnsSeededRareNearbyDemoEncounter()
+    {
+        var anchor = await GetAnyPlayerLocationAsync();
+        var encounterId = Guid.Parse("301f53a6-761e-4091-963c-1d114f2a0f32");
+        int rarePlayerId = 0;
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var player = await db.Players.FirstAsync();
+            player.Rarity = PlayerRarity.Legendary;
+            player.Name = "Brass Boot";
+            rarePlayerId = player.Id;
+
+            db.PlayerEncounters.Add(new PlayerEncounterModel
+            {
+                Id = encounterId,
+                UserId = _userId,
+                PlayerId = player.Id,
+                Latitude = anchor.lat,
+                Longitude = anchor.lng,
+                CreatedAtUtc = DateTime.UtcNow.AddMinutes(-1),
+                ExpiresAtUtc = DateTime.UtcNow.AddMinutes(10)
+            });
+
+            await db.SaveChangesAsync();
+        });
+
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+
+        var response = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var encounters = await response.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        var seeded = Assert.Single(encounters!, e => e.EncounterId == encounterId);
+        Assert.Equal(rarePlayerId, seeded.PlayerId);
+        Assert.Equal("Legendary", seeded.Rarity);
+        Assert.Equal("Brass Boot", seeded.Name);
+        Assert.True(seeded.ExpiresAtUtc <= DateTime.UtcNow.AddMinutes(11));
+    }
+
+    /// <summary>
     /// Verifies get Encounters No Real World Parks Returns No Recruitable Players.
     /// </summary>
     [Fact]

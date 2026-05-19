@@ -38,18 +38,22 @@ public static class MapGraphicFactory
 
     /// <summary>Create a recruitable encounter marker graphic.</summary>
     /// <param name="encounter">Encounter DTO to render.</param>
+    /// <param name="isSpotlight">Whether this encounter is the current Spotlight Sighting.</param>
     /// <returns>A GeoBlazor graphic with RuckR encounter attributes.</returns>
-    public static Graphic CreateEncounterGraphic(PlayerEncounterDto encounter) =>
+    public static Graphic CreateEncounterGraphic(PlayerEncounterDto encounter, bool isSpotlight = false) =>
         new(
             geometry: new Point(longitude: encounter.Longitude, latitude: encounter.Latitude),
             symbol: new SimpleMarkerSymbol(
-                outline: new Outline(color: new MapColor("#FFFFFF"), width: new Dimension(3)),
+                outline: new Outline(
+                    color: isSpotlight ? new MapColor("#F4C95D") : new MapColor("#FFFFFF"),
+                    width: new Dimension(isSpotlight ? 4 : 3)),
                 color: EncounterRarityColor(encounter.Rarity),
-                size: new Dimension(19),
+                size: new Dimension(isSpotlight ? 24 : 19),
                 style: SimpleMarkerSymbolStyle.Diamond),
             attributes: new AttributesDictionary(new Dictionary<string, object?>
             {
                 ["_ruckrType"] = "encounter",
+                ["_ruckrSpotlight"] = isSpotlight,
                 ["_ruckrEncounterId"] = encounter.EncounterId.ToString(),
                 ["_ruckrPlayerId"] = encounter.PlayerId,
                 ["name"] = encounter.Name,

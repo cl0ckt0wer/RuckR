@@ -144,17 +144,19 @@
                     <span>Recruit board</span>
                     <strong>@MapState.Value.VisibleEncounters.Count</strong>
                 </div>
-                @if (NearestEncounter is not null)
+                @if (SpotlightEncounter is not null)
                 {
-                    <button class="encounter-radar__target"
-                            data-testid="nearest-encounter-btn"
+                    <button class="encounter-radar__target encounter-radar__target--spotlight"
+                            data-testid="spotlight-encounter-btn"
                             type="button"
-                            @onclick="() => SelectEncounterAsync(NearestEncounter)">
+                            aria-label="Rare sighting: @SpotlightEncounter.Name"
+                            @onclick="() => SelectEncounterAsync(SpotlightEncounter)">
                         <span>
-                            <strong>@NearestEncounter.Name</strong>
-                            <small>@EncounterParkName(NearestEncounter)</small>
+                            <small class="encounter-radar__kicker">Rare sighting</small>
+                            <strong>@SpotlightEncounter.Name</strong>
+                            <small>@SpotlightSightingSummary(SpotlightEncounter)</small>
                         </span>
-                        <span>@EncounterDistanceText(NearestEncounter)</span>
+                        <span class="encounter-radar__timer">@EncounterExpiresText(SpotlightEncounter)</span>
                     </button>
                 }
             </div>
@@ -217,23 +219,41 @@
 
 @if (_selectedEncounter is not null)
 {
-    <div class="map-overlay map-overlay--encounter" data-testid="encounter-overlay">
+    <div class="map-overlay map-overlay--encounter @(IsSpotlightEncounter(_selectedEncounter) ? "map-overlay--spotlight" : null)" data-testid="encounter-overlay">
         <div class="d-flex justify-content-between align-items-start mb-2">
             <div>
-                <div class="encounter-card__eyebrow">@EncounterParkName(_selectedEncounter)</div>
+                <div class="encounter-card__eyebrow" data-testid="encounter-kicker">
+                    @(IsSpotlightEncounter(_selectedEncounter) ? "Rare sighting" : EncounterParkName(_selectedEncounter))
+                </div>
                 <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
             </div>
             <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearEncounterSelection" aria-label="Close"></button>
         </div>
         <div class="mb-2 d-flex gap-2 flex-wrap">
             <span class="badge bg-@EncounterRarityBadgeClass(_selectedEncounter.Rarity) me-2">@_selectedEncounter.Rarity</span>
+            @if (IsSpotlightEncounter(_selectedEncounter))
+            {
+                <span class="badge spotlight-timer" data-testid="spotlight-timer">@EncounterExpiresText(_selectedEncounter)</span>
+            }
             <span class="badge bg-secondary">Level @_selectedEncounter.Level</span>
             <span class="badge bg-dark">@_selectedEncounter.Position</span>
-            <span class="badge bg-info text-dark">@EncounterExpiresText(_selectedEncounter)</span>
+            @if (!IsSpotlightEncounter(_selectedEncounter))
+            {
+                <span class="badge bg-info text-dark">@EncounterExpiresText(_selectedEncounter)</span>
+            }
         </div>
+        @if (IsSpotlightEncounter(_selectedEncounter))
+        {
+            <p class="encounter-card__spotlight-copy" data-testid="spotlight-copy">
+                Last chance at @EncounterParkName(_selectedEncounter). Close the distance and recruit before the bell.
+            </p>
+        }
         <div class="encounter-card__route mb-2">
             <span>@EncounterDistanceText(_selectedEncounter)</span>
             <strong>@EncounterRouteInstruction(_selectedEncounter)</strong>
+        </div>
+        <div class="encounter-card__state mb-2 encounter-card__state--@RecruitStateCssClass" data-testid="spotlight-recruit-state">
+            @RecruitStateLabel
         </div>
         <div class="encounter-card__chance mb-3"
              role="progressbar"
@@ -484,6 +504,15 @@
      .encounter-radar__target:hover {
          background: rgba(34,197,94,0.14);
      }
+     .encounter-radar__target--spotlight {
+         min-height: 4.2rem;
+         border-color: rgba(244,201,93,0.68);
+         background: linear-gradient(135deg, rgba(24,47,37,0.94), rgba(54,43,26,0.9));
+         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+     }
+     .encounter-radar__target--spotlight:hover {
+         background: linear-gradient(135deg, rgba(31,65,48,0.96), rgba(69,54,31,0.92));
+     }
      .encounter-radar__target strong,
      .encounter-radar__target small {
          display: block;
@@ -491,10 +520,28 @@
          text-overflow: ellipsis;
          white-space: nowrap;
      }
+     .encounter-radar__kicker {
+         margin-bottom: 0.08rem;
+         color: #f4c95d !important;
+         font-weight: 900;
+         letter-spacing: 0.08em;
+         text-transform: uppercase;
+     }
      .encounter-radar__target small,
      .encounter-radar__target > span:last-child {
          font-size: 0.76rem;
          color: rgba(226,232,240,0.72);
+     }
+     .encounter-radar__timer {
+         align-self: stretch;
+         display: inline-flex;
+         align-items: center;
+         min-height: 2.75rem;
+         border-radius: 0.35rem;
+         padding: 0 0.45rem;
+         background: rgba(244,201,93,0.16);
+         color: #fff7d6 !important;
+         font-weight: 900;
      }
 
      .map-overlay {
@@ -514,6 +561,12 @@
      .map-overlay--encounter {
          border-color: rgba(74,222,128,0.4);
      }
+     .map-overlay--spotlight {
+         border-color: rgba(244,201,93,0.72);
+         background:
+             linear-gradient(180deg, rgba(33,37,41,0.96), rgba(19,31,26,0.96));
+         box-shadow: 0 18px 44px rgba(0,0,0,0.4), inset 0 1px 0 rgba(244,201,93,0.18);
+     }
      .encounter-card__eyebrow {
          margin-bottom: 0.15rem;
          font-size: 0.72rem;
@@ -521,6 +574,19 @@
          letter-spacing: 0.08em;
          text-transform: uppercase;
          color: rgba(187,247,208,0.8);
+     }
+     .map-overlay--spotlight .encounter-card__eyebrow {
+         color: #f4c95d;
+     }
+     .spotlight-timer {
+         background: rgba(244,201,93,0.94);
+         color: #1f2933;
+     }
+     .encounter-card__spotlight-copy {
+         margin: -0.1rem 0 0.55rem;
+         font-size: 0.82rem;
+         line-height: 1.35;
+         color: rgba(255,247,214,0.88);
      }
      .encounter-card__route {
          display: grid;
@@ -539,6 +605,31 @@
          min-width: 0;
          font-size: 0.82rem;
          color: rgba(248,250,252,0.9);
+     }
+     .encounter-card__state {
+         min-height: 2.75rem;
+         display: flex;
+         align-items: center;
+         border-radius: 0.45rem;
+         padding: 0.45rem 0.6rem;
+         font-size: 0.82rem;
+         font-weight: 900;
+         text-transform: uppercase;
+         letter-spacing: 0.04em;
+     }
+     .encounter-card__state--ready {
+         background: rgba(34,197,94,0.16);
+         color: #bbf7d0;
+     }
+     .encounter-card__state--weak,
+     .encounter-card__state--waiting {
+         background: rgba(244,201,93,0.14);
+         color: #fde68a;
+     }
+     .encounter-card__state--blocked,
+     .encounter-card__state--expired {
+         background: rgba(185,28,28,0.18);
+         color: #fecaca;
      }
      .encounter-card__chance {
          position: relative;
@@ -710,8 +801,20 @@
          }
          .encounter-radar {
              top: auto;
-             bottom: 11rem;
-             width: min(260px, calc(100vw - 1.5rem));
+             bottom: 12rem;
+             width: min(300px, calc(100vw - 1rem));
+             left: 0.5rem;
+         }
+         .map-overlay {
+             left: 0.5rem;
+             right: 0.5rem;
+             bottom: max(0.75rem, env(safe-area-inset-bottom));
+             max-height: min(58dvh, 31rem);
+             overflow-y: auto;
+         }
+         .encounter-radar__target,
+         .map-overlay button {
+             min-height: 44px;
          }
          .map-overlay--encounter + .recruit-toast,
          .recruit-toast {
@@ -825,6 +928,7 @@
     private bool _enableVerboseMapDiagnostics;
     private bool _isDisposing;
     private readonly CancellationTokenSource _diagnosticsCts = new();
+    private readonly CancellationTokenSource _spotlightClockCts = new();
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
     protected override void OnInitialized()
@@ -839,6 +943,7 @@
         _enableGameGraphics = reductionOptions.EnableGameGraphics;
         _enableAutoGpsWatch = reductionOptions.EnableAutoGpsWatch;
         _enableVerboseMapDiagnostics = ResolveMapFeatureFlag(Configuration, new Uri(Navigation.Uri, UriKind.Absolute), "EnableVerboseMapDiagnostics", "mapDiagnosticsVerbose", defaultValue: false);
+        _ = RunSpotlightClockAsync(_spotlightClockCts.Token);
     }
 
     public static MapReductionOptions ResolveMapReductionOptions(IConfiguration configuration, string currentUri)
@@ -1300,12 +1405,15 @@
     {
         if (_isDisposing || _encounterLayer is null) return;
 
+        var spotlightEncounterId = SpotlightSightingSelector
+            .Select(encounters, _lastKnownPosition, DateTime.UtcNow)
+            ?.EncounterId;
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
         foreach (var encounter in encounters)
         {
             graphics.Add(new KeyValuePair<Guid, Graphic>(
                 encounter.EncounterId,
-                MapGraphicFactory.CreateEncounterGraphic(encounter)));
+                MapGraphicFactory.CreateEncounterGraphic(encounter, encounter.EncounterId == spotlightEncounterId)));
         }
 
         try
@@ -1934,10 +2042,23 @@
         return d < 50 ? "<50m" : d < 100 ? "<100m" : d < 250 ? "<250m" : d < 500 ? "<500m" : ">500m";
     }
 
-    private PlayerEncounterDto? NearestEncounter => MapState.Value.VisibleEncounters
-        .OrderBy(e => EncounterDistanceMeters(e) ?? double.MaxValue)
-        .ThenBy(e => e.ExpiresAtUtc)
-        .FirstOrDefault();
+    private PlayerEncounterDto? SpotlightEncounter =>
+        SpotlightSightingSelector.Select(MapState.Value.VisibleEncounters, _lastKnownPosition, DateTime.UtcNow);
+
+    private bool IsSpotlightEncounter(PlayerEncounterDto? encounter) =>
+        encounter is not null && SpotlightEncounter?.EncounterId == encounter.EncounterId;
+
+    private string SpotlightSightingSummary(PlayerEncounterDto encounter) =>
+        BuildSpotlightSightingSummary(
+            encounter,
+            EncounterParkName(encounter),
+            EncounterDistanceText(encounter));
+
+    public static string BuildSpotlightSightingSummary(
+        PlayerEncounterDto encounter,
+        string parkName,
+        string distanceText) =>
+        $"{encounter.Rarity} at {parkName} · {distanceText}";
 
     private async Task SelectEncounterAsync(PlayerEncounterDto? encounter)
     {
@@ -1996,13 +2117,68 @@
         }
 
         return distance.Value <= RecruitDistanceMeters
-            ? "In range. Make the recruit attempt."
+            ? "Recruit window open."
             : $"Move within {RecruitDistanceMeters:0} m of the park.";
     }
 
-    private static string EncounterExpiresText(PlayerEncounterDto encounter)
+    private string RecruitStateLabel
     {
-        var remaining = encounter.ExpiresAtUtc - DateTime.UtcNow;
+        get
+        {
+            return BuildRecruitStateLabel(
+                _selectedEncounter,
+                _lastKnownPosition,
+                _canRecruit,
+                DateTime.UtcNow);
+        }
+    }
+
+    private string RecruitStateCssClass => RecruitStateCssClassForLabel(RecruitStateLabel);
+
+    public static string BuildRecruitStateLabel(
+        PlayerEncounterDto? selectedEncounter,
+        GeoPosition? lastKnownPosition,
+        bool canRecruit,
+        DateTime utcNow)
+    {
+        if (selectedEncounter is null)
+        {
+            return "Select a recruitable player.";
+        }
+
+        if (FormatEncounterExpiresText(selectedEncounter, utcNow) == "Expired")
+        {
+            return "Sighting expired";
+        }
+
+        if (lastKnownPosition is null)
+        {
+            return "GPS needed";
+        }
+
+        if (lastKnownPosition.Accuracy is > MaxRecruitAccuracyMeters)
+        {
+            return "Weak GPS";
+        }
+
+        return canRecruit ? "Recruit window" : "Move closer";
+    }
+
+    public static string RecruitStateCssClassForLabel(string recruitStateLabel) => recruitStateLabel switch
+    {
+        "Recruit window" => "ready",
+        "Weak GPS" => "weak",
+        "GPS needed" => "blocked",
+        "Sighting expired" => "expired",
+        _ => "waiting"
+    };
+
+    private static string EncounterExpiresText(PlayerEncounterDto encounter) =>
+        FormatEncounterExpiresText(encounter, DateTime.UtcNow);
+
+    public static string FormatEncounterExpiresText(PlayerEncounterDto encounter, DateTime utcNow)
+    {
+        var remaining = encounter.ExpiresAtUtc - utcNow;
         if (remaining <= TimeSpan.Zero)
         {
             return "Expired";
@@ -2060,6 +2236,31 @@
     {
         if (!_canRecruit) return "secondary";
         return "success";
+    }
+
+    private async Task RunSpotlightClockAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (_isDisposing)
+            {
+                return;
+            }
+
+            if (_selectedEncounter is not null || SpotlightEncounter is not null)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     private static string FormatDistance(double distanceMeters)
@@ -2286,6 +2487,7 @@
     {
         _isDisposing = true;
         await _diagnosticsCts.CancelAsync();
+        await _spotlightClockCts.CancelAsync();
 
         if (_subscriptionsActive)
         {
@@ -2318,5 +2520,6 @@
         _encounterGraphics.Clear();
         _candidatePlaceGraphics.Clear();
         _diagnosticsCts.Dispose();
+        _spotlightClockCts.Dispose();
     }
 }

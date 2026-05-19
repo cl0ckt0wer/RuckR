@@ -233,6 +233,11 @@ if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGi
 static string? ResolveClientAppSettingsPath(IWebHostEnvironment environment, string requestPath)
 {
     var relativePath = requestPath.TrimStart('/');
+    return ResolveClientStaticAssetPath(environment, relativePath);
+}
+
+static string? ResolveClientStaticAssetPath(IWebHostEnvironment environment, string relativePath)
+{
     var configuration = environment.IsDevelopment() ? "Debug" : "Release";
     var candidateRoots = new[]
     {
@@ -381,7 +386,7 @@ app.UseWhen(ctx => ctx.Request.Path.Equals("/css/app.css", StringComparison.Ordi
 {
     appCss.Run(async context =>
     {
-        var appCssPath = Path.Combine(app.Environment.WebRootPath, "css", "app.css");
+        var appCssPath = ResolveClientStaticAssetPath(app.Environment, Path.Combine("css", "app.css"));
         if (!File.Exists(appCssPath))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;

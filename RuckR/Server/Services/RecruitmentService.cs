@@ -7,6 +7,7 @@ namespace RuckR.Server.Services;
 /// <summary>Defines the server-side class RecruitmentService.</summary>
 public class RecruitmentService : IRecruitmentService
 {
+    private const int MaxVisibleEncounters = 8;
     private const double RecruitDistanceMeters = 75.0;
     private const int RecruitSuccessXp = 25;
     private static readonly TimeSpan EncounterLifetime = TimeSpan.FromHours(2);
@@ -46,44 +47,60 @@ public class RecruitmentService : IRecruitmentService
             .Select(c => c.PlayerId)
             .ToListAsync();
 
+        var profile = await GetOrCreateProfileAsync(userId);
+        var userLevel = profile.Level;
+        var activeEncounters = await _db.PlayerEncounters
+            .Include(e => e.Player)
+            .Where(e => e.UserId == userId
+                && e.ExpiresAtUtc > now
+                && !collectedPlayerIds.Contains(e.PlayerId))
+            .AsNoTracking()
+            .ToListAsync();
+
+        var visibleActiveEncounters = activeEncounters
+            .Where(e => e.Player is not null && nearbyParks.Any(park => IsNearPark(e, park)))
+            .OrderBy(e => e.ExpiresAtUtc)
+            .Take(MaxVisibleEncounters)
+            .ToList();
+
+        var encounters = new List<PlayerEncounterDto>(MaxVisibleEncounters);
+        foreach (var activeEncounter in visibleActiveEncounters)
+        {
+            encounters.Add(ToEncounterDto(activeEncounter, activeEncounter.Player!, userLevel, nearbyParks));
+        }
+
+        var remainingSlots = MaxVisibleEncounters - encounters.Count;
+        if (remainingSlots <= 0)
+        {
+            return encounters;
+        }
+
+        var activeVisiblePlayerIds = visibleActiveEncounters
+            .Select(e => e.PlayerId)
+            .ToHashSet();
+
         var candidates = await _db.Players
-            .Where(p => !collectedPlayerIds.Contains(p.Id))
+            .Where(p => !collectedPlayerIds.Contains(p.Id)
+                && !activeVisiblePlayerIds.Contains(p.Id))
             .AsNoTracking()
             .ToListAsync();
 
         if (candidates.Count == 0)
         {
-            return Array.Empty<PlayerEncounterDto>();
+            return encounters;
         }
 
-        var profile = await GetOrCreateProfileAsync(userId);
-        var userLevel = profile.Level;
         var topCandidates = candidates
             .OrderBy(_ => Random.Shared.Next())
-            .Take(8)
+            .Take(remainingSlots)
             .ToList();
-
-        var encounters = new List<PlayerEncounterDto>(topCandidates.Count);
         foreach (var player in topCandidates)
         {
             var park = nearbyParks[Random.Shared.Next(nearbyParks.Count)];
             var parkLocation = GeometryFactory.CreatePoint(new Coordinate(park.Longitude, park.Latitude));
 
             var entry = await GetOrCreateEncounterAsync(userId, player, now, parkLocation, nearbyParks);
-            var encounterPark = GetNearestPark(entry.Latitude, entry.Longitude, nearbyParks);
-            encounters.Add(new PlayerEncounterDto(
-                entry.Id,
-                player.Id,
-                player.Name,
-                player.Position.ToString(),
-                player.Rarity.ToString(),
-                player.Level,
-                entry.Latitude,
-                entry.Longitude,
-                entry.ExpiresAtUtc,
-                CalculateSuccessChance(userLevel, player.Level, player.Rarity),
-                encounterPark?.Name,
-                encounterPark?.PlaceId));
+            encounters.Add(ToEncounterDto(entry, player, userLevel, nearbyParks));
         }
 
         return encounters;
@@ -268,6 +285,28 @@ public class RecruitmentService : IRecruitmentService
                     Longitude = park.Longitude
                 }))
             .First();
+    }
+
+    private static PlayerEncounterDto ToEncounterDto(
+        PlayerEncounterModel encounter,
+        PlayerModel player,
+        int userLevel,
+        IReadOnlyList<RealWorldPark> nearbyParks)
+    {
+        var encounterPark = GetNearestPark(encounter.Latitude, encounter.Longitude, nearbyParks);
+        return new PlayerEncounterDto(
+            encounter.Id,
+            player.Id,
+            player.Name,
+            player.Position.ToString(),
+            player.Rarity.ToString(),
+            player.Level,
+            encounter.Latitude,
+            encounter.Longitude,
+            encounter.ExpiresAtUtc,
+            CalculateSuccessChance(userLevel, player.Level, player.Rarity),
+            encounterPark?.Name,
+            encounterPark?.PlaceId);
     }
 
     private async Task DeleteEncounterAsync(Guid encounterId)

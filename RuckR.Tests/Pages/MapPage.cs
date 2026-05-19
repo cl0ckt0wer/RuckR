@@ -125,13 +125,25 @@ public class MapPage : BasePage
     /// </summary>
     public async Task<bool> IsGpsDisabledBannerVisibleAsync()
     {
-        return await Page.GetByTestId("gps-disabled-banner").IsVisibleAsync();
+        try
+        {
+            await Page.WaitForSelectorAsync("[data-testid='gps-readiness']", new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 10_000
+            });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
     }
 
     /// <summary>Click the "Enable" button in the GPS disabled banner.</summary>
     public async Task ClickEnableGpsAsync()
     {
-        await Page.GetByTestId("gps-enable-btn").ClickAsync();
+        await Page.GetByTestId("gps-retry-btn").ClickAsync();
     }
 
     // ── Onboarding banner ──────────────────────────────────────────────
@@ -435,6 +447,72 @@ public class MapPage : BasePage
         });
     }
 
+    /// <summary>Wait for the Spotlight Sighting recruit board target.</summary>
+    public async Task WaitForSpotlightEncounterAsync(int timeoutMs = 15_000)
+    {
+        await Page.WaitForSelectorAsync("[data-testid='spotlight-encounter-btn']", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = timeoutMs
+        });
+    }
+
+    /// <summary>Select the current Spotlight Sighting.</summary>
+    public async Task SelectSpotlightEncounterAsync()
+    {
+        await Page.GetByTestId("spotlight-encounter-btn").ClickAsync();
+        await Page.WaitForSelectorAsync("[data-testid='encounter-overlay']", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 5_000
+        });
+    }
+
+    /// <summary>Read the Spotlight Sighting card state label.</summary>
+    public async Task<string> GetSpotlightRecruitStateAsync() =>
+        (await Page.GetByTestId("spotlight-recruit-state").TextContentAsync())?.Trim() ?? string.Empty;
+
+    /// <summary>Read the Spotlight Sighting countdown text.</summary>
+    public async Task<string> GetSpotlightTimerTextAsync() =>
+        (await Page.GetByTestId("spotlight-timer").TextContentAsync())?.Trim() ?? string.Empty;
+
+    /// <summary>Read the Spotlight Sighting player-facing hunt copy.</summary>
+    public async Task<string> GetSpotlightCopyTextAsync() =>
+        (await Page.GetByTestId("spotlight-copy").TextContentAsync())?.Trim() ?? string.Empty;
+
+    /// <summary>Return whether primary map overlays overlap incoherently on the current viewport.</summary>
+    public async Task<bool> HasIncoherentSpotlightOverlapAsync() =>
+        await Page.EvaluateAsync<bool>(
+            @"() => {
+                const selectors = [
+                    '[data-testid=""gps-readiness""]',
+                    '[data-testid=""spotlight-encounter-btn""]',
+                    '[data-testid=""encounter-overlay""]',
+                    '[data-testid=""recruit-toast""]',
+                    '[data-testid=""map-key""]'
+                ];
+                const visible = selectors
+                    .map(selector => document.querySelector(selector))
+                    .filter(Boolean)
+                    .filter(element => {
+                        const rect = element.getBoundingClientRect();
+                        const style = getComputedStyle(element);
+                        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                    })
+                    .map(element => ({ selector: element.getAttribute('data-testid'), rect: element.getBoundingClientRect() }));
+
+                for (let i = 0; i < visible.length; i++) {
+                    for (let j = i + 1; j < visible.length; j++) {
+                        const a = visible[i].rect;
+                        const b = visible[j].rect;
+                        const xOverlap = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+                        const yOverlap = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+                        if (xOverlap * yOverlap > 200) return true;
+                    }
+                }
+                return false;
+            }");
+
     /// <summary>Check whether ArcGIS native popup UI is visible.</summary>
     public async Task<bool> IsNativePopupVisibleAsync()
     {
@@ -460,7 +538,18 @@ public class MapPage : BasePage
     /// <summary>
     /// Check whether the user's location marker is visible on the map.
     /// </summary>
-    public async Task<bool> IsUserMarkerVisibleAsync() => await ExistsAsync("[data-testid='map-container'] svg");
+    public async Task<bool> IsUserMarkerVisibleAsync()
+    {
+        try
+        {
+            await WaitForLayerGraphicCountAsync("Player location", 1, 30_000);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
 
     // ── Map center helpers ─────────────────────────────────────────────
 
