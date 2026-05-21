@@ -33,6 +33,24 @@ public class PlayerEncounterModel
     /// <summary>UTC creation time for the encounter.</summary>
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
+    /// <summary>UTC time when the active recruitment session started.</summary>
+    public DateTime? RecruitmentStartedAtUtc { get; set; }
+
+    /// <summary>UTC time when the active recruitment session can complete.</summary>
+    public DateTime? RecruitmentCompletesAtUtc { get; set; }
+
+    /// <summary>Base duration required before social and item reductions.</summary>
+    public int RecruitmentBaseDurationSeconds { get; set; }
+
+    /// <summary>Actual duration required after social and item reductions.</summary>
+    public int RecruitmentRequiredDurationSeconds { get; set; }
+
+    /// <summary>Nearby recruiters counted when the session was started.</summary>
+    public int RecruitmentLocalPlayerCount { get; set; }
+
+    /// <summary>Recruitment item used when the session was started.</summary>
+    public RecruitmentItemKind RecruitmentItemKind { get; set; } = RecruitmentItemKind.None;
+
     /// <summary>Related player reference for this encounter.</summary>
     public PlayerModel? Player { get; set; }
 }

@@ -162,7 +162,7 @@ namespace RuckR.Shared.Models
     /// <param name="Latitude">Encounter latitude.</param>
     /// <param name="Longitude">Encounter longitude.</param>
     /// <param name="ExpiresAtUtc">Expiration timestamp.</param>
-    /// <param name="SuccessChancePercent">Current capture success percentage.</param>
+    /// <param name="BaseRecruitmentSeconds">Base time required to recruit before social/item reductions.</param>
     /// <param name="ParkName">Optional park name.</param>
     /// <param name="ParkPlaceId">Optional external place identifier.</param>
     public sealed record PlayerEncounterDto(
@@ -176,6 +176,7 @@ namespace RuckR.Shared.Models
         double Longitude,
         DateTime ExpiresAtUtc,
         int SuccessChancePercent,
+        int BaseRecruitmentSeconds = 0,
         string? ParkName = null,
         string? ParkPlaceId = null);
 
@@ -186,20 +187,47 @@ namespace RuckR.Shared.Models
     /// <param name="PlayerId">Player identifier being recruited.</param>
     public sealed record RecruitmentAttemptRequest(
         [Required] Guid EncounterId,
-        [Required] int PlayerId);
+        [Required] int PlayerId,
+        RecruitmentItemKind ItemKind = RecruitmentItemKind.None);
+
+    /// <summary>
+    /// One time reducer applied to an active recruitment session.
+    /// </summary>
+    /// <param name="Label">Player-facing reducer label.</param>
+    /// <param name="SecondsSaved">Approximate seconds saved by this reducer.</param>
+    /// <param name="PercentReduction">Percentage reduction applied by this reducer.</param>
+    public sealed record RecruitmentBoostDto(
+        string Label,
+        int SecondsSaved,
+        int PercentReduction);
 
     /// <summary>
     /// Recruitment result payload.
     /// </summary>
     /// <param name="Success">Whether recruitment succeeded.</param>
-    /// <param name="SuccessChancePercent">Calculated success chance.</param>
+    /// <param name="Completed">Whether the timed recruitment session is complete.</param>
+    /// <param name="BaseDurationSeconds">Base duration before social and item reducers.</param>
+    /// <param name="RequiredDurationSeconds">Actual duration after social and item reducers.</param>
+    /// <param name="RemainingSeconds">Seconds remaining before completion is allowed.</param>
+    /// <param name="CompletesAtUtc">Server-owned completion timestamp.</param>
+    /// <param name="LocalPlayerCount">Nearby recruiters counted for the session.</param>
+    /// <param name="ItemKind">Item consumed for this session.</param>
+    /// <param name="Boosts">Time reducers applied to this session.</param>
     /// <param name="Message">Outcome message.</param>
     /// <param name="Collection">Captured collection entry when successful.</param>
     public sealed record RecruitmentAttemptResultDto(
         bool Success,
         int SuccessChancePercent,
         string Message,
-        CollectionModel? Collection);
+        CollectionModel? Collection,
+        bool Completed = false,
+        int BaseDurationSeconds = 0,
+        int RequiredDurationSeconds = 0,
+        int RemainingSeconds = 0,
+        DateTime? CompletesAtUtc = null,
+        int LocalPlayerCount = 0,
+        RecruitmentItemKind ItemKind = RecruitmentItemKind.None,
+        IReadOnlyList<RecruitmentBoostDto>? Boosts = null);
 
     /// <summary>
     /// Lightweight representation of player progression.

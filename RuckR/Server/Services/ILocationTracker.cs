@@ -14,6 +14,13 @@ namespace RuckR.Server.Services
         (GeoPosition Position, DateTime Timestamp)? TryGetPosition(string userId, TimeSpan? maxAge = null);
 
         /// <summary>
+        /// Returns recent positions for all tracked users within the specified max age.
+        /// </summary>
+        /// <param name="maxAge">Maximum accepted position age.</param>
+        /// <returns>Recent positions keyed by user id.</returns>
+        IReadOnlyDictionary<string, (GeoPosition Position, DateTime Timestamp)> GetRecentPositions(TimeSpan maxAge);
+
+        /// <summary>
         /// Updates the stored position for the given user.
         /// Called by BattleHub when a client sends UpdateLocation.
         /// </summary>

@@ -26,6 +26,8 @@ namespace RuckR.Server.Data
         public DbSet<RateLimitRecord> RateLimitRecords { get; set; }
         /// <summary>Gets or sets user consent records.</summary>
         public DbSet<UserConsent> UserConsents { get; set; }
+        /// <summary>Gets or sets user recruitment item stacks.</summary>
+        public DbSet<UserRecruitmentItemModel> UserRecruitmentItems { get; set; }
     /// <summary>Initializes a new instance of <see cref="RuckRDbContext"/>.</summary>
     /// <param name="options">The EF Core options.</param>
     public RuckRDbContext(DbContextOptions<RuckRDbContext> options) : base(options) { }
@@ -98,7 +100,15 @@ namespace RuckR.Server.Data
             {
                 entity.HasIndex(e => new { e.UserId, e.PlayerId });
                 entity.HasIndex(e => e.ExpiresAtUtc);
+                entity.Property(e => e.RecruitmentItemKind).HasConversion<string>().HasMaxLength(20);
                 entity.HasOne(e => e.Player).WithMany().HasForeignKey(e => e.PlayerId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<UserRecruitmentItemModel>(entity =>
+            {
+                entity.HasIndex(i => new { i.UserId, i.ItemKind }).IsUnique();
+                entity.Property(i => i.ItemKind).HasConversion<string>().HasMaxLength(20);
+                entity.Property(i => i.Quantity).HasDefaultValue(0);
             });
         }
     }

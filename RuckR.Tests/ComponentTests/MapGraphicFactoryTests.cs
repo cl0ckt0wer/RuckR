@@ -77,6 +77,7 @@ public class MapGraphicFactoryTests
             Longitude: -80.158062,
             ExpiresAtUtc: expiresAtUtc,
             SuccessChancePercent: 72,
+            BaseRecruitmentSeconds: 150,
             ParkName: "Frost Park",
             ParkPlaceId: "frost-park");
 
@@ -95,6 +96,7 @@ public class MapGraphicFactoryTests
         AssertGraphicAttribute(graphic.Attributes, "level", 6);
         AssertGraphicAttribute(graphic.Attributes, "parkName", "Frost Park");
         AssertGraphicAttribute(graphic.Attributes, "successChancePercent", 72);
+        AssertGraphicAttribute(graphic.Attributes, "baseRecruitmentSeconds", 150);
         AssertGraphicAttribute(graphic.Attributes, "expiresAtUtc", expiresAtUtc);
     }
 

@@ -32,6 +32,7 @@ public class RecruitmentApiTests : IAsyncLifetime
     /// </summary>
     public async Task InitializeAsync()
     {
+        _factory.LocationTracker.ClearAll();
         _factory.ParkService.UseDefaultPark();
         _username = $"recruit_{Guid.NewGuid():N}";
         _userId = await _factory.CreateTestUserAsync(_username, "TestPass123!");
@@ -48,31 +49,11 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies get Encounters Returns Chance Based On Player And User Level.
+    /// Verifies get Encounters Returns Recruit Time Based On Rarity.
     /// </summary>
     [Fact]
-    public async Task GetEncounters_ReturnsChanceBasedOnPlayerAndUserLevel()
+    public async Task GetEncounters_ReturnsRecruitTimeBasedOnRarity()
     {
-        await _factory.ExecuteInDbAsync(async db =>
-        {
-            var profile = await db.UserGameProfiles.FirstOrDefaultAsync(p => p.UserId == _userId);
-            if (profile is null)
-            {
-                db.UserGameProfiles.Add(new UserGameProfileModel
-                {
-                    UserId = _userId,
-                    Level = 20,
-                    Experience = 1900
-                });
-            }
-            else
-            {
-                profile.Level = 20;
-                profile.Experience = 1900;
-            }
-            await db.SaveChangesAsync();
-        });
-
         var anchor = await GetAnyPlayerLocationAsync();
         _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
 
@@ -84,8 +65,9 @@ public class RecruitmentApiTests : IAsyncLifetime
         Assert.NotEmpty(encounters);
 
         var first = encounters![0];
-        var expected = ExpectedChance(20, first.Level, first.Rarity);
-        Assert.Equal(expected, first.SuccessChancePercent);
+        var expected = ExpectedBaseRecruitmentSeconds(first.Rarity);
+        Assert.Equal(expected, first.BaseRecruitmentSeconds);
+        Assert.Equal(100, first.SuccessChancePercent);
     }
 
     /// <summary>
@@ -116,7 +98,7 @@ public class RecruitmentApiTests : IAsyncLifetime
                 $"Encounter should last close to two hours. Actual expiry: {encounter.ExpiresAtUtc:o}");
             Assert.False(string.IsNullOrWhiteSpace(encounter.Name));
             Assert.False(string.IsNullOrWhiteSpace(encounter.Rarity));
-            Assert.InRange(encounter.SuccessChancePercent, 5, 95);
+            Assert.InRange(encounter.BaseRecruitmentSeconds, 30, 600);
         });
     }
 
@@ -267,24 +249,10 @@ public class RecruitmentApiTests : IAsyncLifetime
     {
         await SetUserProfileAsync(level: 100, xp: 9900);
 
-        RecruitmentAttemptResultDto? successResult = null;
-        PlayerEncounterDto? encounter = null;
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+        var successResult = await RecruitToCompletionAsync(encounter);
 
-        for (var i = 0; i < 20 && successResult is null; i++)
-        {
-            encounter = await CreateEncounterAsync();
-            _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
-
-            var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
-            response.EnsureSuccessStatusCode();
-            var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
-            if (result?.Success == true)
-            {
-                successResult = result;
-            }
-        }
-
-        Assert.NotNull(encounter);
         Assert.NotNull(successResult);
 
         var duplicateEncounterId = Guid.NewGuid();
@@ -413,6 +381,67 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies attempt Recruitment Starts Timed Session And Uses Local Players And Items.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_StartsTimedSession_UsesLocalPlayersAndItems()
+    {
+        var otherUserId = await _factory.CreateTestUserAsync($"local_{Guid.NewGuid():N}", "TestPass123!");
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+        _factory.LocationTracker.SetPosition(otherUserId, encounter.Latitude, encounter.Longitude);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId, RecruitmentItemKind.Chips));
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(result);
+        Assert.False(result!.Success);
+        Assert.False(result.Completed);
+        Assert.True(result.LocalPlayerCount >= 1);
+        Assert.Equal(RecruitmentItemKind.Chips, result.ItemKind);
+        Assert.Equal(encounter.BaseRecruitmentSeconds, result.BaseDurationSeconds);
+        Assert.True(result.RequiredDurationSeconds < result.BaseDurationSeconds);
+        Assert.True(result.RemainingSeconds > 0);
+        Assert.Contains(result.Boosts!, boost => boost.Label.Contains("local recruiter", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Boosts!, boost => boost.Label.Contains("Chips", StringComparison.OrdinalIgnoreCase));
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var chips = await db.UserRecruitmentItems.SingleAsync(i => i.UserId == _userId && i.ItemKind == RecruitmentItemKind.Chips);
+            Assert.Equal(2, chips.Quantity);
+        });
+    }
+
+    /// <summary>
+    /// Verifies attempt Recruitment Before Timer Finishes Returns In Progress.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_BeforeTimerFinishes_ReturnsInProgress()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+
+        var firstResponse = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        firstResponse.EnsureSuccessStatusCode();
+
+        var secondResponse = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        secondResponse.EnsureSuccessStatusCode();
+
+        var result = await secondResponse.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(result);
+        Assert.False(result!.Success);
+        Assert.True(result.RemainingSeconds > 0);
+        Assert.Contains("progress", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Verifies attempt Recruitment Success Adds Collection Awards Experience And Removes Encounter.
     /// </summary>
     [Fact]
@@ -420,30 +449,13 @@ public class RecruitmentApiTests : IAsyncLifetime
     {
         await SetUserProfileAsync(level: 100, xp: 9900);
 
-        RecruitmentAttemptResultDto? successResult = null;
-        PlayerEncounterDto? successfulEncounter = null;
         var startXp = 9900;
 
-        for (var i = 0; i < 20 && successResult is null; i++)
-        {
-            var encounter = await CreateEncounterAsync();
-            _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
-
-            var response = await _client.PostAsJsonAsync(
-                "/api/recruitment/attempt",
-                new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
-            response.EnsureSuccessStatusCode();
-
-            var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
-            if (result?.Success == true)
-            {
-                successResult = result;
-                successfulEncounter = encounter;
-            }
-        }
+        var successfulEncounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, successfulEncounter.Latitude, successfulEncounter.Longitude);
+        var successResult = await RecruitToCompletionAsync(successfulEncounter);
 
         Assert.NotNull(successResult);
-        Assert.NotNull(successfulEncounter);
         Assert.NotNull(successResult!.Collection);
 
         await _factory.ExecuteInDbAsync(async db =>
@@ -564,21 +576,37 @@ public class RecruitmentApiTests : IAsyncLifetime
         });
     }
 
-    private static int ExpectedChance(int userLevel, int playerLevel, string rarity)
+    private async Task<RecruitmentAttemptResultDto?> RecruitToCompletionAsync(PlayerEncounterDto encounter)
     {
-        var rarityModifier = rarity switch
-        {
-            "Common" => 10,
-            "Uncommon" => 0,
-            "Rare" => -10,
-            "Epic" => -20,
-            "Legendary" => -30,
-            _ => 0
-        };
+        var startResponse = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        startResponse.EnsureSuccessStatusCode();
 
-        var chance = 65 + ((userLevel - playerLevel) * 3) + rarityModifier;
-        return Math.Clamp(chance, 5, 95);
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var entity = await db.PlayerEncounters.FirstAsync(e => e.Id == encounter.EncounterId);
+            entity.RecruitmentCompletesAtUtc = DateTime.UtcNow.AddSeconds(-1);
+            await db.SaveChangesAsync();
+        });
+
+        var finishResponse = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        finishResponse.EnsureSuccessStatusCode();
+
+        return await finishResponse.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
     }
+
+    private static int ExpectedBaseRecruitmentSeconds(string rarity) => rarity switch
+    {
+        "Common" => 30,
+        "Uncommon" => 60,
+        "Rare" => 150,
+        "Epic" => 300,
+        "Legendary" => 600,
+        _ => 60
+    };
 }
 
 

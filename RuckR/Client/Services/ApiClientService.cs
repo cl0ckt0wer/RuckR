@@ -264,12 +264,16 @@ public class ApiClientService
     /// </summary>
     /// <param name="encounterId">Encounter identifier.</param>
     /// <param name="playerId">Selected player identifier.</param>
+    /// <param name="itemKind">Optional item to apply when starting a new recruitment session.</param>
     /// <returns>Recruitment result details.</returns>
-    public async Task<RecruitmentAttemptResultDto?> AttemptRecruitmentAsync(Guid encounterId, int playerId)
+    public async Task<RecruitmentAttemptResultDto?> AttemptRecruitmentAsync(
+        Guid encounterId,
+        int playerId,
+        RecruitmentItemKind itemKind = RecruitmentItemKind.None)
     {
         try
         {
-            var response = await _http.PostAsJsonAsync("api/recruitment/attempt", new RecruitmentAttemptRequest(encounterId, playerId));
+            var response = await _http.PostAsJsonAsync("api/recruitment/attempt", new RecruitmentAttemptRequest(encounterId, playerId, itemKind));
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
         }

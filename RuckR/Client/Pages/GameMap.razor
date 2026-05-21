@@ -256,14 +256,33 @@
             @RecruitStateLabel
         </div>
         <div class="encounter-card__chance mb-3"
-             role="progressbar"
-             aria-label="Recruitment success chance"
-             aria-valuemin="0"
-             aria-valuemax="100"
-             aria-valuenow="@_selectedEncounter.SuccessChancePercent">
-            <div style="width:@_selectedEncounter.SuccessChancePercent%"></div>
-            <span>@_selectedEncounter.SuccessChancePercent% chance</span>
+             role="timer"
+             aria-label="Recruitment time needed"
+             data-testid="recruit-time-needed">
+            <div style="width:@RecruitTimeProgressPercent%"></div>
+            <span>@RecruitTimerText</span>
         </div>
+        <div class="encounter-card__items mb-3" data-testid="recruit-item-picker">
+            <label class="form-label small mb-1" for="recruit-item">Use item</label>
+            <select id="recruit-item"
+                    class="form-select form-select-sm"
+                    disabled="@(_activeRecruitment is not null)"
+                    @bind="_selectedRecruitItem">
+                <option value="@RecruitmentItemKind.None">No item</option>
+                <option value="@RecruitmentItemKind.Chips">Chips</option>
+                <option value="@RecruitmentItemKind.Beer">Beer</option>
+                <option value="@RecruitmentItemKind.Whiskey">Whiskey</option>
+            </select>
+        </div>
+        @if (_activeRecruitment?.Boosts is { Count: > 0 } boosts)
+        {
+            <div class="encounter-card__boosts mb-3" data-testid="recruit-boosts">
+                @foreach (var boost in boosts)
+                {
+                    <span>@boost.Label</span>
+                }
+            </div>
+        }
         <button class="btn btn-sm btn-@RecruitButtonClass()"
                 data-testid="recruit-btn"
                 disabled="@(!_canRecruit)"
@@ -275,7 +294,7 @@
             }
             else
             {
-                @:Recruit @_selectedEncounter.Name
+                @RecruitButtonText
             }
         </button>
         @if (!_canRecruit)
@@ -655,6 +674,28 @@
          color: #fff;
          text-shadow: 0 1px 2px rgba(0,0,0,0.45);
      }
+     .encounter-card__items select {
+         min-height: 44px;
+         border-color: rgba(255,255,255,0.18);
+         background-color: rgba(15,23,42,0.82);
+         color: #f8fafc;
+     }
+     .encounter-card__boosts {
+         display: flex;
+         flex-wrap: wrap;
+         gap: 0.35rem;
+     }
+     .encounter-card__boosts span {
+         display: inline-flex;
+         align-items: center;
+         min-height: 1.75rem;
+         border-radius: 999px;
+         padding: 0.2rem 0.55rem;
+         background: rgba(34,197,94,0.16);
+         color: #bbf7d0;
+         font-size: 0.75rem;
+         font-weight: 800;
+     }
      .pitch-card {
          overflow: hidden;
          border-width: 1px 1px 1px 5px;
@@ -911,6 +952,8 @@
     private int _prevLevelXp;
     private bool _canRecruit;
     private bool _isRecruiting;
+    private RecruitmentAttemptResultDto? _activeRecruitment;
+    private RecruitmentItemKind _selectedRecruitItem = RecruitmentItemKind.None;
     private bool _isAuthenticated;
     private string _recruitBlockedReason = "Go to the park to recruit.";
     private string? _recruitMessage;
@@ -1821,6 +1864,8 @@
     private void ClearEncounterSelection()
     {
         _selectedEncounter = null;
+        _activeRecruitment = null;
+        _selectedRecruitItem = RecruitmentItemKind.None;
         Dispatcher.Dispatch(new ClearSelectionAction());
     }
 
@@ -1834,6 +1879,7 @@
 
         _selectedCandidatePlace = candidate;
         _selectedEncounter = null;
+        _activeRecruitment = null;
         _candidatePitchName = candidate.Name;
         _candidatePitchType = NormalizePitchType(candidate.RecommendedPitchType);
         _candidateCreateMessage = null;
@@ -2068,6 +2114,8 @@
         }
 
         _selectedEncounter = encounter;
+        _activeRecruitment = null;
+        _selectedRecruitItem = RecruitmentItemKind.None;
         _recruitMessage = null;
         UpdateRecruitEligibility();
         Dispatcher.Dispatch(new SelectEncounterAction(encounter.EncounterId));
@@ -2302,6 +2350,68 @@
             : encounter.ParkName;
     }
 
+    private string RecruitTimerText
+    {
+        get
+        {
+            if (_activeRecruitment is { Completed: false })
+            {
+                return $"{FormatDuration(ActiveRecruitmentRemainingSeconds)} remaining";
+            }
+
+            var baseSeconds = _selectedEncounter?.BaseRecruitmentSeconds > 0
+                ? _selectedEncounter.BaseRecruitmentSeconds
+                : 60;
+            return $"{FormatDuration(baseSeconds)} recruit time";
+        }
+    }
+
+    private int ActiveRecruitmentRemainingSeconds
+    {
+        get
+        {
+            if (_activeRecruitment?.CompletesAtUtc is null)
+            {
+                return 0;
+            }
+
+            return Math.Max(0, (int)Math.Ceiling((_activeRecruitment.CompletesAtUtc.Value - DateTime.UtcNow).TotalSeconds));
+        }
+    }
+
+    private double RecruitTimeProgressPercent
+    {
+        get
+        {
+            if (_activeRecruitment is null || _activeRecruitment.RequiredDurationSeconds <= 0)
+            {
+                return 100;
+            }
+
+            var elapsed = _activeRecruitment.RequiredDurationSeconds - ActiveRecruitmentRemainingSeconds;
+            return Math.Clamp(elapsed / (double)_activeRecruitment.RequiredDurationSeconds * 100, 0, 100);
+        }
+    }
+
+    private string RecruitButtonText =>
+        _activeRecruitment is { Completed: false }
+            ? ActiveRecruitmentRemainingSeconds <= 0 ? "Finish recruit" : "Check recruit progress"
+            : $"Recruit {_selectedEncounter?.Name}";
+
+    private static string FormatDuration(int seconds)
+    {
+        if (seconds < 60)
+        {
+            return $"{seconds}s";
+        }
+
+        var minutes = seconds / 60;
+        var remainderSeconds = seconds % 60;
+        return remainderSeconds == 0
+            ? $"{minutes}m"
+            : $"{minutes}m {remainderSeconds}s";
+    }
+
     private async Task AttemptRecruitment()
     {
         if (_selectedEncounter is null || _isRecruiting) return;
@@ -2312,7 +2422,8 @@
 
         try
         {
-            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId);
+            var itemKind = _activeRecruitment is null ? _selectedRecruitItem : RecruitmentItemKind.None;
+            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId, itemKind);
             if (result is null)
             {
                 _recruitMessage = "Recruitment failed. Please try again.";
@@ -2320,6 +2431,7 @@
             }
             else if (result.Success)
             {
+                _activeRecruitment = null;
                 _recruitMessage = result.Message;
                 _recruitMessageClass = "success";
                 _recruitToastMessage = $"{result.Message} +25 XP";
@@ -2330,8 +2442,9 @@
             }
             else
             {
+                _activeRecruitment = result.RemainingSeconds > 0 || result.CompletesAtUtc is not null ? result : null;
                 _recruitMessage = result.Message;
-                _recruitMessageClass = "danger";
+                _recruitMessageClass = _activeRecruitment is null ? "danger" : "success";
                 _recruitToastMessage = null;
             }
         }

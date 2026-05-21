@@ -12,7 +12,7 @@ public interface IRecruitmentService
     /// <returns>Nearby encounter DTOs.</returns>
     Task<IReadOnlyList<PlayerEncounterDto>> GetEncountersAsync(string userId, double lat, double lng, double radiusMeters);
 
-    /// <summary>Attempts to recruit a player encounter for the user.</summary>
+    /// <summary>Starts, checks, or completes a timed recruitment session for the user.</summary>
     /// <param name="userId">Current user identifier.</param>
     /// <param name="request">Recruitment attempt request payload.</param>
     /// <param name="userPosition">Validated user position used for anti-spoof checks.</param>

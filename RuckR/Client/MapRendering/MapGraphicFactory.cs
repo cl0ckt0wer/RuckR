@@ -62,6 +62,7 @@ public static class MapGraphicFactory
                 ["level"] = encounter.Level,
                 ["parkName"] = encounter.ParkName,
                 ["successChancePercent"] = encounter.SuccessChancePercent,
+                ["baseRecruitmentSeconds"] = encounter.BaseRecruitmentSeconds,
                 ["expiresAtUtc"] = encounter.ExpiresAtUtc
             }));
 

@@ -34,6 +34,15 @@ namespace RuckR.Server.Services
             return null;
         }
 
+        /// <inheritdoc />
+        public IReadOnlyDictionary<string, (GeoPosition Position, DateTime Timestamp)> GetRecentPositions(TimeSpan maxAge)
+        {
+            var now = DateTime.UtcNow;
+            return _positions
+                .Where(entry => now - entry.Value.Timestamp <= maxAge)
+                .ToDictionary(entry => entry.Key, entry => entry.Value);
+        }
+
         /// <summary>
         /// Updates the tracked position for a user to the current timestamp.
         /// </summary>

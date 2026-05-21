@@ -77,6 +77,15 @@ public class TestLocationTracker : ILocationTracker
         return null;
     }
 
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, (GeoPosition Position, DateTime Timestamp)> GetRecentPositions(TimeSpan maxAge)
+    {
+        var now = DateTime.UtcNow;
+        return _positions
+            .Where(entry => now - entry.Value.Timestamp <= maxAge)
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
+    }
+
     /// <summary>
     /// Verifies update Position.
     /// </summary>

@@ -43,6 +43,21 @@ namespace RuckR.Shared.Models
     }
 
     /// <summary>
+    /// Temporary pub-kit items that can shorten a recruitment session.
+    /// </summary>
+    public enum RecruitmentItemKind
+    {
+        /// <summary>No item was used.</summary>
+        None,
+        /// <summary>Quick snack that removes a small fixed amount of recruit time.</summary>
+        Chips,
+        /// <summary>Social round that works best when another local recruiter is present.</summary>
+        Beer,
+        /// <summary>Rare boost that heavily shortens one high-value recruit.</summary>
+        Whiskey
+    }
+
+    /// <summary>
     /// Types of rugby pitch definitions supported by the app.
     /// </summary>
     public enum PitchType
