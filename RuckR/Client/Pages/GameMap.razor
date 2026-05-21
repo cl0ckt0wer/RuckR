@@ -1,9 +1,11 @@
 @page "/map"
 @page "/"
+@page "/debug-map/geoblazor-native"
 @using dymaptic.GeoBlazor.Core.Components
 @using dymaptic.GeoBlazor.Core.Components.Geometries
 @using dymaptic.GeoBlazor.Core.Components.Layers
 @using dymaptic.GeoBlazor.Core.Components.Popups
+@using dymaptic.GeoBlazor.Core.Components.Renderers
 @using dymaptic.GeoBlazor.Core.Components.Symbols
 @using dymaptic.GeoBlazor.Core.Components.Views
 @using dymaptic.GeoBlazor.Core.Components.Widgets
@@ -29,7 +31,7 @@
 @inject IState<LocationState> LocationState
 @implements IAsyncDisposable
 
-<div class="map-shell @(HasRecruitUi ? "map-shell--recruit-ui" : null)" data-testid="map-container">
+<div class="map-shell @MapShellModeClass @(HasRecruitUi ? "map-shell--recruit-ui" : null)" data-testid="map-container">
     @if (!_hasApiKey)
     {
         <div class="map-unavailable-shell" data-testid="map-unavailable">
@@ -74,7 +76,24 @@
                     <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
                     <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
                     <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
-                    <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
+                    @if (_useNativeGeoBlazorMap)
+                    {
+                        <FeatureLayer @key="_nativePitchLayerVersion"
+                                      @ref="_nativePitchLayer"
+                                      Title="Pitches"
+                                      Source="@_nativePitchFeatures"
+                                      Fields="@NativePitchFeatureLayerFactory.Fields"
+                                      OutFields="@NativePitchFeatureLayerFactory.OutFields"
+                                      ObjectIdField="@NativePitchFeatureLayerFactory.ObjectIdField"
+                                      GeometryType="@FeatureGeometryType.Point"
+                                      Renderer="@_nativePitchRenderer"
+                                      PopupEnabled="true"
+                                      LegendEnabled="true" />
+                    }
+                    else
+                    {
+                        <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
+                    }
                 }
             </Map>
             @if (_enableArcGisWidgets)
@@ -83,10 +102,14 @@
                 <CompassWidget Position="OverlayPosition.TopLeft" />
                 <LocateWidget Position="OverlayPosition.TopLeft" />
                 <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
+                @if (_useNativeGeoBlazorMap)
+                {
+                    <LegendWidget Position="OverlayPosition.BottomRight" />
+                }
             }
         </MapView>
 
-        @if (_enableArcGisWidgets)
+        @if (_enableArcGisWidgets && !_useNativeGeoBlazorMap)
         {
             <div class="map-key" data-testid="map-key" aria-label="Map key">
                 <div class="map-key__title">Map key</div>
@@ -899,6 +922,7 @@
 
     private MapView? _mapView;
     private GraphicsLayer? _pitchLayer;
+    private FeatureLayer? _nativePitchLayer;
     private GraphicsLayer? _encounterLayer;
     private GraphicsLayer? _candidatePlaceLayer;
     private GraphicsLayer? _playerLocationLayer;
@@ -930,6 +954,9 @@
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
     private readonly Dictionary<int, Graphic> _pitchGraphics = new();
+    private IReadOnlyList<Graphic> _nativePitchFeatures = Array.Empty<Graphic>();
+    private readonly UniqueValueRenderer _nativePitchRenderer = NativePitchFeatureLayerFactory.CreatePitchTypeRenderer();
+    private int _nativePitchLayerVersion;
     private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
     private readonly Dictionary<string, Graphic> _candidatePlaceGraphics = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<PitchCandidatePlaceDto> _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
@@ -968,6 +995,7 @@
     private bool _enableGameGraphics;
     private bool _enableAutoGpsWatch;
     private bool _enableVerboseMapDiagnostics;
+    private bool _useNativeGeoBlazorMap;
     private bool _isDisposing;
     private readonly CancellationTokenSource _diagnosticsCts = new();
     private readonly CancellationTokenSource _spotlightClockCts = new();
@@ -977,11 +1005,14 @@
         _selectedEncounter is not null
         || (_isAuthenticated && MapState.Value.VisibleEncounters.Count > 0);
 
+    private string MapShellModeClass => _useNativeGeoBlazorMap ? "map-shell--native-geoblazor" : "map-shell--standard";
+
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
         _hasApiKey = !ShouldShowMapUnavailableFallback(_apiKey);
         _viewReady = !_hasApiKey;
+        _useNativeGeoBlazorMap = IsNativeGeoBlazorRoute(Navigation.Uri);
         var reductionOptions = ResolveMapReductionOptions(Configuration, Navigation.Uri);
         _basemapMode = reductionOptions.BasemapMode;
         _enableArcGisWidgets = reductionOptions.EnableArcGisWidgets;
@@ -1002,6 +1033,12 @@
             EnableMapDiagnostics: ResolveMapFeatureFlag(configuration, uri, "EnableMapDiagnostics", "mapDiagnostics", defaultValue: true),
             EnableGameGraphics: ResolveMapFeatureFlag(configuration, uri, "EnableGameGraphics", "mapGraphics", defaultValue: true),
             EnableAutoGpsWatch: ResolveMapFeatureFlag(configuration, uri, "EnableAutoGpsWatch", "autoGps", defaultValue: true));
+    }
+
+    public static bool IsNativeGeoBlazorRoute(string currentUri)
+    {
+        var uri = new Uri(currentUri, UriKind.Absolute);
+        return uri.AbsolutePath.Equals("/debug-map/geoblazor-native", StringComparison.OrdinalIgnoreCase);
     }
 
     private static MapBasemapMode ResolveBasemapMode(IConfiguration configuration, Uri uri)
@@ -1408,18 +1445,34 @@
 
     private async Task UpdatePitchGraphicsAsync(List<PitchModel> pitches)
     {
-        if (_isDisposing || _pitchLayer is null) return;
+        if (_isDisposing) return;
 
         var graphics = new List<KeyValuePair<int, Graphic>>(pitches.Count);
         foreach (var pitch in pitches)
         {
-            graphics.Add(new KeyValuePair<int, Graphic>(
-                pitch.Id,
-                MapGraphicFactory.CreatePitchGraphic(
-                    pitch,
-                    PitchTypeDisplayName(pitch.Type),
-                    PitchTypeDescription(pitch.Type))));
+            var typeName = PitchTypeDisplayName(pitch.Type);
+            var typeDescription = PitchTypeDescription(pitch.Type);
+            var graphic = _useNativeGeoBlazorMap
+                ? NativePitchFeatureLayerFactory.CreatePitchFeature(pitch, typeName, typeDescription)
+                : MapGraphicFactory.CreatePitchGraphic(pitch, typeName, typeDescription);
+            graphics.Add(new KeyValuePair<int, Graphic>(pitch.Id, graphic));
         }
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _pitchGraphics.Clear();
+            foreach (var (key, graphic) in graphics)
+            {
+                _pitchGraphics[key] = graphic;
+            }
+
+            _nativePitchFeatures = graphics.Select(item => item.Value).ToArray();
+            _nativePitchLayerVersion++;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_pitchLayer is null) return;
 
         try
         {
@@ -1440,6 +1493,15 @@
     private async Task ClearPitchLayersAsync()
     {
         if (_isDisposing) return;
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _nativePitchFeatures = Array.Empty<Graphic>();
+            _pitchGraphics.Clear();
+            _nativePitchLayerVersion++;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
 
         if (_pitchLayer is not null)
         {

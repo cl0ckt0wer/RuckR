@@ -26,6 +26,15 @@ public class MapPage : BasePage
         await NavigateToAsync($"/map{normalizedQuery}");
     }
 
+    /// <summary>Navigate to the native GeoBlazor parity route.</summary>
+    public async Task GoToNativeGeoBlazorAsync(string queryString = "")
+    {
+        var normalizedQuery = string.IsNullOrWhiteSpace(queryString)
+            ? string.Empty
+            : queryString.StartsWith('?') ? queryString : $"?{queryString}";
+        await NavigateToAsync($"/debug-map/geoblazor-native{normalizedQuery}");
+    }
+
     // ── Map loading ────────────────────────────────────────────────────
 
     /// <summary>
@@ -371,6 +380,49 @@ public class MapPage : BasePage
             }",
             new { layerTitle, minimumCount },
             new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
+    /// <summary>Wait until an ArcGIS layer has the requested runtime type.</summary>
+    public async Task WaitForLayerTypeAsync(string layerTitle, string layerType, int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"({ layerTitle, layerType }) => {
+                const view = document.querySelector('[data-testid=""map-container""] arcgis-map')?.view;
+                const layers = view?.map?.allLayers?.items ?? view?.map?.layers?.items ?? [];
+                const layer = layers.find(l => l.title === layerTitle);
+                return !!layer && layer.type === layerType;
+            }",
+            new { layerTitle, layerType },
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
+    /// <summary>Wait for the native ArcGIS legend widget to render visibly.</summary>
+    public async Task<bool> WaitForNativeLegendAsync(int timeoutMs = 10_000)
+    {
+        try
+        {
+            await Page.WaitForFunctionAsync(
+                @"() => {
+                    const root = document.querySelector('[data-testid=""map-container""]');
+                    const legend = root?.querySelector('.esri-legend, arcgis-legend');
+                    const rect = legend?.getBoundingClientRect();
+                    const style = legend ? getComputedStyle(legend) : null;
+                    return !!legend
+                        && !!rect
+                        && style.display !== 'none'
+                        && style.visibility !== 'hidden'
+                        && rect.width > 0
+                        && rect.height > 0;
+                }",
+                null,
+                new PageWaitForFunctionOptions { Timeout = timeoutMs });
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            await ScreenshotAsync("native-legend-timeout");
+            return false;
+        }
     }
 
     /// <summary>Return whether any removed RuckR shortcut controls remain in the DOM.</summary>

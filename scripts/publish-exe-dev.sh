@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Native bash deploy. Builds on the exe.dev VM from the current pushed Git commit,
 # then atomically switches ~/ruckr/current and verifies health.
-# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--no-restore] [--skip-restart] [--yes] [--ref <git-ref>]
+# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--no-restore] [--skip-restart] [--yes] [--ref <git-ref>] [--host <ssh-host>] [--app-url <url>] [--deploy-dir <abs-dir>] [--service-name <name>] [--share-name <exe-dev-share>]
 set -euo pipefail
 
 SSH_HOST="ruckr.exe.xyz"
-DEPLOY_DIR="~/ruckr"
 ABS_DEPLOY_DIR="/home/exedev/ruckr"
+DEPLOY_DIR="$ABS_DEPLOY_DIR"
+APP_URL="https://ruckr.exe.xyz"
+SERVICE_NAME="ruckr.service"
+SHARE_NAME="ruckr"
 REMOTE_REPO_DIR="$ABS_DEPLOY_DIR/src"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SERVER_CSPROJ_REL="RuckR/Server/RuckR.Server.csproj"
@@ -26,6 +29,17 @@ while [ "$#" -gt 0 ]; do
     --skip-restart) SKIP_RESTART=true; shift ;;
     --yes|-y) NONINTERACTIVE=true; shift ;;
     --ref) DEPLOY_REF="${2:-}"; [ -n "$DEPLOY_REF" ] || { echo "--ref requires a value"; exit 1; }; shift 2 ;;
+    --host) SSH_HOST="${2:-}"; [ -n "$SSH_HOST" ] || { echo "--host requires a value"; exit 1; }; shift 2 ;;
+    --app-url) APP_URL="${2:-}"; [ -n "$APP_URL" ] || { echo "--app-url requires a value"; exit 1; }; shift 2 ;;
+    --deploy-dir)
+      ABS_DEPLOY_DIR="${2:-}"
+      [ -n "$ABS_DEPLOY_DIR" ] || { echo "--deploy-dir requires a value"; exit 1; }
+      DEPLOY_DIR="$ABS_DEPLOY_DIR"
+      REMOTE_REPO_DIR="$ABS_DEPLOY_DIR/src"
+      shift 2
+      ;;
+    --service-name) SERVICE_NAME="${2:-}"; [ -n "$SERVICE_NAME" ] || { echo "--service-name requires a value"; exit 1; }; shift 2 ;;
+    --share-name) SHARE_NAME="${2:-}"; [ -n "$SHARE_NAME" ] || { echo "--share-name requires a value"; exit 1; }; shift 2 ;;
     --skip-build) echo "Unknown: --skip-build (remote-build deploy always publishes a fresh release)"; exit 1 ;;
     *) echo "Unknown: $1"; exit 1 ;;
   esac
@@ -36,6 +50,14 @@ info()   { echo -e "  ${BOLD}$1${NC} $2"; }
 ok()     { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()   { echo -e "  ${YELLOW}⚠${NC} $1"; }
 fail()   { echo -e "  ${RED}✗${NC} $1" >&2; exit 1; }
+
+ssh() {
+  command ssh -o StrictHostKeyChecking=accept-new "$@"
+}
+
+scp() {
+  command scp -o StrictHostKeyChecking=accept-new "$@"
+}
 
 get_windows_env(){
   local name=$1
@@ -143,7 +165,7 @@ resolve_deploy_ref(){
 }
 
 # ── Resolve DB password ──
-step "1/9  Resolving DB password"
+step "1/10  Resolving DB password"
 PASSWORD=$(resolve_first_env RUCKR_DB_PASSWORD)
 if [ -z "$PASSWORD" ]; then
   secrets=$(dotnet user-secrets list --project "$SERVER_CSPROJ" 2>/dev/null || true)
@@ -158,7 +180,7 @@ ok "Password resolved"
 CONNECTION_STRING="Server=localhost,1433;Database=RuckR_Dev;User Id=sa;Password=${PASSWORD};TrustServerCertificate=True;"
 
 # ── Pre-flight checks ──
-step "2/9  Pre-flight checks"
+step "2/10  Pre-flight checks"
 for bin in dotnet git ssh scp curl; do
   command -v "$bin" >/dev/null || fail "$bin not found on PATH"
 done
@@ -173,7 +195,7 @@ GIT_COMMIT=$(resolve_deploy_ref)
 ok "Deploy ref resolved to $GIT_COMMIT"
 
 # ── Ensure VM infra (SDK/runtime, SQL, Jaeger) ──
-step "3/9  Checking VM infrastructure"
+step "3/10  Checking VM infrastructure"
 if $APP_ONLY; then
   warn "Skipping VM runtime/container checks (--app-only)"
 else
@@ -206,15 +228,17 @@ else
     ok "Swap already enabled"
   fi
 
-  sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --format "{{.Names}}" 2>/dev/null')
+  sql=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-sql" --filter "status=running" --format "{{.Names}}" 2>/dev/null')
   if [ -z "$sql" ]; then
     info "Starting" "SQL Server container..."
-    ssh "$SSH_HOST" "docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD") -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
-    for _ in $(seq 1 20); do
+    ssh "$SSH_HOST" "sudo mkdir -p /var/lib/ruckr/mssql && sudo chown -R 10001:0 /var/lib/ruckr/mssql && docker rm -f ruckr-sql 2>/dev/null; docker run -d --name ruckr-sql --restart unless-stopped -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD") -v /var/lib/ruckr/mssql:/var/opt/mssql -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest"
+    for _ in $(seq 1 40); do
       ready=$(ssh "$SSH_HOST" 'docker logs ruckr-sql 2>&1 | grep -q "SQL Server is now ready" && echo ready || echo waiting')
       [ "$ready" = "ready" ] && break
       sleep 3
     done
+    ready=$(ssh "$SSH_HOST" 'docker logs ruckr-sql 2>&1 | grep -q "SQL Server is now ready" && echo ready || echo waiting')
+    [ "$ready" = "ready" ] || fail "SQL Server did not become ready. Check docker logs ruckr-sql on $SSH_HOST."
     ok "SQL Server ready"
   else
     ok "SQL Server container running"
@@ -231,41 +255,73 @@ else
 fi
 
 # ── Deploy secrets ──
-step "4/9  Deploying secrets"
-ssh "$SSH_HOST" "mkdir -p $DEPLOY_DIR && cat > $DEPLOY_DIR/secrets.env" <<SECEOF
+step "4/10  Deploying secrets"
+ssh "$SSH_HOST" "mkdir -p $(remote_quote "$DEPLOY_DIR") && cat > $(remote_quote "$DEPLOY_DIR/secrets.env")" <<SECEOF
 RUCKR_DB_PASSWORD=$PASSWORD
 MSSQL_SA_PASSWORD=$PASSWORD
 SECEOF
-ssh "$SSH_HOST" "chmod 600 $DEPLOY_DIR/secrets.env"
+ssh "$SSH_HOST" "chmod 600 $(remote_quote "$DEPLOY_DIR/secrets.env")"
 
-ARC_GIS_KEY=$(resolve_first_env ARC_GIS_API_KEY ArcGISApiKey)
+ARC_GIS_KEY=$(resolve_first_env ARC_GIS_API_KEY ArcGIS_API ArcGISApiKey)
+ARC_GIS_PLACES_KEY=$(resolve_first_env ARC_GIS_PLACES_API_KEY ArcGISPlacesApiKey ArcGIS__PlacesApiKey ArcGIS__Places__ApiKey)
 ARC_GIS_PORTAL_ITEM_ID=$(resolve_first_env ARC_GIS_PORTAL_ITEM_ID ArcGISPortalItemId)
 GEOBLAZOR_LICENSE_KEY=$(resolve_first_env GEOBLAZOR_API GEOBLAZOR_LICENSE_KEY GEOBLAZOR_REGISTRATION_KEY GeoBlazor__LicenseKey GeoBlazor__RegistrationKey)
+ARC_GIS_PLACES_KEY=${ARC_GIS_PLACES_KEY:-$ARC_GIS_KEY}
+ARC_GIS_REFERRER="${APP_URL%/}/"
 
 [ -n "$ARC_GIS_KEY" ] && ok "ArcGIS API key resolved (length: ${#ARC_GIS_KEY})" || warn "ArcGIS API key not set; map will report missing ArcGIS key"
+[ -n "$ARC_GIS_PLACES_KEY" ] && ok "ArcGIS Places key resolved (length: ${#ARC_GIS_PLACES_KEY})" || warn "ArcGIS Places key not set; place candidates will be empty"
 [ -n "$ARC_GIS_PORTAL_ITEM_ID" ] && ok "ArcGIS Portal Item ID resolved (length: ${#ARC_GIS_PORTAL_ITEM_ID})" || warn "ArcGIS Portal Item ID not set; map will report missing Portal Item ID"
 [ -n "$GEOBLAZOR_LICENSE_KEY" ] && ok "GeoBlazor license key resolved (length: ${#GEOBLAZOR_LICENSE_KEY})" || warn "GeoBlazor license key not set; map will report missing GeoBlazor key"
 
-ssh "$SSH_HOST" "cat > $DEPLOY_DIR/app.env" <<APPEOF
+ssh "$SSH_HOST" "cat > $(remote_quote "$DEPLOY_DIR/app.env")" <<APPEOF
 RUCKR_DB_PASSWORD=$(remote_quote "$PASSWORD")
 MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD")
 ConnectionStrings__RuckRDbContext=$(remote_quote "$CONNECTION_STRING")
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
 ArcGISApiKey=$(remote_quote "$ARC_GIS_KEY")
+ARC_GIS_API_KEY=$(remote_quote "$ARC_GIS_KEY")
+ArcGISPlacesApiKey=$(remote_quote "$ARC_GIS_PLACES_KEY")
+ARC_GIS_PLACES_API_KEY=$(remote_quote "$ARC_GIS_PLACES_KEY")
+ArcGISReferrer=$(remote_quote "$ARC_GIS_REFERRER")
+ARC_GIS_REFERRER=$(remote_quote "$ARC_GIS_REFERRER")
 ArcGISPortalItemId=$(remote_quote "$ARC_GIS_PORTAL_ITEM_ID")
 GeoBlazor__LicenseKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
 GeoBlazor__RegistrationKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
 APPEOF
-ssh "$SSH_HOST" "chmod 600 $DEPLOY_DIR/app.env"
+ssh "$SSH_HOST" "chmod 600 $(remote_quote "$DEPLOY_DIR/app.env")"
 ok "secrets.env and app.env deployed (chmod 600)"
 
-# ── DB backup before restart ──
-step "5/9  Backing up database"
-backup_output=""
-if backup_output=$(ssh "$SSH_HOST" "bash -se" <<'SSHEOF'
+# ── Ensure application database exists before backup/restart ──
+step "5/10  Ensuring application database"
+if $APP_ONLY; then
+  warn "Skipping database creation check (--app-only)"
+else
+  ssh "$SSH_HOST" "DEPLOY_ENV_PATH=$(remote_quote "$ABS_DEPLOY_DIR/app.env") bash -se" <<'SSHEOF'
 set -euo pipefail
 set -a
-. /home/exedev/ruckr/app.env
+. "$DEPLOY_ENV_PATH"
+set +a
+
+docker exec -i -e SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" ruckr-sql \
+  /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -d master <<'SQL'
+IF DB_ID(N'RuckR_Dev') IS NULL
+BEGIN
+    CREATE DATABASE [RuckR_Dev];
+END
+SELECT name FROM sys.databases WHERE name = N'RuckR_Dev';
+SQL
+SSHEOF
+  ok "RuckR_Dev database available"
+fi
+
+# ── DB backup before restart ──
+step "6/10  Backing up database"
+backup_output=""
+if backup_output=$(ssh "$SSH_HOST" "DEPLOY_ENV_PATH=$(remote_quote "$ABS_DEPLOY_DIR/app.env") bash -se" <<'SSHEOF'
+set -euo pipefail
+set -a
+. "$DEPLOY_ENV_PATH"
 set +a
 
 backup_dir=/var/opt/mssql/backup
@@ -298,11 +354,11 @@ else
 fi
 
 # ── Install systemd service ──
-step "6/9  Installing systemd service"
+step "7/10  Installing systemd service"
 if $APP_ONLY; then
   warn "Skipping systemd service install (--app-only)"
 else
-cat <<UNIT | ssh "$SSH_HOST" "sudo tee /etc/systemd/system/ruckr.service > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable ruckr.service > /dev/null"
+cat <<UNIT | ssh "$SSH_HOST" "sudo tee /etc/systemd/system/$(remote_quote "$SERVICE_NAME") > /dev/null && sudo systemctl daemon-reload && sudo systemctl enable $(remote_quote "$SERVICE_NAME") > /dev/null"
 [Unit]
 Description=RuckR Server
 After=network.target docker.service
@@ -326,11 +382,11 @@ SyslogIdentifier=ruckr
 [Install]
 WantedBy=multi-user.target
 UNIT
-ok "ruckr.service installed and enabled"
+ok "$SERVICE_NAME installed and enabled"
 fi
 
 # ── Remote checkout and publish ──
-step "7/9  Building release $RELEASE_ID on VM"
+step "8/10  Building release $RELEASE_ID on VM"
 PREV_RELEASE=$(ssh "$SSH_HOST" "readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true")
 remote_url_q=$(remote_quote "$GIT_REMOTE_URL")
 commit_q=$(remote_quote "$GIT_COMMIT")
@@ -364,10 +420,10 @@ ln -sfn "\$release_dir" "$ABS_DEPLOY_DIR/current"
 SSHEOF
 ok "Built and linked current → releases/$RELEASE_ID"
 
-step "7a/9  Ensuring Playwright is available on VM"
-ssh "$SSH_HOST" "bash -se" <<'SSHEOF'
+step "8a/10  Ensuring Playwright is available on VM"
+ssh "$SSH_HOST" "RUCKR_REMOTE_REPO_DIR=$(remote_quote "$REMOTE_REPO_DIR") bash -se" <<'SSHEOF'
 set -euo pipefail
-repo='/home/exedev/ruckr/src'
+repo="$RUCKR_REMOTE_REPO_DIR"
 tests_project="$repo/RuckR.Tests/RuckR.Tests.csproj"
 
 if [ ! -f "$tests_project" ]; then
@@ -398,37 +454,37 @@ echo "Playwright Chromium installed on VM"
 SSHEOF
 ok "Playwright runtime prepared on VM"
 
-step "7b/9  Pruning old releases"
-ssh "$SSH_HOST" "cd $DEPLOY_DIR/releases && current=\$(readlink -f $ABS_DEPLOY_DIR/current 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
+step "8b/10  Pruning old releases"
+ssh "$SSH_HOST" "cd $(remote_quote "$DEPLOY_DIR/releases") && current=\$(readlink -f $(remote_quote "$ABS_DEPLOY_DIR/current") 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
 ok "Kept newest $RELEASES_TO_KEEP releases"
 
 # ── Restart and verify ──
-step "8/9  Restarting server"
+step "9/10  Restarting server"
 if $SKIP_RESTART; then
   warn "Skipping restart (--skip-restart)"
 else
-  ssh "$SSH_HOST" "sudo systemctl restart ruckr.service"
+  ssh "$SSH_HOST" "sudo systemctl restart $(remote_quote "$SERVICE_NAME")"
   sleep 2
-  status=$(ssh "$SSH_HOST" "sudo systemctl is-active ruckr.service 2>/dev/null || true")
+  status=$(ssh "$SSH_HOST" "sudo systemctl is-active $(remote_quote "$SERVICE_NAME") 2>/dev/null || true")
   if [ "$status" != "active" ]; then
     warn "systemd restart failed. Rolling back to previous release..."
     if [ -n "$PREV_RELEASE" ]; then
-      ssh "$SSH_HOST" "ln -sfn $PREV_RELEASE $ABS_DEPLOY_DIR/current && sudo systemctl restart ruckr.service"
+      ssh "$SSH_HOST" "ln -sfn $(remote_quote "$PREV_RELEASE") $(remote_quote "$ABS_DEPLOY_DIR/current") && sudo systemctl restart $(remote_quote "$SERVICE_NAME")"
       warn "Rolled back to $PREV_RELEASE"
     fi
-    ssh "$SSH_HOST" "sudo systemctl --no-pager status ruckr.service | tail -20"
+    ssh "$SSH_HOST" "sudo systemctl --no-pager status $(remote_quote "$SERVICE_NAME") | tail -20"
     fail "Restart failed"
   fi
   ok "systemd restarted (active)"
 
-  step "9/9  Verifying health endpoint"
+  step "10/10  Verifying health endpoint"
   healthy=false
   for _ in $(seq 1 15); do
-    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "https://ruckr.exe.xyz/api/telemetry/health" 2>/dev/null || true)
+    code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$APP_URL/api/telemetry/health" 2>/dev/null || true)
     if [ "$code" = "200" ]; then
       healthy=true
-      ok "Server healthy at https://ruckr.exe.xyz/api/telemetry/health"
-      seeded=$(ssh "$SSH_HOST" 'journalctl -u ruckr.service -n 200 --no-pager 2>/dev/null | grep -c "Seeded" || true')
+      ok "Server healthy at $APP_URL/api/telemetry/health"
+      seeded=$(ssh "$SSH_HOST" "journalctl -u $(remote_quote "$SERVICE_NAME") -n 200 --no-pager 2>/dev/null | grep -c \"Seeded\" || true")
       if [ "$seeded" -gt 0 ]; then
         ok "DB migrations applied, seed data generated"
       else
@@ -441,15 +497,15 @@ else
 
   if ! $healthy; then
     warn "Health check failed after 30s. Logs:"
-    ssh "$SSH_HOST" "journalctl -u ruckr.service -n 40 --no-pager 2>/dev/null || true"
+    ssh "$SSH_HOST" "journalctl -u $(remote_quote "$SERVICE_NAME") -n 40 --no-pager 2>/dev/null || true"
   fi
 
   info "Configuring" "exe.dev proxy..."
   if $APP_ONLY; then
     warn "Skipping exe.dev proxy config (--app-only)"
   else
-    ssh exe.dev share port ruckr 5000 2>/dev/null || true
-    ssh exe.dev share set-public ruckr 2>/dev/null || true
+    ssh exe.dev share port "$SHARE_NAME" 5000 2>/dev/null || true
+    ssh exe.dev share set-public "$SHARE_NAME" 2>/dev/null || true
   fi
 fi
 
@@ -457,9 +513,9 @@ echo ""
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  Published to exe.dev${NC}"
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  ${BOLD}App:${NC}  https://ruckr.exe.xyz"
+echo -e "  ${BOLD}App:${NC}  $APP_URL"
 echo -e "  ${BOLD}Release:${NC}  $RELEASE_ID"
 echo -e "  ${BOLD}Commit:${NC}  $GIT_COMMIT"
-echo -e "  ${BOLD}Log:${NC}  ssh $SSH_HOST 'journalctl -u ruckr.service -f'"
+echo -e "  ${BOLD}Log:${NC}  ssh $SSH_HOST 'journalctl -u $SERVICE_NAME -f'"
 echo -e "  ${BOLD}SQL:${NC}  ssh $SSH_HOST 'docker exec ruckr-sql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C'"
 echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

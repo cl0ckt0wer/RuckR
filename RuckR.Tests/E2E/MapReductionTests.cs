@@ -149,6 +149,26 @@ public class MapReductionTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         AssertNoUnexpectedBrowserErrors();
     }
 
+    /// <summary>
+    /// Verifies the native GeoBlazor parity route renders pitches through an ArcGIS FeatureLayer.
+    /// </summary>
+    [Fact]
+    public async Task NativeGeoBlazorRoute_OnMobile_RendersPitchFeatureLayerAndLegend()
+    {
+        var mapPage = new MapPage(_page, _baseUrl);
+
+        await mapPage.GoToNativeGeoBlazorAsync("basemap=empty&autoGps=true&mapDiagnostics=false&arcGisWidgets=true");
+
+        Assert.True(await mapPage.WaitForMapLoadedAsync(30_000), "Native GeoBlazor map shell should load.");
+        Assert.True(await mapPage.WaitForGeoBlazorSurfaceAsync(45_000), "GeoBlazor should attach a visible ArcGIS drawing surface.");
+
+        await mapPage.WaitForLayerTypeAsync("Pitches", "feature", 20_000);
+        Assert.True(await mapPage.WaitForNativeLegendAsync(20_000), "ArcGIS legend should render on the native parity route.");
+        Assert.False(await mapPage.IsMapKeyVisibleAsync(), "Custom RuckR map key should not render on the native parity route.");
+
+        AssertNoUnexpectedBrowserErrors();
+    }
+
     private void OnConsole(object? _, IConsoleMessage msg)
     {
         if (msg.Type == "error")

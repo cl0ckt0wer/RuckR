@@ -10,6 +10,7 @@
     .\scripts\publish-exe-dev.ps1 -NoRestore
     .\scripts\publish-exe-dev.ps1 -SkipRestart
     .\scripts\publish-exe-dev.ps1 -Ref master
+    .\scripts\publish-exe-dev.ps1 -Ref codex/geoblazor-native-map -Host ruckrtest.exe.xyz -AppUrl https://ruckrtest.exe.xyz -DeployDir /home/exedev/ruckrtest -ServiceName ruckrtest.service -ShareName ruckrtest
 #>
 
 param(
@@ -17,7 +18,13 @@ param(
     [switch]$NoRestore,
     [switch]$SkipRestart,
     [switch]$Yes,
-    [string]$Ref
+    [string]$Ref,
+    [Alias("Host")]
+    [string]$SshHost,
+    [string]$AppUrl,
+    [string]$DeployDir,
+    [string]$ServiceName,
+    [string]$ShareName
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +38,26 @@ if ($Yes) { $argsForBash += "--yes" }
 if (-not [string]::IsNullOrWhiteSpace($Ref)) {
     $argsForBash += "--ref"
     $argsForBash += $Ref
+}
+if (-not [string]::IsNullOrWhiteSpace($SshHost)) {
+    $argsForBash += "--host"
+    $argsForBash += $SshHost
+}
+if (-not [string]::IsNullOrWhiteSpace($AppUrl)) {
+    $argsForBash += "--app-url"
+    $argsForBash += $AppUrl
+}
+if (-not [string]::IsNullOrWhiteSpace($DeployDir)) {
+    $argsForBash += "--deploy-dir"
+    $argsForBash += $DeployDir
+}
+if (-not [string]::IsNullOrWhiteSpace($ServiceName)) {
+    $argsForBash += "--service-name"
+    $argsForBash += $ServiceName
+}
+if (-not [string]::IsNullOrWhiteSpace($ShareName)) {
+    $argsForBash += "--share-name"
+    $argsForBash += $ShareName
 }
 
 function Quote-BashArg {
@@ -51,6 +78,44 @@ function ConvertTo-WslPath {
     return $WindowsPath.Replace('\', '/')
 }
 
+function ConvertTo-GitBashPath {
+    param([string]$WindowsPath)
+
+    if ($WindowsPath -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $Matches[1].ToLowerInvariant()
+        $path = $Matches[2].Replace('\', '/')
+        return "/$drive/$path"
+    }
+
+    return $WindowsPath.Replace('\', '/')
+}
+
+$gitBashCandidates = @(
+    (Join-Path ${env:ProgramFiles} "Git\bin\bash.exe"),
+    (Join-Path ${env:ProgramFiles} "Git\usr\bin\bash.exe")
+)
+if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+    $gitBashCandidates += (Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe")
+}
+
+$bashPath = $gitBashCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $bashPath) {
+    $bash = Get-Command bash -ErrorAction SilentlyContinue
+    if ($bash -and $bash.Source -notmatch '\\System32\\bash\.exe$') {
+        $bashPath = $bash.Source
+    }
+}
+
+if ($bashPath) {
+    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    $bashRepoRoot = ConvertTo-GitBashPath $repoRoot
+    $quotedArgs = ($argsForBash | ForEach-Object { Quote-BashArg $_ }) -join " "
+    $command = "cd $(Quote-BashArg $bashRepoRoot) && ./scripts/publish-exe-dev.sh $quotedArgs"
+
+    & $bashPath -lc $command
+    exit $LASTEXITCODE
+}
+
 $wsl = Get-Command wsl -ErrorAction SilentlyContinue
 if ($wsl) {
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -60,24 +125,18 @@ if ($wsl) {
     }
 
     $quotedArgs = ($argsForBash | ForEach-Object { Quote-BashArg $_ }) -join " "
-    $command = @"
-cd $(Quote-BashArg $wslRepoRoot) &&
-tr -d '\r' < scripts/publish-exe-dev.sh > scripts/.publish-exe-dev.tmp.sh &&
-chmod +x scripts/.publish-exe-dev.tmp.sh
-./scripts/.publish-exe-dev.tmp.sh $quotedArgs
-code=`$?
-rm -f scripts/.publish-exe-dev.tmp.sh
-exit `$code
-"@
+    $command = [string]::Join("`n", @(
+        "cd $(Quote-BashArg $wslRepoRoot) &&",
+        "tr -d '\r' < scripts/publish-exe-dev.sh > scripts/.publish-exe-dev.tmp.sh &&",
+        "chmod +x scripts/.publish-exe-dev.tmp.sh",
+        "./scripts/.publish-exe-dev.tmp.sh $quotedArgs",
+        'code=$?',
+        "rm -f scripts/.publish-exe-dev.tmp.sh",
+        'exit $code'
+    ))
 
     & $wsl.Source bash -lc $command
     exit $LASTEXITCODE
 }
 
-$bash = Get-Command bash -ErrorAction SilentlyContinue
-if (-not $bash) {
-    throw "bash or WSL is required. Run scripts/publish-exe-dev.sh from Git Bash/WSL, or install bash on PATH."
-}
-
-& $bash.Source $scriptPath @argsForBash
-exit $LASTEXITCODE
+throw "bash or WSL is required. Run scripts/publish-exe-dev.sh from Git Bash/WSL, or install bash on PATH."

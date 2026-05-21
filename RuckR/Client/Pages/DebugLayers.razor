@@ -69,6 +69,7 @@
     private static readonly DebugLink[] Links =
     [
         new("Normal map", "/map", "Default production GameMap path."),
+        new("GeoBlazor native parity", "/debug-map/geoblazor-native?basemap=styled&autoGps=true&mapDiagnostics=true", "Full-parity test route with native pitch FeatureLayer rendering and ArcGIS legend."),
         new("Diagnostics baseline", "/map?mapDiagnostics=true", "Keeps defaults while forcing diagnostics on."),
         new("No auto GPS", "/map?autoGps=false", "Loads the map without starting location watch."),
         new("No game graphics", "/map?mapGraphics=false", "Keeps the styled basemap and removes RuckR layers."),

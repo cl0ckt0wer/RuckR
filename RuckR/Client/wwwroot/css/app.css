@@ -334,8 +334,8 @@ a, .btn-link {
     backdrop-filter: blur(8px);
 }
 
-.map-shell .esri-legend,
-.map-shell .esri-legend__service {
+.map-shell--standard .esri-legend,
+.map-shell--standard .esri-legend__service {
     display: none !important;
 }
 
