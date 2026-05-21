@@ -162,6 +162,7 @@ namespace RuckR.Shared.Models
     /// <param name="Latitude">Encounter latitude.</param>
     /// <param name="Longitude">Encounter longitude.</param>
     /// <param name="ExpiresAtUtc">Expiration timestamp.</param>
+    /// <param name="SuccessChancePercent">Legacy success display value retained for older clients.</param>
     /// <param name="BaseRecruitmentSeconds">Base time required to recruit before social/item reductions.</param>
     /// <param name="ParkName">Optional park name.</param>
     /// <param name="ParkPlaceId">Optional external place identifier.</param>
@@ -185,6 +186,7 @@ namespace RuckR.Shared.Models
     /// </summary>
     /// <param name="EncounterId">Encounter identifier.</param>
     /// <param name="PlayerId">Player identifier being recruited.</param>
+    /// <param name="ItemKind">Optional item to apply when starting a timed recruitment session.</param>
     public sealed record RecruitmentAttemptRequest(
         [Required] Guid EncounterId,
         [Required] int PlayerId,
@@ -205,6 +207,9 @@ namespace RuckR.Shared.Models
     /// Recruitment result payload.
     /// </summary>
     /// <param name="Success">Whether recruitment succeeded.</param>
+    /// <param name="SuccessChancePercent">Legacy success display value retained for older clients.</param>
+    /// <param name="Message">Outcome message.</param>
+    /// <param name="Collection">Collection entry when recruitment completes successfully.</param>
     /// <param name="Completed">Whether the timed recruitment session is complete.</param>
     /// <param name="BaseDurationSeconds">Base duration before social and item reducers.</param>
     /// <param name="RequiredDurationSeconds">Actual duration after social and item reducers.</param>
@@ -213,8 +218,6 @@ namespace RuckR.Shared.Models
     /// <param name="LocalPlayerCount">Nearby recruiters counted for the session.</param>
     /// <param name="ItemKind">Item consumed for this session.</param>
     /// <param name="Boosts">Time reducers applied to this session.</param>
-    /// <param name="Message">Outcome message.</param>
-    /// <param name="Collection">Captured collection entry when successful.</param>
     public sealed record RecruitmentAttemptResultDto(
         bool Success,
         int SuccessChancePercent,
