@@ -112,9 +112,11 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await SeedRareNearbyEncounterAsync(username);
 
         var mapPage = new MapPage(_page, _baseUrl);
-        await mapPage.GoToAsync("?basemap=empty&arcGisWidgets=false&mapDiagnostics=false");
+        await mapPage.GoToAsync("?basemap=empty&arcGisWidgets=true&mapDiagnostics=false");
         await mapPage.WaitForMapLoadedAsync();
         await mapPage.WaitForSpotlightEncounterAsync();
+        Assert.False(await mapPage.IsMapKeyVisibleAsync(), "Map key should hide while the mobile recruit board is visible.");
+        Assert.False(await mapPage.HasIncoherentSpotlightOverlapAsync());
 
         await mapPage.SelectSpotlightEncounterAsync();
         Assert.Equal("Recruit window", await mapPage.GetSpotlightRecruitStateAsync());

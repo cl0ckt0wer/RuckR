@@ -342,6 +342,21 @@ public class MapPage : BasePage
         }
     }
 
+    /// <summary>Return whether the custom RuckR map key is currently visible.</summary>
+    public async Task<bool> IsMapKeyVisibleAsync() =>
+        await Page.EvaluateAsync<bool>(
+            @"() => {
+                const key = document.querySelector('[data-testid=""map-key""]');
+                const rect = key?.getBoundingClientRect();
+                const style = key ? getComputedStyle(key) : null;
+                return !!key
+                    && !!rect
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && rect.width > 0
+                    && rect.height > 0;
+            }");
+
     /// <summary>Wait until an app-owned ArcGIS graphics layer has at least the requested graphics count.</summary>
     public async Task WaitForLayerGraphicCountAsync(string layerTitle, int minimumCount, int timeoutMs = 10_000)
     {

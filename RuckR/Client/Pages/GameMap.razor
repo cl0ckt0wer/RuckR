@@ -29,7 +29,7 @@
 @inject IState<LocationState> LocationState
 @implements IAsyncDisposable
 
-<div class="map-shell" data-testid="map-container">
+<div class="map-shell @(HasRecruitUi ? "map-shell--recruit-ui" : null)" data-testid="map-container">
     @if (!_hasApiKey)
     {
         <div class="map-unavailable-shell" data-testid="map-unavailable">
@@ -83,10 +83,6 @@
                 <CompassWidget Position="OverlayPosition.TopLeft" />
                 <LocateWidget Position="OverlayPosition.TopLeft" />
                 <ScaleBarWidget Position="OverlayPosition.BottomLeft" />
-                <LegendWidget Position="OverlayPosition.BottomRight"
-                              BasemapLegendVisible="false"
-                              HideLayersNotInCurrentView="false"
-                              RespectLayerVisibility="true" />
             }
         </MapView>
 
@@ -841,10 +837,13 @@
              font-size: 0.8rem;
          }
          .encounter-radar {
-             top: auto;
-             bottom: 12rem;
+             top: max(10.25rem, calc(env(safe-area-inset-top) + 10.25rem));
+             bottom: auto;
              width: min(300px, calc(100vw - 1rem));
              left: 0.5rem;
+         }
+         .map-shell--recruit-ui .map-key {
+             display: none;
          }
          .map-overlay {
              left: 0.5rem;
@@ -973,6 +972,10 @@
     private readonly CancellationTokenSource _diagnosticsCts = new();
     private readonly CancellationTokenSource _spotlightClockCts = new();
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
+
+    private bool HasRecruitUi =>
+        _selectedEncounter is not null
+        || (_isAuthenticated && MapState.Value.VisibleEncounters.Count > 0);
 
     protected override void OnInitialized()
     {
