@@ -266,6 +266,7 @@ ARC_GIS_KEY=$(resolve_first_env ARC_GIS_API_KEY ArcGIS_API ArcGISApiKey)
 ARC_GIS_PLACES_KEY=$(resolve_first_env ARC_GIS_PLACES_API_KEY ArcGISPlacesApiKey ArcGIS__PlacesApiKey ArcGIS__Places__ApiKey)
 ARC_GIS_PORTAL_ITEM_ID=$(resolve_first_env ARC_GIS_PORTAL_ITEM_ID ArcGISPortalItemId)
 GEOBLAZOR_LICENSE_KEY=$(resolve_first_env GEOBLAZOR_API GEOBLAZOR_LICENSE_KEY GEOBLAZOR_REGISTRATION_KEY GeoBlazor__LicenseKey GeoBlazor__RegistrationKey)
+SEED_USER_PASSWORD=$(resolve_first_env RUCKR_SEED_USER_PASSWORD)
 ARC_GIS_PLACES_KEY=${ARC_GIS_PLACES_KEY:-$ARC_GIS_KEY}
 ARC_GIS_REFERRER="${APP_URL%/}/"
 
@@ -273,6 +274,7 @@ ARC_GIS_REFERRER="${APP_URL%/}/"
 [ -n "$ARC_GIS_PLACES_KEY" ] && ok "ArcGIS Places key resolved (length: ${#ARC_GIS_PLACES_KEY})" || warn "ArcGIS Places key not set; place candidates will be empty"
 [ -n "$ARC_GIS_PORTAL_ITEM_ID" ] && ok "ArcGIS Portal Item ID resolved (length: ${#ARC_GIS_PORTAL_ITEM_ID})" || warn "ArcGIS Portal Item ID not set; map will report missing Portal Item ID"
 [ -n "$GEOBLAZOR_LICENSE_KEY" ] && ok "GeoBlazor license key resolved (length: ${#GEOBLAZOR_LICENSE_KEY})" || warn "GeoBlazor license key not set; map will report missing GeoBlazor key"
+[ -n "$SEED_USER_PASSWORD" ] && ok "Seed user password resolved (length: ${#SEED_USER_PASSWORD})" || warn "Seed user password not set; seed accounts will not be created or refreshed"
 
 ssh "$SSH_HOST" "cat > $(remote_quote "$DEPLOY_DIR/app.env")" <<APPEOF
 RUCKR_DB_PASSWORD=$(remote_quote "$PASSWORD")
@@ -289,6 +291,11 @@ ArcGISPortalItemId=$(remote_quote "$ARC_GIS_PORTAL_ITEM_ID")
 GeoBlazor__LicenseKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
 GeoBlazor__RegistrationKey=$(remote_quote "$GEOBLAZOR_LICENSE_KEY")
 APPEOF
+if [ -n "$SEED_USER_PASSWORD" ]; then
+  ssh "$SSH_HOST" "cat >> $(remote_quote "$DEPLOY_DIR/app.env")" <<APPEOF
+RUCKR_SEED_USER_PASSWORD=$(remote_quote "$SEED_USER_PASSWORD")
+APPEOF
+fi
 ssh "$SSH_HOST" "chmod 600 $(remote_quote "$DEPLOY_DIR/app.env")"
 ok "secrets.env and app.env deployed (chmod 600)"
 

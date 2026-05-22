@@ -73,12 +73,51 @@
                 }
                 @if (_enableGameGraphics)
                 {
-                    <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
-                    <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
-                    <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
                     @if (_useNativeGeoBlazorMap)
                     {
-                        <FeatureLayer @key="_nativePitchLayerVersion"
+                        <FeatureLayer @key='NativeLayerKey("player-accuracy", _nativePlayerAccuracyLayerVersion)'
+                                      Title="Player accuracy"
+                                      Source="@_nativePlayerAccuracyFeatures"
+                                      Fields="@NativeMapFeatureLayerFactory.PlayerAccuracyFields"
+                                      OutFields="@NativeMapFeatureLayerFactory.OutFields"
+                                      ObjectIdField="@NativeMapFeatureLayerFactory.PlayerAccuracyObjectIdField"
+                                      GeometryType="@FeatureGeometryType.Polygon"
+                                      Renderer="@_nativePlayerAccuracyRenderer"
+                                      PopupEnabled="true"
+                                      LegendEnabled="true" />
+                        <FeatureLayer @key='NativeLayerKey("player-location", _nativePlayerLocationLayerVersion)'
+                                      Title="Player location"
+                                      Source="@_nativePlayerLocationFeatures"
+                                      Fields="@NativeMapFeatureLayerFactory.PlayerLocationFields"
+                                      OutFields="@NativeMapFeatureLayerFactory.OutFields"
+                                      ObjectIdField="@NativeMapFeatureLayerFactory.PlayerObjectIdField"
+                                      GeometryType="@FeatureGeometryType.Point"
+                                      Renderer="@_nativePlayerLocationRenderer"
+                                      PopupEnabled="true"
+                                      LegendEnabled="true" />
+                        <FeatureLayer @key='NativeLayerKey("encounters", _nativeEncounterLayerVersion)'
+                                      Title="Encounters"
+                                      Source="@_nativeEncounterFeatures"
+                                      Fields="@NativeMapFeatureLayerFactory.EncounterFields"
+                                      OutFields="@NativeMapFeatureLayerFactory.OutFields"
+                                      ObjectIdField="@NativeMapFeatureLayerFactory.EncounterObjectIdField"
+                                      GeometryType="@FeatureGeometryType.Point"
+                                      Renderer="@_nativeEncounterRenderer"
+                                      PopupEnabled="true"
+                                      LegendEnabled="true" />
+                        <FeatureLayer @key='NativeLayerKey("candidate-places", _nativeCandidatePlaceLayerVersion)'
+                                      @ref="_nativeCandidatePlaceLayer"
+                                      Title="Candidate places"
+                                      Source="@_nativeCandidatePlaceFeatures"
+                                      Fields="@NativeMapFeatureLayerFactory.CandidateFields"
+                                      OutFields="@NativeMapFeatureLayerFactory.OutFields"
+                                      ObjectIdField="@NativeMapFeatureLayerFactory.CandidateObjectIdField"
+                                      GeometryType="@FeatureGeometryType.Point"
+                                      Renderer="@_nativeCandidatePlaceRenderer"
+                                      PopupEnabled="true"
+                                      LegendEnabled="true"
+                                      Visible="@_showCandidatePlaces" />
+                        <FeatureLayer @key='NativeLayerKey("pitches", _nativePitchLayerVersion)'
                                       @ref="_nativePitchLayer"
                                       Title="Pitches"
                                       Source="@_nativePitchFeatures"
@@ -92,6 +131,9 @@
                     }
                     else
                     {
+                        <GraphicsLayer @ref="_playerLocationLayer" Title="Player location" />
+                        <GraphicsLayer @ref="_encounterLayer" Title="Encounters" />
+                        <GraphicsLayer @ref="_candidatePlaceLayer" Title="Candidate places" Visible="@_showCandidatePlaces" />
                         <GraphicsLayer @ref="_pitchLayer" Title="Pitches" />
                     }
                 }
@@ -923,6 +965,7 @@
     private MapView? _mapView;
     private GraphicsLayer? _pitchLayer;
     private FeatureLayer? _nativePitchLayer;
+    private FeatureLayer? _nativeCandidatePlaceLayer;
     private GraphicsLayer? _encounterLayer;
     private GraphicsLayer? _candidatePlaceLayer;
     private GraphicsLayer? _playerLocationLayer;
@@ -957,6 +1000,18 @@
     private IReadOnlyList<Graphic> _nativePitchFeatures = Array.Empty<Graphic>();
     private readonly UniqueValueRenderer _nativePitchRenderer = NativePitchFeatureLayerFactory.CreatePitchTypeRenderer();
     private int _nativePitchLayerVersion;
+    private IReadOnlyList<Graphic> _nativeEncounterFeatures = Array.Empty<Graphic>();
+    private readonly UniqueValueRenderer _nativeEncounterRenderer = NativeMapFeatureLayerFactory.CreateEncounterRenderer();
+    private int _nativeEncounterLayerVersion;
+    private IReadOnlyList<Graphic> _nativeCandidatePlaceFeatures = Array.Empty<Graphic>();
+    private readonly UniqueValueRenderer _nativeCandidatePlaceRenderer = NativeMapFeatureLayerFactory.CreateCandidatePlaceRenderer();
+    private int _nativeCandidatePlaceLayerVersion;
+    private IReadOnlyList<Graphic> _nativePlayerLocationFeatures = Array.Empty<Graphic>();
+    private readonly UniqueValueRenderer _nativePlayerLocationRenderer = NativeMapFeatureLayerFactory.CreatePlayerLocationRenderer();
+    private int _nativePlayerLocationLayerVersion;
+    private IReadOnlyList<Graphic> _nativePlayerAccuracyFeatures = Array.Empty<Graphic>();
+    private readonly UniqueValueRenderer _nativePlayerAccuracyRenderer = NativeMapFeatureLayerFactory.CreatePlayerAccuracyRenderer();
+    private int _nativePlayerAccuracyLayerVersion;
     private readonly Dictionary<Guid, Graphic> _encounterGraphics = new();
     private readonly Dictionary<string, Graphic> _candidatePlaceGraphics = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<PitchCandidatePlaceDto> _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
@@ -1078,6 +1133,8 @@
         "empty" => MapBasemapMode.Empty,
         _ => null
     };
+
+    private static string NativeLayerKey(string layerName, int version) => $"{layerName}:{version}";
 
     private static bool ResolveMapFeatureFlag(
         IConfiguration configuration,
@@ -1511,18 +1568,42 @@
 
     private async Task UpdateEncounterGraphicsAsync(IReadOnlyList<PlayerEncounterDto> encounters)
     {
-        if (_isDisposing || _encounterLayer is null) return;
+        if (_isDisposing) return;
 
         var spotlightEncounterId = SpotlightSightingSelector
             .Select(encounters, _lastKnownPosition, DateTime.UtcNow)
             ?.EncounterId;
         var graphics = new List<KeyValuePair<Guid, Graphic>>(encounters.Count);
-        foreach (var encounter in encounters)
+        for (var i = 0; i < encounters.Count; i++)
         {
+            var encounter = encounters[i];
+            var isSpotlight = encounter.EncounterId == spotlightEncounterId;
             graphics.Add(new KeyValuePair<Guid, Graphic>(
                 encounter.EncounterId,
-                MapGraphicFactory.CreateEncounterGraphic(encounter, encounter.EncounterId == spotlightEncounterId)));
+                _useNativeGeoBlazorMap
+                    ? NativeMapFeatureLayerFactory.CreateEncounterFeature(encounter, i + 1, isSpotlight)
+                    : MapGraphicFactory.CreateEncounterGraphic(encounter, isSpotlight)));
         }
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _encounterGraphics.Clear();
+            foreach (var (key, graphic) in graphics)
+            {
+                _encounterGraphics[key] = graphic;
+            }
+
+            _nativeEncounterFeatures = graphics.Select(item => item.Value).ToArray();
+            _nativeEncounterLayerVersion++;
+            Logger.LogInformation(
+                "Native encounter features synced: requested={RequestedCount}, retained={RetainedCount}",
+                encounters.Count,
+                _encounterGraphics.Count);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_encounterLayer is null) return;
 
         try
         {
@@ -1546,15 +1627,35 @@
 
     private async Task UpdateCandidatePlaceGraphicsAsync(IReadOnlyList<PitchCandidatePlaceDto> candidates)
     {
-        if (_isDisposing || _candidatePlaceLayer is null) return;
+        if (_isDisposing) return;
 
         var graphics = new List<KeyValuePair<string, Graphic>>(candidates.Count);
-        foreach (var candidate in candidates)
+        for (var i = 0; i < candidates.Count; i++)
         {
+            var candidate = candidates[i];
             graphics.Add(new KeyValuePair<string, Graphic>(
                 candidate.PlaceId,
-                MapGraphicFactory.CreateCandidatePlaceGraphic(candidate)));
+                _useNativeGeoBlazorMap
+                    ? NativeMapFeatureLayerFactory.CreateCandidatePlaceFeature(candidate, i + 1)
+                    : MapGraphicFactory.CreateCandidatePlaceGraphic(candidate)));
         }
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _candidatePlaceGraphics.Clear();
+            foreach (var (key, graphic) in graphics)
+            {
+                _candidatePlaceGraphics[key] = graphic;
+            }
+
+            _nativeCandidatePlaceFeatures = graphics.Select(item => item.Value).ToArray();
+            _nativeCandidatePlaceLayerVersion++;
+            await SetCandidatePlaceLayerVisibleAsync(true);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_candidatePlaceLayer is null) return;
 
         try
         {
@@ -1575,7 +1676,18 @@
 
     private async Task ClearCandidatePlaceGraphicsAsync()
     {
-        if (_isDisposing || _candidatePlaceLayer is null) return;
+        if (_isDisposing) return;
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _nativeCandidatePlaceFeatures = Array.Empty<Graphic>();
+            _candidatePlaceGraphics.Clear();
+            _nativeCandidatePlaceLayerVersion++;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_candidatePlaceLayer is null) return;
 
         await _candidatePlaceLayer.Clear();
         _candidatePlaceGraphics.Clear();
@@ -1583,11 +1695,22 @@
 
     private async Task SetCandidatePlaceLayerVisibleAsync(bool visible)
     {
-        if (_isDisposing || _candidatePlaceLayer is null) return;
+        if (_isDisposing) return;
 
         try
         {
-            await _candidatePlaceLayer.SetVisible(visible);
+            if (_useNativeGeoBlazorMap)
+            {
+                _nativeCandidatePlaceLayerVersion++;
+                if (_nativeCandidatePlaceLayer is not null)
+                {
+                    await _nativeCandidatePlaceLayer.SetVisible(visible);
+                }
+            }
+            else if (_candidatePlaceLayer is not null)
+            {
+                await _candidatePlaceLayer.SetVisible(visible);
+            }
         }
         catch (Exception ex)
         {
@@ -1603,7 +1726,19 @@
 
     private async Task UpdatePlayerLocationGraphicAsync(GeoPosition position)
     {
-        if (_isDisposing || _playerLocationLayer is null) return;
+        if (_isDisposing) return;
+
+        if (_useNativeGeoBlazorMap)
+        {
+            _nativePlayerLocationFeatures = [NativeMapFeatureLayerFactory.CreatePlayerLocationFeature(position)];
+            _nativePlayerAccuracyFeatures = [NativeMapFeatureLayerFactory.CreatePlayerAccuracyFeature(position)];
+            _nativePlayerLocationLayerVersion++;
+            _nativePlayerAccuracyLayerVersion++;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (_playerLocationLayer is null) return;
 
         var graphics = MapGraphicFactory.CreatePlayerLocationGraphics(position);
 
@@ -2697,6 +2832,11 @@
         _pitchGraphics.Clear();
         _encounterGraphics.Clear();
         _candidatePlaceGraphics.Clear();
+        _nativePitchFeatures = Array.Empty<Graphic>();
+        _nativeEncounterFeatures = Array.Empty<Graphic>();
+        _nativeCandidatePlaceFeatures = Array.Empty<Graphic>();
+        _nativePlayerLocationFeatures = Array.Empty<Graphic>();
+        _nativePlayerAccuracyFeatures = Array.Empty<Graphic>();
         _diagnosticsCts.Dispose();
         _spotlightClockCts.Dispose();
     }
