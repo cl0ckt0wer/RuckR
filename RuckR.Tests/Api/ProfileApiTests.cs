@@ -47,10 +47,10 @@ public class ProfileApiTests : IAsyncLifetime
     [Fact]
     public async Task GetProfile_ReturnsCurrentProfile()
     {
-        var profile = await _client.GetFromJsonAsync<ProfileModel>("/api/profile");
+        var profile = await _client.GetFromJsonAsync<UserProfileModel>("/api/profile");
 
         Assert.NotNull(profile);
-        Assert.False(string.IsNullOrWhiteSpace(profile.Email));
+        Assert.False(string.IsNullOrWhiteSpace(profile.Name));
     }
 
     /// <summary>
@@ -59,11 +59,11 @@ public class ProfileApiTests : IAsyncLifetime
     [Fact]
     public async Task PutProfile_UpdatesCurrentProfile()
     {
-        var updated = new ProfileModel
+        var updated = new UserProfileModel
         {
+            UserId = "client-value-is-overwritten-by-controller",
             Name = "Test Scrum Half",
             Biography = "Runs support lines and logs test coverage.",
-            Email = $"profile_{Guid.NewGuid():N}@test.com",
             Location = "Twickenham",
             JoinedDate = DateTime.UtcNow.Date,
             AvatarUrl = "https://example.com/avatar.png"
@@ -72,12 +72,11 @@ public class ProfileApiTests : IAsyncLifetime
         var updateResponse = await _client.PutAsJsonAsync("/api/profile", updated);
         updateResponse.EnsureSuccessStatusCode();
 
-        var profile = await _client.GetFromJsonAsync<ProfileModel>("/api/profile");
+        var profile = await _client.GetFromJsonAsync<UserProfileModel>("/api/profile");
 
         Assert.NotNull(profile);
         Assert.Equal(updated.Name, profile.Name);
         Assert.Equal(updated.Biography, profile.Biography);
-        Assert.Equal(updated.Email, profile.Email);
         Assert.Equal(updated.Location, profile.Location);
         Assert.Equal(updated.AvatarUrl, profile.AvatarUrl);
     }

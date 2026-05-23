@@ -9,6 +9,7 @@
     .\scripts\publish-exe-dev.ps1 -AppOnly
     .\scripts\publish-exe-dev.ps1 -NoRestore
     .\scripts\publish-exe-dev.ps1 -SkipRestart
+    .\scripts\publish-exe-dev.ps1 -PreparePlaywright
     .\scripts\publish-exe-dev.ps1 -Ref master
 #>
 
@@ -16,6 +17,7 @@ param(
     [switch]$AppOnly,
     [switch]$NoRestore,
     [switch]$SkipRestart,
+    [switch]$PreparePlaywright,
     [switch]$Yes,
     [string]$Ref
 )
@@ -27,6 +29,7 @@ $argsForBash = @()
 if ($AppOnly) { $argsForBash += "--app-only" }
 if ($NoRestore) { $argsForBash += "--no-restore" }
 if ($SkipRestart) { $argsForBash += "--skip-restart" }
+if ($PreparePlaywright) { $argsForBash += "--prepare-playwright" }
 if ($Yes) { $argsForBash += "--yes" }
 if (-not [string]::IsNullOrWhiteSpace($Ref)) {
     $argsForBash += "--ref"

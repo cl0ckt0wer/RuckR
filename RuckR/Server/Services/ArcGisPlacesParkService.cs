@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using RuckR.Shared.Models;
@@ -12,9 +14,10 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
     private const double MaxPlacesRadiusMeters = 10_000.0;
     private const int PageSize = 20;
 
-    private static readonly TimeSpan ParkSearchCacheDuration = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan PitchCandidateSearchCacheDuration = TimeSpan.FromMinutes(10);
-    private static readonly TimeSpan CategoryCacheDuration = TimeSpan.FromHours(24);
+    private static readonly TimeSpan ParkSearchCacheDuration = TimeSpan.FromDays(7);
+    private static readonly TimeSpan PitchCandidateSearchCacheDuration = TimeSpan.FromDays(7);
+    private static readonly TimeSpan CategoryCacheDuration = TimeSpan.FromDays(30);
+    private static readonly JsonSerializerOptions CacheJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] DefaultPitchCandidateCategoryIds =
     [
         "56aa371be4b08b9a8d573556", // Rugby Stadium
@@ -72,11 +75,11 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
             CultureInfo.InvariantCulture,
             $"arcgis-places:parks:{Math.Round(latitude, 3)}:{Math.Round(longitude, 3)}:{Math.Round(clampedRadius)}");
 
-        var cached = await _cache.GetOrCreateAsync(cacheKey, async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = ParkSearchCacheDuration;
-            return await QueryNearbyParksAsync(latitude, longitude, clampedRadius, token, cancellationToken);
-        });
+        var cached = await GetCachedOrCreateAsync(
+            cacheKey,
+            ParkSearchCacheDuration,
+            () => QueryNearbyParksAsync(latitude, longitude, clampedRadius, token, cancellationToken),
+            cancellationToken);
 
         return cached ?? Array.Empty<RealWorldPark>();
     }
@@ -104,16 +107,16 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
             CultureInfo.InvariantCulture,
             $"arcgis-places:pitch-candidates:{Math.Round(latitude, 3)}:{Math.Round(longitude, 3)}:{Math.Round(clampedRadius)}");
 
-        var cached = await _cache.GetOrCreateAsync(cacheKey, async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = PitchCandidateSearchCacheDuration;
-            return await QueryNearbyPitchCandidatePlacesAsync(latitude, longitude, clampedRadius, token, cancellationToken);
-        });
+        var cached = await GetCachedOrCreateAsync(
+            cacheKey,
+            PitchCandidateSearchCacheDuration,
+            () => QueryNearbyPitchCandidatePlacesAsync(latitude, longitude, clampedRadius, token, cancellationToken),
+            cancellationToken);
 
         return cached ?? Array.Empty<PitchCandidatePlaceDto>();
     }
 
-    private async Task<IReadOnlyList<RealWorldPark>> QueryNearbyParksAsync(
+    private async Task<IReadOnlyList<RealWorldPark>?> QueryNearbyParksAsync(
         double latitude,
         double longitude,
         double radiusMeters,
@@ -151,7 +154,7 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
                 _logger.LogWarning(
                     "ArcGIS Places nearby park search failed with status {StatusCode}.",
                     (int)response.StatusCode);
-                return Array.Empty<RealWorldPark>();
+                return null;
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -165,11 +168,11 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "ArcGIS Places nearby park search failed.");
-            return Array.Empty<RealWorldPark>();
+            return null;
         }
     }
 
-    private async Task<IReadOnlyList<PitchCandidatePlaceDto>> QueryNearbyPitchCandidatePlacesAsync(
+    private async Task<IReadOnlyList<PitchCandidatePlaceDto>?> QueryNearbyPitchCandidatePlacesAsync(
         double latitude,
         double longitude,
         double radiusMeters,
@@ -207,7 +210,7 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
                 _logger.LogWarning(
                     "ArcGIS Places pitch candidate search failed with status {StatusCode}.",
                     (int)response.StatusCode);
-                return Array.Empty<PitchCandidatePlaceDto>();
+                return null;
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -221,7 +224,142 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "ArcGIS Places pitch candidate search failed.");
-            return Array.Empty<PitchCandidatePlaceDto>();
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyList<T>> GetCachedOrCreateAsync<T>(
+        string cacheKey,
+        TimeSpan cacheDuration,
+        Func<Task<IReadOnlyList<T>?>> factory,
+        CancellationToken cancellationToken)
+    {
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<T>? memoryCached) && memoryCached is not null)
+        {
+            return memoryCached;
+        }
+
+        var diskCached = await TryReadDiskCacheAsync<T>(cacheKey, cacheDuration, cancellationToken);
+        if (diskCached is not null)
+        {
+            _cache.Set(cacheKey, diskCached, cacheDuration);
+            return diskCached;
+        }
+
+        var result = await factory();
+        if (result is null)
+        {
+            return Array.Empty<T>();
+        }
+
+        _cache.Set(cacheKey, result, cacheDuration);
+        await TryWriteDiskCacheAsync(cacheKey, result, cancellationToken);
+        return result;
+    }
+
+    private async Task<IReadOnlyList<T>?> TryReadDiskCacheAsync<T>(
+        string cacheKey,
+        TimeSpan cacheDuration,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var path = GetDiskCachePath(cacheKey);
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+
+            await using var stream = File.OpenRead(path);
+            var envelope = await JsonSerializer.DeserializeAsync<PlacesCacheEnvelope<T>>(
+                stream,
+                CacheJsonOptions,
+                cancellationToken);
+
+            if (envelope is null || DateTimeOffset.UtcNow - envelope.CachedAtUtc > cacheDuration)
+            {
+                TryDeleteFile(path);
+                return null;
+            }
+
+            return envelope.Items;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ArcGIS Places disk cache read failed for key {CacheKey}.", cacheKey);
+            return null;
+        }
+    }
+
+    private async Task TryWriteDiskCacheAsync<T>(
+        string cacheKey,
+        IReadOnlyList<T> items,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var path = GetDiskCachePath(cacheKey);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            var envelope = new PlacesCacheEnvelope<T>(DateTimeOffset.UtcNow, items.ToArray());
+            var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+            await using (var stream = File.Create(tempPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, envelope, CacheJsonOptions, cancellationToken);
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "ArcGIS Places disk cache write failed for key {CacheKey}.", cacheKey);
+        }
+    }
+
+    private string GetDiskCachePath(string cacheKey)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cacheKey))).ToLowerInvariant();
+        return Path.Combine(ResolvePlacesCacheDirectory(), $"{hash}.json");
+    }
+
+    private string ResolvePlacesCacheDirectory()
+    {
+        var configured = FirstConfiguredValue(
+            "ArcGISPlacesCacheDirectory",
+            "ArcGIS:PlacesCacheDirectory",
+            "RUCKR_PLACES_CACHE_DIR",
+            "RUCKR_CACHE_DIR");
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Path.Combine(configured, "arcgis-places");
+        }
+
+        if (OperatingSystem.IsLinux() && Directory.Exists("/home/exedev/ruckr"))
+        {
+            return "/home/exedev/ruckr/cache/arcgis-places";
+        }
+
+        return Path.Combine(Path.GetTempPath(), "ruckr", "arcgis-places");
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // A stale cache file is non-critical and can be overwritten later.
         }
     }
 
@@ -832,5 +970,7 @@ public sealed class ArcGisPlacesParkService : IRealWorldParkService
         request.Headers.Referrer = new Uri(ResolveArcGisReferrer());
         return await _httpClient.SendAsync(request, cancellationToken);
     }
+
+    private sealed record PlacesCacheEnvelope<T>(DateTimeOffset CachedAtUtc, T[] Items);
 }
 

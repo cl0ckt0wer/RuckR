@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adversarial Code Review - Recruitment Encounter Stability - 2026-05-19</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #52616f;
+      --line: #d8e0e8;
+      --accent: #165a72;
+      --medium: #9a5b00;
+      --low: #32612d;
+      --info: #355a8a;
+      --code: #f0f4f8;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 15px/1.55 "Segoe UI", Arial, sans-serif;
+    }
+
+    main {
+      max-width: 1050px;
+      margin: 0 auto;
+      padding: 32px 22px 48px;
+    }
+
+    header, section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: 28px;
+    }
+
+    h2 {
+      font-size: 20px;
+      color: var(--accent);
+    }
+
+    h3 {
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul, ol {
+      margin: 8px 0 0 22px;
+      padding: 0;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    code {
+      background: var(--code);
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: Consolas, "Liberation Mono", monospace;
+      font-size: 0.93em;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf3f7;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .meta div {
+      background: #f9fbfd;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      color: #fff;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0;
+      padding: 3px 8px;
+      margin-right: 8px;
+    }
+
+    .medium {
+      background: var(--medium);
+    }
+
+    .low {
+      background: var(--low);
+    }
+
+    .info {
+      background: var(--info);
+    }
+
+    .finding {
+      border-left: 4px solid var(--medium);
+      padding-left: 14px;
+      margin-top: 16px;
+    }
+
+    .finding.low-risk {
+      border-left-color: var(--low);
+    }
+
+    .verdict {
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Adversarial Code Review: Recruitment Encounter Stability</h1>
+      <p>
+        Review date: 2026-05-19. Scope was limited to the current working tree changes in
+        <code>RuckR/Server/Services/RecruitmentService.cs</code> and
+        <code>RuckR.Tests/Api/RecruitmentApiTests.cs</code>. No source code was changed by this review.
+      </p>
+      <div class="meta">
+        <div><strong>Branch</strong><br><code>master</code></div>
+        <div><strong>Dirty files reviewed</strong><br>2 source/test files</div>
+        <div><strong>Artifact</strong><br><code>docs/reviews/adversarial-code-review-2026-05-19.html</code></div>
+        <div><strong>Overall result</strong><br><span class="verdict">No critical or high-severity finding found.</span></div>
+      </div>
+    </header>
+
+    <section>
+      <h2>Scope</h2>
+      <p>The reviewed diff changes <code>GetEncountersAsync</code> so active nearby encounters are preserved before random sampling fills the remaining board slots up to <code>MaxVisibleEncounters = 8</code>. It also adds <code>GetEncounters_KeepsActiveEncountersStableAcrossRefreshes</code>.</p>
+      <p>The review treated <code>/api/map/encounters</code> as a player-facing, state-mutating gameplay endpoint. The adversarial lens focused on broken invariants, replay/idempotency, privilege and data isolation, race behavior, location spoofing edges, null/time boundaries, and test determinism.</p>
+    </section>
+
+    <section>
+      <h2>Plan</h2>
+      <ol>
+        <li>Inspect the dirty diff and surrounding service/controller/model code.</li>
+        <li>Threat-model the changed encounter refresh path as an authenticated adversary with multiple tabs, scripted refreshes, and spoofed query coordinates.</li>
+        <li>Check whether the new stability invariant is actually enforced under sequential refresh, overflow, collected-player, and concurrency conditions.</li>
+        <li>Run focused, non-destructive tests for the recruitment API path.</li>
+        <li>Document only high-confidence issues and separate residual risks from confirmed failures.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Executed Checks</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Result</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>git status --short</code></td>
+            <td>Confirmed dirty scope</td>
+            <td>Only <code>RecruitmentApiTests.cs</code> and <code>RecruitmentService.cs</code> were dirty before the report artifact was created.</td>
+          </tr>
+          <tr>
+            <td><code>git diff -- RuckR/Server/Services/RecruitmentService.cs RuckR.Tests/Api/RecruitmentApiTests.cs</code></td>
+            <td>Reviewed</td>
+            <td>Service diff adds active encounter hydration, max visible cap, and <code>ToEncounterDto</code>; test diff adds one sequential refresh regression.</td>
+          </tr>
+          <tr>
+            <td><code>git diff --check -- RuckR/Server/Services/RecruitmentService.cs RuckR.Tests/Api/RecruitmentApiTests.cs</code></td>
+            <td>Passed with line-ending warnings only</td>
+            <td>No whitespace errors reported. Git warned LF will be replaced by CRLF on the two dirty files next time Git touches them.</td>
+          </tr>
+          <tr>
+            <td><code>dotnet test RuckR.Tests/RuckR.Tests.csproj --filter FullyQualifiedName~RecruitmentApiTests --no-restore</code></td>
+            <td>Passed</td>
+            <td>16 passed, 0 failed, 0 skipped. Pre-existing obsolete bUnit warnings appeared in unrelated component test files during build.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Findings</h2>
+
+      <article class="finding">
+        <h3><span class="badge medium">Medium</span>Encounter creation remains non-atomic, so concurrent refreshes can create duplicate active encounters for the same user and player.</h3>
+        <p><strong>References:</strong> <code>RuckR/Server/Services/RecruitmentService.cs:93-104</code>, <code>RuckR/Server/Services/RecruitmentService.cs:212-244</code>, <code>RuckR/Server/Data/RuckRDbContext.cs:97-100</code>.</p>
+        <p><strong>Exploit or failure scenario:</strong> an authenticated user opens two tabs or scripts parallel calls to <code>/api/map/encounters</code>. Both requests can sample the same player, both can enter <code>GetOrCreateEncounterAsync</code>, both can observe no active row for that user/player, and both can insert because the database only has a non-unique index on <code>UserId, PlayerId</code>. The new stability guarantee assumes a single active encounter row per user/player, but that invariant is not enforced at the database or transaction boundary.</p>
+        <p><strong>Evidence:</strong> <code>GetOrCreateEncounterAsync</code> performs a read-before-insert check and then calls <code>SaveChangesAsync</code> without a transaction, lock, or unique constraint. SQL Server's default read committed isolation does not prevent the classic duplicate insert race. The index configured in <code>RuckRDbContext</code> is not unique.</p>
+        <p><strong>Suggested fix:</strong> enforce the invariant in the database and service. The simplest durable model is one row per <code>UserId, PlayerId</code>, replacing expired or moved rows in place; back it with a unique index and handle duplicate insert exceptions as a retry/read path. If multiple historical rows must be retained, move active state to a separate table or serialize by user/player in a transaction.</p>
+      </article>
+
+      <article class="finding">
+        <h3><span class="badge medium">Medium</span>The new active encounter hydration query is unbounded per user before the visible cap is applied.</h3>
+        <p><strong>References:</strong> <code>RuckR/Server/Services/RecruitmentService.cs:52-64</code>, <code>RuckR/Server/Controllers/MapController.cs:32-49</code>.</p>
+        <p><strong>Exploit or failure scenario:</strong> a logged-in user can sweep map coordinates inside the allowed radius range and cause GET requests to create active encounters. Later refreshes load every unexpired encounter for that user, include each player, and filter in memory against the current parks before taking only 8 visible rows. With today's seed count this is bounded by the available player table, but the path scales with total active rows, not with the visible board size.</p>
+        <p><strong>Evidence:</strong> <code>GetEncountersAsync</code> fetches all active, uncollected encounters for the user via <code>ToListAsync()</code>, then applies <code>nearbyParks.Any(...)</code>, ordering, and <code>Take(MaxVisibleEncounters)</code> in memory. <code>MapController.GetEncounters</code> rate-limits radius but does not rate-limit the state-changing GET or bind it to the server's last known GPS position.</p>
+        <p><strong>Suggested fix:</strong> make the active encounter lookup selective before materialization. Options include storing the source park/place id on <code>PlayerEncounterModel</code> and filtering by current nearby park ids, adding a coarse latitude/longitude bounding box before loading, or applying an indexed per-user active cap. Also consider applying the existing rate-limit service to map encounter generation because this GET mutates state.</p>
+      </article>
+
+      <article class="finding low-risk">
+        <h3><span class="badge low">Low</span>The new regression test verifies only sequential refresh stability and does not cover duplicate, overflow, or concurrency cases.</h3>
+        <p><strong>References:</strong> <code>RuckR.Tests/Api/RecruitmentApiTests.cs:123-145</code>.</p>
+        <p><strong>Exploit or failure scenario:</strong> the test can pass while the board contains duplicate players after concurrent refreshes, while more than 8 active records exist in storage, or while older active records outside the current park set are repeatedly relocated. Those are the adversarial cases most likely to violate the player-facing stability expectation.</p>
+        <p><strong>Evidence:</strong> the test issues two immediate sequential GET requests against the default test park and asserts first encounter ids are present in the second response. It does not assert unique <code>PlayerId</code> values, storage-level uniqueness, active row count, behavior when active visible encounters exceed 8, or parallel request behavior.</p>
+        <p><strong>Suggested fix:</strong> add targeted coverage for no duplicate active <code>UserId, PlayerId</code> rows after rapid refresh, board size never exceeding 8, stable selection when more than 8 active nearby encounters exist, and collected players being removed from the active board.</p>
+      </article>
+    </section>
+
+    <section>
+      <h2>Test Results</h2>
+      <p><strong>Focused suite:</strong> <code>dotnet test RuckR.Tests/RuckR.Tests.csproj --filter FullyQualifiedName~RecruitmentApiTests --no-restore</code></p>
+      <p><strong>Result:</strong> Passed. 16 passed, 0 failed, 0 skipped. Duration reported by test host: 5 seconds.</p>
+      <p><strong>Build warnings:</strong> obsolete bUnit <code>TestContext</code> warnings appeared in unrelated component tests during compilation. They are not caused by this diff.</p>
+    </section>
+
+    <section>
+      <h2>Residual Risk</h2>
+      <ul>
+        <li><code>/api/map/encounters</code> remains a state-mutating GET. That may be acceptable for gameplay discovery, but it should be treated as write-like for idempotency, replay, and rate limiting.</li>
+        <li>The review did not run full solution tests or production smoke tests because the requested scope was the local working tree diff and focused tests were practical.</li>
+        <li>The review did not inspect all client map rendering paths. It assumed the documented server invariant is the primary change under review.</li>
+        <li>No source fix was applied. The findings are recommendations for the owning implementation pass.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Researched Methodology</h2>
+      <p>This review used a manual, threat-driven code review frame rather than a broad checklist. The method was based on:</p>
+      <ul>
+        <li><a href="https://owasp.org/www-project-code-review-guide/">OWASP Code Review Guide</a>, which keeps manual review prominent for issues automated tools miss.</li>
+        <li><a href="https://cheatsheetseries.owasp.org/cheatsheets/Secure_Code_Review_Cheat_Sheet.html">OWASP Secure Code Review Cheat Sheet</a>, which frames secure review as manual examination of code for vulnerabilities and supports baseline plus incremental review.</li>
+        <li><a href="https://owasp.org/www-community/Threat_Modeling_Process">OWASP Threat Modeling Process</a>, used here to prioritize high-risk code paths by actor, asset, trust boundary, and abuse scenario.</li>
+      </ul>
+      <p>Applied adversarial questions: can an authenticated user make the endpoint do more work than intended, duplicate state by replaying or racing requests, bypass location assumptions, see or mutate another user's data, keep expired or collected records visible, or make the regression test pass while the product invariant fails?</p>
+    </section>
+  </main>
+</body>
+</html>

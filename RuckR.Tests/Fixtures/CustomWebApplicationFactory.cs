@@ -261,6 +261,10 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 root["ArcGISApiKey"] = TestArcGisApiKey;
                 root["ArcGISPortalItemId"] = TestArcGisPortalItemId;
 
+                var map = root["Map"] as JsonObject ?? new JsonObject();
+                map["BasemapMode"] = "empty";
+                root["Map"] = map;
+
                 var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
                 geoBlazor["LicenseKey"] = TestGeoBlazorLicenseKey;
                 geoBlazor["RegistrationKey"] = TestGeoBlazorLicenseKey;

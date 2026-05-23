@@ -312,20 +312,24 @@ public class BattlesApiTests : IAsyncLifetime
         var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
         Assert.NotNull(battle);
 
-        // Act: User C and User D both try to accept simultaneously
-        // (User C and D have User B's player in their collections, simulating a race)
+        // Act: two independent clients for the opponent try to accept simultaneously.
+        // Depending on interleaving, the losing request can observe a concurrency
+        // conflict or the already-updated non-pending state.
+        using var clientB2 = _factory.CreateAuthenticatedClient(_userIdB, _usernameB);
         var acceptC = _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
             new AcceptChallengeRequest(_playerIdB));
-        var acceptD = _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
+        var acceptD = clientB2.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
             new AcceptChallengeRequest(_playerIdB));
 
         var results = await Task.WhenAll(acceptC, acceptD);
 
-        // Assert: one succeeds (200 OK), the other gets 409 Conflict
+        // Assert: one succeeds; the other is rejected as a stale/concurrent accept.
         var successCount = results.Count(r => r.StatusCode == HttpStatusCode.OK);
-        var conflictCount = results.Count(r => r.StatusCode == HttpStatusCode.Conflict);
+        var rejectedCount = results.Count(r =>
+            r.StatusCode == HttpStatusCode.Conflict ||
+            r.StatusCode == HttpStatusCode.BadRequest);
         Assert.Equal(1, successCount);
-        Assert.Equal(1, conflictCount);
+        Assert.Equal(1, rejectedCount);
     }
 
     /// <summary>
