@@ -1,6 +1,7 @@
 using Bunit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RuckR.Client.Shared;
 
@@ -19,6 +20,12 @@ public class NavMenuTests : TestContext
         Services.AddAuthorizationCore();
         Services.AddCascadingAuthenticationState();
         Services.AddSingleton<IAuthorizationService>(new TestAuthorizationService());
+        Services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Map:ShowDebugNav"] = "false"
+            })
+            .Build());
     }
 
     /// <summary>

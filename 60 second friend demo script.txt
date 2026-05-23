@@ -1,0 +1,40 @@
+# 60-Second Friend Demo Script
+
+## 0-10 seconds: Open the map (already nearby)
+What they see:
+- The map opens and centers on a nearby rare player ping close to your current location.
+- The app quickly requests GPS access.
+  - if yes, we continue in tracking mode with a realistic nearby starting distance.
+  - if no, we show a static map and continue the story from there.
+
+What you say:
+"I’m starting near this rare player, so I only need to close the last bit of distance."
+
+## 10-25 seconds: Explain proximity and constraints
+What they see:
+- The card shows rarity, distance, location, and success chance.
+- The recruit button stays disabled until both range and GPS quality are good.
+- Distance may start around 30–60m to match real-world pace.
+
+What you say:
+"To recruit, I need enough proximity and stable GPS. I’m making small position adjustments, not running hard."
+
+## 25-45 seconds: Move toward the target
+What they see:
+- Distance/range state improves.
+- The recruit button becomes ready.
+
+What you say:
+"I’m close enough now and the signal is good. This is the recruit window."
+
+## 45-60 seconds: Attempt the recruit
+What they see:
+- Tap Recruit.
+- Show success or failure.
+- Toast/message appears.
+
+What you say if success:
+"Got him. He’s now in my roster."
+
+What you say if failure:
+"Missed him, but the sighting is still active, so I can try again before he disappears." 

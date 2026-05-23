@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Native bash deploy. Builds on the exe.dev VM from the current pushed Git commit,
 # then atomically switches ~/ruckr/current and verifies health.
-# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--no-restore] [--skip-restart] [--yes] [--ref <git-ref>] [--host <ssh-host>] [--app-url <url>] [--deploy-dir <abs-dir>] [--service-name <name>] [--share-name <exe-dev-share>]
+# Usage: ./scripts/publish-exe-dev.sh [--app-only] [--no-restore] [--skip-restart] [--prepare-playwright] [--yes] [--ref <git-ref>] [--host <ssh-host>] [--app-url <url>] [--deploy-dir <abs-dir>] [--service-name <name>] [--share-name <exe-dev-share>]
 set -euo pipefail
 
 SSH_HOST="ruckr.exe.xyz"
@@ -16,17 +16,19 @@ SERVER_CSPROJ_REL="RuckR/Server/RuckR.Server.csproj"
 SERVER_CSPROJ="$REPO_ROOT/$SERVER_CSPROJ_REL"
 RELEASE_ID=$(date +%Y%m%d%H%M%S)
 PREV_RELEASE=""
-RELEASES_TO_KEEP=10
+RELEASES_TO_KEEP="${RUCKR_RELEASES_TO_KEEP:-3}"
+DB_BACKUPS_TO_KEEP="${RUCKR_DB_BACKUPS_TO_KEEP:-20}"
 DEPLOY_REF="${RUCKR_DEPLOY_REF:-}"
 
 GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; MAGENTA='\033[0;35m'; BOLD='\033[1m'; NC='\033[0m'
 
-APP_ONLY=false; NO_RESTORE=false; SKIP_RESTART=false; NONINTERACTIVE=false
+APP_ONLY=false; NO_RESTORE=false; SKIP_RESTART=false; PREPARE_PLAYWRIGHT=false; NONINTERACTIVE=false
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --app-only) APP_ONLY=true; shift ;;
     --no-restore) NO_RESTORE=true; shift ;;
     --skip-restart) SKIP_RESTART=true; shift ;;
+    --prepare-playwright) PREPARE_PLAYWRIGHT=true; shift ;;
     --yes|-y) NONINTERACTIVE=true; shift ;;
     --ref) DEPLOY_REF="${2:-}"; [ -n "$DEPLOY_REF" ] || { echo "--ref requires a value"; exit 1; }; shift 2 ;;
     --host) SSH_HOST="${2:-}"; [ -n "$SSH_HOST" ] || { echo "--host requires a value"; exit 1; }; shift 2 ;;
@@ -356,6 +358,11 @@ SSHEOF
       warn "DB backup copy to $LOCAL_BACKUP_DIR failed (non-fatal)"
     fi
   fi
+
+  if [ "$DB_BACKUPS_TO_KEEP" -gt 0 ]; then
+    ssh "$SSH_HOST" "docker exec ruckr-sql bash -lc 'cd /var/opt/mssql/backup 2>/dev/null && ls -1t ruckr_*.bak 2>/dev/null | tail -n +$((DB_BACKUPS_TO_KEEP + 1)) | xargs -r rm -f'" >/dev/null 2>&1 || true
+    ok "Pruned SQL backups on VM to newest $DB_BACKUPS_TO_KEEP"
+  fi
 else
   warn "DB backup failed (non-fatal)"
 fi
@@ -420,14 +427,19 @@ fi
 
 git -C "\$repo" fetch --prune origin
 git -C "\$repo" checkout --detach "\$commit"
+find "\$repo" -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
 rm -rf "\$release_dir"
 mkdir -p "\$release_dir"
 /usr/share/dotnet/dotnet publish "\$repo/$SERVER_CSPROJ_REL" -c Release -o "\$release_dir" $no_restore_arg
+find "\$repo" -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
 ln -sfn "\$release_dir" "$ABS_DEPLOY_DIR/current"
 SSHEOF
 ok "Built and linked current → releases/$RELEASE_ID"
 
-step "8a/10  Ensuring Playwright is available on VM"
+step "8a/10  Playwright browser cache"
+if ! $PREPARE_PLAYWRIGHT; then
+  warn "Skipping Playwright browser preparation (pass --prepare-playwright when VM browser tests need it)"
+else
 ssh "$SSH_HOST" "RUCKR_REMOTE_REPO_DIR=$(remote_quote "$REMOTE_REPO_DIR") bash -se" <<'SSHEOF'
 set -euo pipefail
 repo="$RUCKR_REMOTE_REPO_DIR"
@@ -459,7 +471,8 @@ fi
 pwsh -NoProfile -NonInteractive -File "$playwright_script" install --with-deps chromium >/dev/null
 echo "Playwright Chromium installed on VM"
 SSHEOF
-ok "Playwright runtime prepared on VM"
+  ok "Playwright runtime prepared on VM"
+fi
 
 step "8b/10  Pruning old releases"
 ssh "$SSH_HOST" "cd $(remote_quote "$DEPLOY_DIR/releases") && current=\$(readlink -f $(remote_quote "$ABS_DEPLOY_DIR/current") 2>/dev/null || true) && ls -1dt */ | tail -n +$((RELEASES_TO_KEEP + 1)) | while read release; do release_path=\$(readlink -f \"\$release\"); if [ \"\$release_path\" != \"\$current\" ]; then rm -rf -- \"\$release\"; fi; done"
