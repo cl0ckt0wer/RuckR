@@ -8,7 +8,7 @@ namespace RuckR.Server.Services;
 public class RecruitmentService : IRecruitmentService
 {
     private const int MaxVisibleEncounters = 8;
-    private const double RecruitDistanceMeters = 1000.0;
+    private const double RecruitDistanceMeters = 5000.0;
     private const int RecruitSuccessXp = 25;
     private const int MinimumRecruitDurationSeconds = 10;
     private static readonly TimeSpan EncounterLifetime = TimeSpan.FromHours(2);

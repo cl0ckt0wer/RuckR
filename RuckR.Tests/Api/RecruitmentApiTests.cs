@@ -286,7 +286,7 @@ public class RecruitmentApiTests : IAsyncLifetime
     public async Task AttemptRecruitment_TooFar_ReturnsFailure()
     {
         var encounter = await CreateEncounterAsync();
-        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude + 0.01, encounter.Longitude + 0.01);
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude + 0.05, encounter.Longitude + 0.05);
 
         var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
         response.EnsureSuccessStatusCode();
@@ -298,13 +298,13 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies attempt Recruitment Within One Kilometer Starts Recruitment.
+    /// Verifies attempt Recruitment Within Five Kilometers Starts Recruitment.
     /// </summary>
     [Fact]
-    public async Task AttemptRecruitment_WithinOneKilometer_StartsRecruitment()
+    public async Task AttemptRecruitment_WithinFiveKilometers_StartsRecruitment()
     {
         var encounter = await CreateEncounterAsync();
-        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude + 0.006, encounter.Longitude);
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude + 0.03, encounter.Longitude);
 
         var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
         response.EnsureSuccessStatusCode();

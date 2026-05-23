@@ -130,13 +130,13 @@ public class CollectionApiTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies capture Player Within One Kilometer Returns201.
+    /// Verifies capture Player Within Five Kilometers Returns201.
     /// </summary>
     [Fact]
-    public async Task CapturePlayer_WithinOneKilometer_Returns201()
+    public async Task CapturePlayer_WithinFiveKilometers_Returns201()
     {
         var (playerId, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
-        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.006, pitchLng);
+        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.03, pitchLng);
         var request = new CapturePlayerRequest(playerId, pitchId);
 
         var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
@@ -283,13 +283,13 @@ public class CollectionApiTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Verifies capture Eligibility Within One Kilometer Is Not Too Far.
+    /// Verifies capture Eligibility Within Five Kilometers Is Not Too Far.
     /// </summary>
     [Fact]
-    public async Task CaptureEligibility_WithinOneKilometer_IsNotTooFar()
+    public async Task CaptureEligibility_WithinFiveKilometers_IsNotTooFar()
     {
         var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
-        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.006, pitchLng);
+        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.03, pitchLng);
 
         var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
 
