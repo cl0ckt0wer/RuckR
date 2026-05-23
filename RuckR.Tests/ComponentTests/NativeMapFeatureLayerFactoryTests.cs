@@ -126,6 +126,36 @@ public class NativeMapFeatureLayerFactoryTests
         Assert.IsType<UniqueValueRenderer>(NativeMapFeatureLayerFactory.CreatePlayerAccuracyRenderer());
     }
 
+    /// <summary>
+    /// Verifies encounter popups expose recruit details and a GeoBlazor action hook.
+    /// </summary>
+    [Fact]
+    public async Task CreateEncounterPopupTemplate_ReturnsRecruitSummaryAction()
+    {
+        var actionInvoked = false;
+        var popup = NativeMapFeatureLayerFactory.CreateEncounterPopupTemplate(() =>
+        {
+            actionInvoked = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal("{name}", popup.Title);
+        Assert.NotNull(popup.StringContent);
+        Assert.Contains("{successChancePercent}", popup.StringContent);
+        Assert.Contains("{baseRecruitmentSeconds}", popup.StringContent);
+        Assert.NotNull(popup.OutFields);
+        Assert.Contains("*", popup.OutFields);
+
+        Assert.NotNull(popup.Actions);
+        var action = Assert.Single(popup.Actions);
+        Assert.Equal("ruckr-open-recruit-board", action.ActionId);
+        Assert.Equal("Open recruit board", action.Title);
+        Assert.NotNull(action.CallbackFunction);
+
+        await action.CallbackFunction!.Invoke();
+        Assert.True(actionInvoked);
+    }
+
     private static void AssertGraphicAttribute(
         dymaptic.GeoBlazor.Core.Model.AttributesDictionary attributes,
         string key,

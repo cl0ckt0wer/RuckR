@@ -103,6 +103,7 @@
                                       ObjectIdField="@NativeMapFeatureLayerFactory.EncounterObjectIdField"
                                       GeometryType="@FeatureGeometryType.Point"
                                       Renderer="@_nativeEncounterRenderer"
+                                      PopupTemplate="@_nativeEncounterPopupTemplate"
                                       PopupEnabled="true"
                                       LegendEnabled="true" />
                         <FeatureLayer @key='NativeLayerKey("candidate-places", _nativeCandidatePlaceLayerVersion)'
@@ -278,7 +279,7 @@
     </div>
 }
 
-@if (_selectedEncounter is not null)
+@if (_selectedEncounter is not null && _showRecruitBoard)
 {
     <div class="map-overlay map-overlay--encounter @(IsSpotlightEncounter(_selectedEncounter) ? "map-overlay--spotlight" : null)" data-testid="encounter-overlay">
         <div class="d-flex justify-content-between align-items-start mb-2">
@@ -1003,6 +1004,7 @@
     private int _nativePitchLayerVersion;
     private IReadOnlyList<Graphic> _nativeEncounterFeatures = Array.Empty<Graphic>();
     private readonly UniqueValueRenderer _nativeEncounterRenderer = NativeMapFeatureLayerFactory.CreateEncounterRenderer();
+    private PopupTemplate? _nativeEncounterPopupTemplate;
     private int _nativeEncounterLayerVersion;
     private IReadOnlyList<Graphic> _nativeCandidatePlaceFeatures = Array.Empty<Graphic>();
     private readonly UniqueValueRenderer _nativeCandidatePlaceRenderer = NativeMapFeatureLayerFactory.CreateCandidatePlaceRenderer();
@@ -1036,6 +1038,7 @@
     private bool _isRecruiting;
     private RecruitmentAttemptResultDto? _activeRecruitment;
     private RecruitmentItemKind _selectedRecruitItem = RecruitmentItemKind.None;
+    private bool _showRecruitBoard = true;
     private bool _isAuthenticated;
     private string _recruitBlockedReason = "Go to the park to recruit.";
     private string? _recruitMessage;
@@ -1058,7 +1061,7 @@
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
 
     private bool HasRecruitUi =>
-        _selectedEncounter is not null
+        (_selectedEncounter is not null && _showRecruitBoard)
         || (_isAuthenticated && MapState.Value.VisibleEncounters.Count > 0);
 
     private string MapShellModeClass => _useNativeGeoBlazorMap ? "map-shell--native-geoblazor" : "map-shell--standard";
@@ -1076,6 +1079,7 @@
         _enableGameGraphics = reductionOptions.EnableGameGraphics;
         _enableAutoGpsWatch = reductionOptions.EnableAutoGpsWatch;
         _enableVerboseMapDiagnostics = ResolveMapFeatureFlag(Configuration, new Uri(Navigation.Uri, UriKind.Absolute), "EnableVerboseMapDiagnostics", "mapDiagnosticsVerbose", defaultValue: false);
+        _nativeEncounterPopupTemplate = NativeMapFeatureLayerFactory.CreateEncounterPopupTemplate(OpenSelectedRecruitBoardAsync);
         _ = RunSpotlightClockAsync(_spotlightClockCts.Token);
     }
 
@@ -1414,6 +1418,7 @@
         else if (_selectedEncounter is not null)
         {
             _selectedEncounter = null;
+            _showRecruitBoard = false;
             _canRecruit = false;
             _recruitBlockedReason = "Select a recruitable player.";
             _ = InvokeAsync(StateHasChanged);
@@ -1878,6 +1883,7 @@
 
         ClearCandidateSelection();
         Dispatcher.Dispatch(new SelectPitchAction(pitchId.Value));
+        _showRecruitBoard = false;
         return true;
     }
 
@@ -1896,6 +1902,7 @@
 
         ClearCandidateSelection();
         _selectedEncounter = encounter;
+        _showRecruitBoard = !_useNativeGeoBlazorMap;
         UpdateRecruitEligibility();
         _recruitMessage = null;
         Dispatcher.Dispatch(new SelectEncounterAction(encounterId.Value));
@@ -1909,6 +1916,7 @@
             SelectCandidatePlace(placeId);
         }
 
+        _showRecruitBoard = false;
         var name = selection.CandidateName ?? _selectedCandidatePlace?.Name ?? "Candidate place";
         var recommendedType = selection.CandidateRecommendedPitchType ?? _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
         var confidence = selection.CandidateConfidence ?? "?";
@@ -1922,6 +1930,7 @@
 
     private void ClearSelection()
     {
+        _showRecruitBoard = false;
         Dispatcher.Dispatch(new ClearSelectionAction());
     }
 
@@ -2065,6 +2074,7 @@
     private void ClearEncounterSelection()
     {
         _selectedEncounter = null;
+        _showRecruitBoard = false;
         _activeRecruitment = null;
         _selectedRecruitItem = RecruitmentItemKind.None;
         Dispatcher.Dispatch(new ClearSelectionAction());
@@ -2080,6 +2090,7 @@
 
         _selectedCandidatePlace = candidate;
         _selectedEncounter = null;
+        _showRecruitBoard = false;
         _activeRecruitment = null;
         _candidatePitchName = candidate.Name;
         _candidatePitchType = NormalizePitchType(candidate.RecommendedPitchType);
@@ -2315,6 +2326,7 @@
         }
 
         _selectedEncounter = encounter;
+        _showRecruitBoard = true;
         _activeRecruitment = null;
         _selectedRecruitItem = RecruitmentItemKind.None;
         _recruitMessage = null;
@@ -2332,6 +2344,20 @@
                 Logger.LogDebug(ex, "Failed to center on selected encounter");
             }
         }
+    }
+
+    private Task OpenSelectedRecruitBoardAsync()
+    {
+        if (_selectedEncounter is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _showRecruitBoard = true;
+        _recruitMessage = null;
+        UpdateRecruitEligibility();
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 
     private double? EncounterDistanceMeters(PlayerEncounterDto encounter)

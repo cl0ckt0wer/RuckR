@@ -1,5 +1,6 @@
 using dymaptic.GeoBlazor.Core.Components;
 using dymaptic.GeoBlazor.Core.Components.Geometries;
+using dymaptic.GeoBlazor.Core.Components.Popups;
 using dymaptic.GeoBlazor.Core.Components.Renderers;
 using dymaptic.GeoBlazor.Core.Components.Symbols;
 using dymaptic.GeoBlazor.Core.Enums;
@@ -189,6 +190,36 @@ public static class NativeMapFeatureLayerFactory
                 new("Rare recruit", CreateEncounterSymbol("Rare"), "Rare"),
                 new("Epic recruit", CreateEncounterSymbol("Epic"), "Epic"),
                 new("Legendary recruit", CreateEncounterSymbol("Legendary"), "Legendary")
+            ]);
+
+    /// <summary>Create the ArcGIS popup template for recruitable encounters.</summary>
+    public static PopupTemplate CreateEncounterPopupTemplate(Func<Task> openRecruitBoard) =>
+        new(
+            title: "{name}",
+            stringContent:
+                "<strong>{rarity} {position}</strong><br />" +
+                "Level {level}<br />" +
+                "Park: {parkName}<br />" +
+                "Recruit chance: {successChancePercent}%<br />" +
+                "Recruit time: {baseRecruitmentSeconds}s<br />" +
+                "Expires: {expiresAtUtc}",
+            outFields: OutFields,
+            fieldInfos: null,
+            content: null,
+            expressionInfos: null,
+            overwriteActions: true,
+            returnGeometry: false,
+            actions:
+            [
+                new ActionButton(
+                    title: "Open recruit board",
+                    image: string.Empty,
+                    actionId: "ruckr-open-recruit-board",
+                    callbackFunction: openRecruitBoard,
+                    className: "esri-icon-user",
+                    active: false,
+                    disabled: false,
+                    visible: true)
             ]);
 
     /// <summary>Create the ArcGIS unique-value renderer for player GPS point quality.</summary>
