@@ -39,7 +39,7 @@ public class SpotlightSightingUiStateTests
     /// <summary>Recruit state labels expose clear ready, blocked, weak, waiting, and expired states.</summary>
     [Theory]
     [InlineData(false, -1d, false, "GPS needed", "blocked")]
-    [InlineData(false, 82d, false, "Weak GPS", "weak")]
+    [InlineData(false, 125d, false, "Weak GPS", "weak")]
     [InlineData(false, 12d, false, "Move closer", "waiting")]
     [InlineData(false, 12d, true, "Recruit window", "ready")]
     [InlineData(true, 12d, true, "Sighting expired", "expired")]

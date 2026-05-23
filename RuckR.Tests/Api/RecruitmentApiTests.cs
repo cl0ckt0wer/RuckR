@@ -342,7 +342,7 @@ public class RecruitmentApiTests : IAsyncLifetime
         {
             Latitude = encounter.Latitude,
             Longitude = encounter.Longitude,
-            Accuracy = 75,
+            Accuracy = 125,
             Timestamp = DateTime.UtcNow
         });
 
