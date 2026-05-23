@@ -15,7 +15,7 @@ namespace RuckR.Server.Controllers
     [Authorize]
     public class CollectionController : ControllerBase
     {
-        private const double CaptureProximityMeters = 100.0;
+        private const double CaptureProximityMeters = 1000.0;
         private const double MaxCaptureAccuracyMeters = 50.0;
 
         private readonly RuckRDbContext _db;
@@ -101,7 +101,7 @@ namespace RuckR.Server.Controllers
 
             var userPosition = positionResult.Value.Position;
 
-            // 4. Proximity check: user must be within 100m of the pitch
+            // 4. Proximity check: user must be within 1km of the pitch
             var pitchPosition = new GeoPosition
             {
                 Latitude = pitch.Location.Y,
@@ -110,7 +110,7 @@ namespace RuckR.Server.Controllers
 
             var captureDistanceMeters = GeoPosition.HaversineDistance(userPosition, pitchPosition);
             if (captureDistanceMeters > CaptureProximityMeters)
-                return BadRequest("You must be within 100m of the pitch.");
+                return BadRequest("You must be within 1km of the pitch.");
 
             // 5. Duplicate check: user cannot capture the same player twice
             var existingCollection = await _db.Collections

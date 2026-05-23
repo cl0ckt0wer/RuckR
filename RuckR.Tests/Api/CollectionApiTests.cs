@@ -130,6 +130,21 @@ public class CollectionApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies capture Player Within One Kilometer Returns201.
+    /// </summary>
+    [Fact]
+    public async Task CapturePlayer_WithinOneKilometer_Returns201()
+    {
+        var (playerId, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.006, pitchLng);
+        var request = new CapturePlayerRequest(playerId, pitchId);
+
+        var response = await _client.PostAsJsonAsync("/api/collection/capture", request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    /// <summary>
     /// POST /collection/capture without GPS position returns 400 Bad Request.
     /// </summary>
     /// <summary>
@@ -265,6 +280,23 @@ public class CollectionApiTests : IAsyncLifetime
         var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
         Assert.NotNull(eligibility);
         Assert.Contains(eligibility.Reason, new[] { "ELIGIBLE", "NO_PLAYERS" });
+    }
+
+    /// <summary>
+    /// Verifies capture Eligibility Within One Kilometer Is Not Too Far.
+    /// </summary>
+    [Fact]
+    public async Task CaptureEligibility_WithinOneKilometer_IsNotTooFar()
+    {
+        var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat + 0.006, pitchLng);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.NotEqual("TOO_FAR", eligibility.Reason);
     }
 }
 

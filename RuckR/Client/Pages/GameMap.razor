@@ -987,7 +987,8 @@
     private DateTime _lastPitchFetchAtUtc = DateTime.MinValue;
 
     private const double EncounterBrowseRadiusMeters = 5000.0;
-    private const double RecruitDistanceMeters = 75.0;
+    private const double RecruitDistanceMeters = 1000.0;
+    private const double CaptureDistanceMeters = 1000.0;
     private const double MaxRecruitAccuracyMeters = 50.0;
 
     private const double BrowseRadiusMeters = 5000.0;
@@ -1971,7 +1972,7 @@
                 "ELIGIBLE" => "In range. You can capture players from this pitch.",
                 "GPS_REQUIRED" => "Enable GPS to capture players from this pitch.",
                 "GPS_INACCURATE" => $"Improve GPS accuracy to {MaxRecruitAccuracyMeters:0}m or better.",
-                "TOO_FAR" => "Move closer. Capture unlocks within 100m.",
+                "TOO_FAR" => $"Move closer. Capture unlocks within {FormatDistance(CaptureDistanceMeters)}.",
                 "NO_PLAYERS" => "No uncaptured players are available at this pitch right now.",
                 _ => "Capture is currently unavailable."
             };
@@ -2366,7 +2367,7 @@
 
         return distance.Value <= RecruitDistanceMeters
             ? "Recruit window open."
-            : $"Move within {RecruitDistanceMeters:0} m of the park.";
+            : $"Move within {FormatDistance(RecruitDistanceMeters)} of the park.";
     }
 
     private string RecruitStateLabel

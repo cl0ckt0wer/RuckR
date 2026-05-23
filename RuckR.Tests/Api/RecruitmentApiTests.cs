@@ -298,6 +298,24 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies attempt Recruitment Within One Kilometer Starts Recruitment.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_WithinOneKilometer_StartsRecruitment()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude + 0.006, encounter.Longitude);
+
+        var response = await _client.PostAsJsonAsync("/api/recruitment/attempt", new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(result);
+        Assert.False(result!.Completed);
+        Assert.Contains("Recruitment", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Verifies attempt Recruitment Without Gps Position Returns Bad Request.
     /// </summary>
     [Fact]
