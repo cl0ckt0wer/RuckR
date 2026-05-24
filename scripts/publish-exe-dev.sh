@@ -246,13 +246,26 @@ else
     ok "SQL Server container running"
   fi
 
-  jaeger=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-jaeger" --format "{{.Names}}" 2>/dev/null')
-  if [ -z "$jaeger" ]; then
-    info "Starting" "Jaeger container..."
-    ssh "$SSH_HOST" "docker rm -f ruckr-jaeger 2>/dev/null; docker run -d --name ruckr-jaeger --restart unless-stopped -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 --memory 256m -e QUERY_BASE_PATH=/jaeger jaegertracing/all-in-one:latest"
-    ok "Jaeger started"
+  jaeger=$(ssh "$SSH_HOST" 'docker ps --filter "name=ruckr-jaeger" --filter "status=running" --format "{{.Names}}" 2>/dev/null')
+  jaeger_storage=$(ssh "$SSH_HOST" 'docker inspect ruckr-jaeger --format "{{range .Config.Env}}{{println .}}{{end}}" 2>/dev/null | grep "^SPAN_STORAGE_TYPE=" || true')
+  jaeger_data_dir="$ABS_DEPLOY_DIR/jaeger-badger"
+  if [ "$jaeger" = "ruckr-jaeger" ] && [ "$jaeger_storage" = "SPAN_STORAGE_TYPE=badger" ]; then
+    ok "Jaeger container running (Badger storage)"
   else
-    ok "Jaeger container running"
+    if [ -n "$jaeger" ]; then
+      info "Recreating" "Jaeger container with Badger storage..."
+    else
+      info "Starting" "Jaeger container with Badger storage..."
+    fi
+    ssh "$SSH_HOST" "set -euo pipefail; mkdir -p $(remote_quote "$jaeger_data_dir"); docker rm -f ruckr-jaeger 2>/dev/null || true; docker run -d --name ruckr-jaeger --restart unless-stopped -p 127.0.0.1:4317:4317 -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 --memory 512m -v $(remote_quote "$jaeger_data_dir"):/badger -e QUERY_BASE_PATH=/jaeger -e SPAN_STORAGE_TYPE=badger -e BADGER_EPHEMERAL=false -e BADGER_DIRECTORY_VALUE=/badger/data -e BADGER_DIRECTORY_KEY=/badger/key jaegertracing/all-in-one:latest"
+    for _ in $(seq 1 20); do
+      ready=$(ssh "$SSH_HOST" 'curl -fsS http://127.0.0.1:16686/jaeger/api/services >/dev/null 2>&1 && echo ready || echo waiting')
+      [ "$ready" = "ready" ] && break
+      sleep 2
+    done
+    ready=$(ssh "$SSH_HOST" 'curl -fsS http://127.0.0.1:16686/jaeger/api/services >/dev/null 2>&1 && echo ready || echo waiting')
+    [ "$ready" = "ready" ] || fail "Jaeger did not become ready. Check docker logs ruckr-jaeger on $SSH_HOST."
+    ok "Jaeger ready with Badger storage"
   fi
 fi
 
