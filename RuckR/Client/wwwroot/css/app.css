@@ -109,6 +109,12 @@ a, .btn-link {
     position: relative;
 }
 
+.mud-main-content article.content:has(.map-shell) .map-shell {
+    flex: 0 0 auto;
+    height: calc(100dvh - 48px);
+    min-height: 0;
+}
+
 .map-info-bar {
     padding: 8px 16px;
     background: #f8f9fa;

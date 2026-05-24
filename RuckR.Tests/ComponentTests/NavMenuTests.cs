@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using MudBlazor.Services;
 using RuckR.Client.Shared;
 
 namespace RuckR.Tests.ComponentTests;
@@ -19,6 +20,7 @@ public class NavMenuTests : TestContext
     {
         Services.AddAuthorizationCore();
         Services.AddCascadingAuthenticationState();
+        Services.AddMudServices();
         Services.AddSingleton<IAuthorizationService>(new TestAuthorizationService());
         Services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -65,7 +67,7 @@ public class NavMenuTests : TestContext
         Assert.NotNull(logoutLink);
         Assert.Contains("Logout", logoutLink.TextContent);
 
-        var usernameSpan = cut.Find(".nav-link-text");
+        var usernameSpan = cut.Find(".ruckr-user-name");
         Assert.Contains("TestPlayer", usernameSpan.TextContent);
     }
 

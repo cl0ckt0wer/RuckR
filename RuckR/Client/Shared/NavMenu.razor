@@ -1,108 +1,66 @@
-﻿@inject NavigationManager Navigation
 @inject IConfiguration Configuration
 
-<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">RuckR</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-    </div>
-</div>
+<MudNavMenu Class="ruckr-nav">
+    <MudText Typo="Typo.overline" Class="ruckr-nav-section">Game</MudText>
+    <MudNavLink Href="map" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Map" OnClick="HandleNavigate" data-testid="nav-map">
+        Map
+    </MudNavLink>
+    @if (ShowDebugMapLinks)
+    {
+        <MudNavLink Href="debug-map" Icon="@Icons.Material.Filled.LocationOn" OnClick="HandleNavigate" data-testid="nav-debug-map">
+            Debug Map
+        </MudNavLink>
+        <MudNavLink Href="debug-layers" Icon="@Icons.Material.Filled.Layers" OnClick="HandleNavigate" data-testid="nav-debug-layers">
+            Debug Layers
+        </MudNavLink>
+    }
+    <MudNavLink Href="catalog" Icon="@Icons.Material.Filled.FormatListBulleted" OnClick="HandleNavigate" data-testid="nav-catalog">
+        Catalog
+    </MudNavLink>
+    <MudNavLink Href="collection" Icon="@Icons.Material.Filled.Stars" OnClick="HandleNavigate" data-testid="nav-collection">
+        Collection
+    </MudNavLink>
+    <MudNavLink Href="players/nearby" Icon="@Icons.Material.Filled.Groups" OnClick="HandleNavigate" data-testid="nav-nearby">
+        Nearby Players
+    </MudNavLink>
+    <MudNavLink Href="battle" Icon="@Icons.Material.Filled.Bolt" OnClick="HandleNavigate" data-testid="nav-battles">
+        Battles
+    </MudNavLink>
+    <MudNavLink Href="battles/history" Icon="@Icons.Material.Filled.History" OnClick="HandleNavigate" data-testid="nav-history">
+        History
+    </MudNavLink>
+    <MudNavLink Href="pitches/create" Icon="@Icons.Material.Filled.AddLocationAlt" OnClick="HandleNavigate" data-testid="nav-create-pitch">
+        Create Pitch
+    </MudNavLink>
 
-<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="flex-column">
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="map" data-testid="nav-map">
-                <span class="oi oi-map" aria-hidden="true"></span> Map
-            </NavLink>
-        </div>
-        @if (ShowDebugMapLinks)
-        {
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="debug-map" data-testid="nav-debug-map">
-                    <span class="oi oi-map-marker" aria-hidden="true"></span> Debug Map
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="debug-layers" data-testid="nav-debug-layers">
-                    <span class="oi oi-layers" aria-hidden="true"></span> Debug Layers
-                </NavLink>
-            </div>
-        }
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="catalog" data-testid="nav-catalog">
-                <span class="oi oi-list" aria-hidden="true"></span> Catalog
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="collection" data-testid="nav-collection">
-                <span class="oi oi-star" aria-hidden="true"></span> Collection
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="players/nearby" data-testid="nav-nearby">
-                <span class="oi oi-people" aria-hidden="true"></span> Nearby Players
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="battle" data-testid="nav-battles">
-                <span class="oi oi-flash" aria-hidden="true"></span> Battles
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="battles/history" data-testid="nav-history">
-                <span class="oi oi-clock" aria-hidden="true"></span> History
-            </NavLink>
-        </div>
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="pitches/create" data-testid="nav-create-pitch">
-                <span class="oi oi-plus" aria-hidden="true"></span> Create Pitch
-            </NavLink>
-        </div>
-
-        <AuthorizeView>
-            <Authorized>
-                <div class="nav-item px-3">
-                    <span class="nav-link-text">Hello, @context.User.Identity?.Name!</span>
-                </div>
-                <div class="nav-item px-3">
-                    <a class="nav-link" href="/Identity/Account/LogOut" target="_top" @onclick="NavToLogout" @onclick:preventDefault data-testid="nav-logout">
-                        <span class="oi oi-account-logout" aria-hidden="true"></span> Logout
-                    </a>
-                </div>
-            </Authorized>
-            <NotAuthorized>
-                <div class="nav-item px-3">
-                    <a class="nav-link" href="/Identity/Account/Login" target="_top" @onclick="NavToLogin" @onclick:preventDefault data-testid="nav-login">
-                        <span class="oi oi-account-login" aria-hidden="true"></span> Login
-                    </a>
-                </div>
-            </NotAuthorized>
-        </AuthorizeView>
-    </nav>
-</div>
+    <MudDivider Class="my-3" />
+    <MudText Typo="Typo.overline" Class="ruckr-nav-section">Account</MudText>
+    <AuthorizeView>
+        <Authorized>
+            <MudText Typo="Typo.body2" Class="ruckr-user-name">
+                @context.User.Identity?.Name
+            </MudText>
+            <MudNavLink Href="/Identity/Account/LogOut" Target="_top" Icon="@Icons.Material.Filled.Logout" data-testid="nav-logout">
+                Logout
+            </MudNavLink>
+        </Authorized>
+        <NotAuthorized>
+            <MudNavLink Href="/Identity/Account/Login" Target="_top" Icon="@Icons.Material.Filled.Login" data-testid="nav-login">
+                Login
+            </MudNavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudNavMenu>
 
 @code {
-    private bool collapseNavMenu = true;
-
-    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+    [Parameter]
+    public EventCallback OnNavigate { get; set; }
 
     private bool ShowDebugMapLinks =>
         bool.TryParse(Configuration["Map:ShowDebugNav"], out var showDebugNav) && showDebugNav;
 
-    private void ToggleNavMenu()
+    private Task HandleNavigate()
     {
-        collapseNavMenu = !collapseNavMenu;
-    }
-
-    private void NavToLogin()
-    {
-        Navigation.NavigateTo("/Identity/Account/Login", forceLoad: true);
-    }
-
-    private void NavToLogout()
-    {
-        Navigation.NavigateTo("/Identity/Account/LogOut", forceLoad: true);
+        return OnNavigate.InvokeAsync();
     }
 }
