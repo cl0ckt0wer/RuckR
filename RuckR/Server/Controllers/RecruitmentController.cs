@@ -75,15 +75,44 @@ public class RecruitmentController : ControllerBase
         if (!allowed)
             return StatusCode(429, "Rate limit exceeded for recruitment attempts.");
 
-        var positionResult = _locationTracker.TryGetPosition(userId, TimeSpan.FromSeconds(60));
-        if (positionResult is null)
+        var userPosition = ResolveAttemptPosition(userId, request);
+        if (userPosition is null)
             return BadRequest("GPS position required. Please enable location services.");
 
-        if (positionResult.Value.Position.Accuracy.HasValue && positionResult.Value.Position.Accuracy.Value > MaxRecruitAccuracyMeters)
+        if (userPosition.Accuracy.HasValue && userPosition.Accuracy.Value > MaxRecruitAccuracyMeters)
             return BadRequest("Improve GPS accuracy (<= 100m) before recruiting.");
 
-        var result = await _recruitmentService.AttemptRecruitmentAsync(userId, request, positionResult.Value.Position);
+        var result = await _recruitmentService.AttemptRecruitmentAsync(userId, request, userPosition);
         return Ok(result);
+    }
+
+    private GeoPosition? ResolveAttemptPosition(string userId, RecruitmentAttemptRequest request)
+    {
+        var positionResult = _locationTracker.TryGetPosition(userId, TimeSpan.FromSeconds(60));
+        if (positionResult is not null)
+        {
+            return positionResult.Value.Position;
+        }
+
+        if (!request.Latitude.HasValue || !request.Longitude.HasValue)
+        {
+            return null;
+        }
+
+        if (request.Latitude.Value is < -90 or > 90 || request.Longitude.Value is < -180 or > 180)
+        {
+            return null;
+        }
+
+        var requestPosition = new GeoPosition
+        {
+            Latitude = request.Latitude.Value,
+            Longitude = request.Longitude.Value,
+            Accuracy = request.Accuracy,
+            Timestamp = DateTime.UtcNow
+        };
+        _locationTracker.UpdatePosition(userId, requestPosition);
+        return requestPosition;
     }
 }
 

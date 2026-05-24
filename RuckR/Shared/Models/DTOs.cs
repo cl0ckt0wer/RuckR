@@ -187,10 +187,16 @@ namespace RuckR.Shared.Models
     /// <param name="EncounterId">Encounter identifier.</param>
     /// <param name="PlayerId">Player identifier being recruited.</param>
     /// <param name="ItemKind">Optional item to apply when starting a timed recruitment session.</param>
+    /// <param name="Latitude">Optional current user latitude used when no recent SignalR position is available.</param>
+    /// <param name="Longitude">Optional current user longitude used when no recent SignalR position is available.</param>
+    /// <param name="Accuracy">Optional current GPS accuracy in meters.</param>
     public sealed record RecruitmentAttemptRequest(
         [Required] Guid EncounterId,
         [Required] int PlayerId,
-        RecruitmentItemKind ItemKind = RecruitmentItemKind.None);
+        RecruitmentItemKind ItemKind = RecruitmentItemKind.None,
+        double? Latitude = null,
+        double? Longitude = null,
+        double? Accuracy = null);
 
     /// <summary>
     /// One time reducer applied to an active recruitment session.

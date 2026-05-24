@@ -2649,7 +2649,11 @@
         try
         {
             var itemKind = _activeRecruitment is null ? _selectedRecruitItem : RecruitmentItemKind.None;
-            var result = await ApiClient.AttemptRecruitmentAsync(_selectedEncounter.EncounterId, _selectedEncounter.PlayerId, itemKind);
+            var result = await ApiClient.AttemptRecruitmentAsync(
+                _selectedEncounter.EncounterId,
+                _selectedEncounter.PlayerId,
+                itemKind,
+                _lastKnownPosition);
             if (result is null)
             {
                 _recruitMessage = "Recruitment failed. Please try again.";

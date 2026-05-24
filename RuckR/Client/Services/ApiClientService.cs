@@ -265,15 +265,25 @@ public class ApiClientService
     /// <param name="encounterId">Encounter identifier.</param>
     /// <param name="playerId">Selected player identifier.</param>
     /// <param name="itemKind">Optional item to apply when starting a new recruitment session.</param>
+    /// <param name="position">Optional latest browser GPS position to avoid depending on SignalR timing.</param>
     /// <returns>Recruitment result details.</returns>
     public async Task<RecruitmentAttemptResultDto?> AttemptRecruitmentAsync(
         Guid encounterId,
         int playerId,
-        RecruitmentItemKind itemKind = RecruitmentItemKind.None)
+        RecruitmentItemKind itemKind = RecruitmentItemKind.None,
+        GeoPosition? position = null)
     {
         try
         {
-            var response = await _http.PostAsJsonAsync("api/recruitment/attempt", new RecruitmentAttemptRequest(encounterId, playerId, itemKind));
+            var response = await _http.PostAsJsonAsync(
+                "api/recruitment/attempt",
+                new RecruitmentAttemptRequest(
+                    encounterId,
+                    playerId,
+                    itemKind,
+                    position?.Latitude,
+                    position?.Longitude,
+                    position?.Accuracy));
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
         }

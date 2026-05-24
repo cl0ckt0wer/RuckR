@@ -332,6 +332,55 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies attempt Recruitment Uses Request Gps When SignalR Position Has Not Arrived.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_WithRequestGpsAndNoTrackedPosition_StartsRecruitment()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.ClearPosition(_userId);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(
+                encounter.EncounterId,
+                encounter.PlayerId,
+                Latitude: encounter.Latitude,
+                Longitude: encounter.Longitude,
+                Accuracy: 25));
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(result);
+        Assert.False(result!.Success);
+        Assert.False(result.Completed);
+        Assert.Contains("Recruitment", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies attempt Recruitment Applies Accuracy Gate To Request Gps Fallback.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_WithPoorRequestGps_ReturnsBadRequest()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.ClearPosition(_userId);
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(
+                encounter.EncounterId,
+                encounter.PlayerId,
+                Latitude: encounter.Latitude,
+                Longitude: encounter.Longitude,
+                Accuracy: 125));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Improve GPS accuracy", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Verifies attempt Recruitment When Gps Accuracy Is Poor Returns Bad Request.
     /// </summary>
     [Fact]
