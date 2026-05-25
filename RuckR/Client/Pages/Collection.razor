@@ -38,8 +38,8 @@
         <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="empty-state">
             <MudStack AlignItems="AlignItems.Center" Spacing="2">
                 <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Size="Size.Large" Color="Color.Primary" />
-                <MudText Typo="Typo.h5">No recruited players yet</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">Open the map and recruit players from nearby parks.</MudText>
+                <MudText Typo="Typo.h5">No recruits yet</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Open the map and recruit from nearby parks.</MudText>
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map" OnClick="GoToMap">
                     Explore Map
                 </MudButton>
@@ -54,7 +54,7 @@
                     <MudText Typo="Typo.overline">Roster</MudText>
                     <MudText Typo="Typo.h4">My Collection</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        @collectedPlayers.Count recruited players ready for challenges.
+                        @collectedPlayers.Count recruits ready for challenges.
                     </MudText>
                 </div>
                 <MudStack Row="true" Spacing="1">
@@ -282,11 +282,11 @@
 
     private static string RarityDescription(PlayerRarity rarity) => rarity switch
     {
-        PlayerRarity.Common => "Common player with reliable fundamentals.",
-        PlayerRarity.Uncommon => "Above-average player with useful upside.",
-        PlayerRarity.Rare => "Hard-to-find player with strong match impact.",
-        PlayerRarity.Epic => "High-impact player for serious challenges.",
-        PlayerRarity.Legendary => "Top-tier player and a major battle threat.",
+        PlayerRarity.Common => "Common recruit with reliable fundamentals.",
+        PlayerRarity.Uncommon => "Above-average recruit with useful upside.",
+        PlayerRarity.Rare => "Hard-to-find recruit with strong match impact.",
+        PlayerRarity.Epic => "High-impact recruit for serious challenges.",
+        PlayerRarity.Legendary => "Top-tier recruit and a major battle threat.",
         _ => string.Empty
     };
 }

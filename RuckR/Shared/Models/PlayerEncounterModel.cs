@@ -14,7 +14,7 @@ public class PlayerEncounterModel
     /// <summary>User that first caused this shared encounter to be created, when known.</summary>
     public string? UserId { get; set; }
 
-    /// <summary>Player identifier for this encounter.</summary>
+    /// <summary>Recruit/player-card identifier for this encounter.</summary>
     [Required]
     public int PlayerId { get; set; }
 

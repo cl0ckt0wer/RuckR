@@ -372,7 +372,7 @@ public class GeolocationService : IGeolocationService
     };
 
     /// <summary>
-    /// Builds player-facing geolocation error text from browser error codes.
+    /// Builds user-facing geolocation error text from browser error codes.
     /// </summary>
     /// <param name="code">Browser geolocation error code.</param>
     /// <param name="browserMessage">Original browser message.</param>
@@ -386,7 +386,7 @@ public class GeolocationService : IGeolocationService
         TimeoutErrorCode =>
             "Location request timed out. Move somewhere with a clearer signal, then retry GPS.",
         GeolocationUnavailableErrorCode =>
-            "This browser does not support location. Use a browser with geolocation to recruit and capture players.",
+            "This browser does not support location. Use a browser with geolocation to recruit and capture recruits.",
         _ when !string.IsNullOrWhiteSpace(browserMessage) =>
             $"Location is unavailable: {browserMessage}",
         _ =>

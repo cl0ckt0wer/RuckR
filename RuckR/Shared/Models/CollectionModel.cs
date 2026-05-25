@@ -12,21 +12,21 @@ namespace RuckR.Shared.Models
         [Key]
         public int Id { get; set; }
 
-        /// <summary>User identity associated with the captured player.</summary>
+        /// <summary>User identity associated with the captured recruit.</summary>
         [Required]
         public required string UserId { get; set; }
 
-        /// <summary>Captured player identifier.</summary>
+        /// <summary>Captured recruit/player-card identifier.</summary>
         [Required]
         public int PlayerId { get; set; }
 
-        /// <summary>Navigation to the captured player.</summary>
+        /// <summary>Navigation to the captured recruit/player-card.</summary>
         public PlayerModel? Player { get; set; }
 
         /// <summary>UTC timestamp when the player was captured.</summary>
         public DateTime CapturedAt { get; set; } = DateTime.UtcNow;
 
-        /// <summary>Indicates whether this captured player is marked as a favorite.</summary>
+        /// <summary>Indicates whether this captured recruit is marked as a favorite.</summary>
         public bool IsFavorite { get; set; }
 
         /// <summary>Optional pitch identifier where capture occurred.</summary>

@@ -12,7 +12,7 @@ namespace RuckR.Server.Data
         public DbSet<PlayerModel> Players { get; set; }
         /// <summary>Gets or sets all discovered and created pitches.</summary>
         public DbSet<PitchModel> Pitches { get; set; }
-        /// <summary>Gets or sets all players collected by users.</summary>
+        /// <summary>Gets or sets all recruits collected by users.</summary>
         public DbSet<CollectionModel> Collections { get; set; }
         /// <summary>Gets or sets all battle records.</summary>
         public DbSet<BattleModel> Battles { get; set; }

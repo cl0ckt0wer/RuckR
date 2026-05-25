@@ -9,7 +9,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
-    /// <summary>API endpoints for player lookup and nearby player queries.</summary>
+    /// <summary>API endpoints for recruit/player-card lookup and nearby user challenge queries.</summary>
     [ApiController]
     [Route("api/[controller]")]
     /// <summary>Defines the server-side class PlayersController.</summary>
@@ -93,10 +93,10 @@ namespace RuckR.Server.Controllers
         }
 
         /// <summary>
-        /// GET /api/players/nearby — returns players within radius, using DistanceBucket instead of exact distance.
-        /// Wild players are found by spawn point; owned players are found by recent owner GPS position.
+        /// GET /api/players/nearby — returns recruits within radius, using DistanceBucket instead of exact distance.
+        /// Wild recruits are found by spawn point; owned recruits can also be found by recent owner GPS position.
         /// </summary>
-        /// <summary>Get nearby players by GPS coordinate and radius.</summary>
+        /// <summary>Get nearby recruits and user-owned recruits by GPS coordinate and radius.</summary>
         /// <param name="lat">The lat.</param>
         /// <param name="lng">The lng.</param>
         /// <param name="radius">The radius.</param>
@@ -145,7 +145,8 @@ namespace RuckR.Server.Controllers
                     p.Position.ToString(),
                     p.Rarity.ToString(),
                     GeoPosition.GetDistanceBucket(p.SpawnLocation!.Distance(point)),
-                    u != null ? u.UserName! : null!
+                    u != null ? u.UserName! : null!,
+                    u != null ? NearbyRecruitSource.OwnedSpawn : NearbyRecruitSource.WildSpawn
                 )).ToListAsync();
 
             var liveOwnedPlayers = await GetLiveOwnedPlayersNearAsync(lat, lng, effectiveRadius);
@@ -215,7 +216,8 @@ namespace RuckR.Server.Controllers
                     entry.Player.Position.ToString(),
                     entry.Player.Rarity.ToString(),
                     GeoPosition.GetDistanceBucket(nearbyOwnerDistances[entry.UserId]),
-                    usernames[entry.UserId]))
+                    usernames[entry.UserId],
+                    NearbyRecruitSource.NearbyUser))
                 .ToList();
         }
     }

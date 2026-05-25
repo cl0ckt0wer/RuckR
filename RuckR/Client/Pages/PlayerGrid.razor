@@ -7,7 +7,7 @@
 @inject NavigationManager Navigation
 @inject RuckR.Client.Services.IGeolocationService GeolocationService
 
-<PageTitle>Nearby Players</PageTitle>
+<PageTitle>Nearby Users & Recruits</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.False" Class="game-page nearby-page">
     @if (_requiresAuth)
@@ -21,7 +21,7 @@
     {
         <MudStack AlignItems="AlignItems.Center" Class="py-8" data-testid="nearby-loading">
             <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
-            <MudText Typo="Typo.body2">Scanning nearby players...</MudText>
+            <MudText Typo="Typo.body2">Scanning nearby users and recruits...</MudText>
         </MudStack>
     }
     else if (_gpsDisabled)
@@ -49,9 +49,9 @@
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
                 <div>
                     <MudText Typo="Typo.overline">Scouting</MudText>
-                    <MudText Typo="Typo.h4">Nearby Players</MudText>
+                    <MudText Typo="Typo.h4">Nearby Users & Recruits</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        @_nearbyPlayers.Count players found within @_selectedRadiusKm km.
+                        @_nearbyPlayers.Count results within @_selectedRadiusKm km.
                     </MudText>
                 </div>
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
@@ -76,7 +76,7 @@
                 <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="empty-state">
                     <MudStack AlignItems="AlignItems.Center" Spacing="2">
                         <MudIcon Icon="@Icons.Material.Filled.Radar" Size="Size.Large" Color="Color.Secondary" />
-                        <MudText Typo="Typo.h5">No players nearby</MudText>
+                        <MudText Typo="Typo.h5">No users or recruits nearby</MudText>
                         <MudText Typo="Typo.body2" Color="Color.Secondary">Try a wider search radius or check the map for recruits.</MudText>
                     </MudStack>
                 </MudPaper>
@@ -86,8 +86,8 @@
                 <MudGrid Spacing="3" data-testid="nearby-grid">
                     @foreach (var item in _sortedPlayers)
                     {
-                        var isWild = string.IsNullOrWhiteSpace(item.OwnerUsername);
-                        var isSelf = !isWild && string.Equals(item.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+                        var isWild = IsWildRecruit(item);
+                        var isSelf = IsOwnedByCurrentUser(item);
 
                         <MudItem xs="12" md="6" xl="4">
                             <MudPaper Elevation="1" Class="game-panel player-card" data-testid="player-card">
@@ -97,8 +97,8 @@
                                             <MudText Typo="Typo.h6" data-testid="player-name">@item.Name</MudText>
                                             <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatDistanceBucket(item.DistanceBucket)</MudText>
                                         </div>
-                                        <MudChip T="string" Color="@OwnerColor(isWild, isSelf)" Variant="Variant.Filled" data-testid="owner-badge">
-                                            @OwnerLabel(isWild, isSelf)
+                                        <MudChip T="string" Color="@OwnerColor(item, isSelf)" Variant="Variant.Filled" data-testid="owner-badge">
+                                            @OwnerLabel(item, isSelf)
                                         </MudChip>
                                     </MudStack>
 
@@ -106,6 +106,13 @@
                                         <MudChip T="string" Variant="Variant.Outlined" data-testid="position-badge">@item.Position</MudChip>
                                         <MudChip T="string" Color="@RarityColor(item.Rarity)" Variant="Variant.Filled" data-testid="rarity-badge">@item.Rarity</MudChip>
                                     </MudChipSet>
+
+                                    @if (!isWild && !string.IsNullOrWhiteSpace(item.OwnerUsername))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            User: @item.OwnerUsername
+                                        </MudText>
+                                    }
 
                                     <div class="distance-block" data-testid="distance-display">
                                         <MudText Typo="Typo.h5">@FormatDistanceBucket(item.DistanceBucket)</MudText>
@@ -119,12 +126,12 @@
                                     }
                                     else if (isSelf)
                                     {
-                                        <MudAlert Severity="Severity.Info" Dense="true">This player is already yours.</MudAlert>
+                                        <MudAlert Severity="Severity.Info" Dense="true">This recruit is already yours.</MudAlert>
                                     }
                                     else
                                     {
-                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Bolt" OnClick="() => ChallengePlayer(item)" data-testid="challenge-btn">
-                                            Challenge Owner
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Bolt" OnClick="() => ChallengeUser(item)" data-testid="challenge-btn">
+                                            Challenge User
                                         </MudButton>
                                     }
                                 </MudStack>
@@ -163,13 +170,13 @@
         ? "Checking GPS"
         : IsLocationPermissionDenied
             ? "Location permission is off"
-            : "Enable GPS to find nearby players";
+            : "Enable GPS to find nearby users and recruits";
 
     private string GpsDisabledBody => IsLocationSearchPending
         ? "Waiting for the browser to finish location permission and GPS lock."
         : IsLocationPermissionDenied
             ? "Nearby scouting still needs your browser to allow Location for this site."
-            : "RuckR needs your location to list nearby wild and owned players.";
+            : "RuckR needs your location to list nearby wild recruits and user-owned recruits.";
 
     private IEnumerable<NearbyPlayerDto> _sortedPlayers =>
         _nearbyPlayers
@@ -223,7 +230,7 @@
         }
         catch (HttpRequestException ex)
         {
-            _errorMessage = $"Failed to load nearby players: {ex.Message}";
+            _errorMessage = $"Failed to load nearby users and recruits: {ex.Message}";
         }
         catch (Exception ex)
         {
@@ -260,7 +267,7 @@
         }
     }
 
-    private void ChallengePlayer(NearbyPlayerDto player)
+    private void ChallengeUser(NearbyPlayerDto player)
     {
         if (!string.IsNullOrWhiteSpace(player.OwnerUsername))
         {
@@ -282,18 +289,27 @@
         _ => "> 500m"
     };
 
-    private static string OwnerLabel(bool isWild, bool isSelf)
+    private static bool IsWildRecruit(NearbyPlayerDto player) =>
+        player.Source == NearbyRecruitSource.WildSpawn
+        && string.IsNullOrWhiteSpace(player.OwnerUsername);
+
+    private bool IsOwnedByCurrentUser(NearbyPlayerDto player) =>
+        !string.IsNullOrWhiteSpace(player.OwnerUsername)
+        && string.Equals(player.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+
+    private static string OwnerLabel(NearbyPlayerDto player, bool isSelf)
     {
-        if (isWild) return "Wild";
-        if (isSelf) return "You";
-        return "Owned";
+        if (IsWildRecruit(player)) return "Wild recruit";
+        if (isSelf) return "Your recruit";
+        if (player.Source == NearbyRecruitSource.NearbyUser) return "Nearby user";
+        return "Owned recruit";
     }
 
-    private static Color OwnerColor(bool isWild, bool isSelf)
+    private static Color OwnerColor(NearbyPlayerDto player, bool isSelf)
     {
-        if (isWild) return Color.Secondary;
+        if (IsWildRecruit(player)) return Color.Secondary;
         if (isSelf) return Color.Info;
-        return Color.Primary;
+        return player.Source == NearbyRecruitSource.NearbyUser ? Color.Primary : Color.Warning;
     }
 
     private static Color RarityColor(string rarity) => rarity switch

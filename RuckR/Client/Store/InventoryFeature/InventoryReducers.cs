@@ -29,7 +29,7 @@ public static class InventoryReducers
         state with { IsLoading = false, CollectedPlayers = action.Players, LastSynced = DateTime.UtcNow };
 
     /// <summary>
-    /// Adds a newly captured player to inventory.
+    /// Adds a newly captured recruit to inventory.
     /// </summary>
     /// <param name="state">Current inventory state.</param>
     /// <param name="action">Add player action.</param>

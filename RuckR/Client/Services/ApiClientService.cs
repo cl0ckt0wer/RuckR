@@ -49,8 +49,8 @@ public class ApiClientService
     /// <summary>
     /// Gets a player by identifier.
     /// </summary>
-    /// <param name="id">Player identifier.</param>
-    /// <returns>Player details or <c>null</c> when not found.</returns>
+    /// <param name="id">Recruit/player-card identifier.</param>
+    /// <returns>Recruit details or <c>null</c> when not found.</returns>
     public async Task<PlayerModel?> GetPlayerAsync(int id)
     {
         return await _http.GetFromJsonAsync<PlayerModel>($"api/players/{id}");
@@ -67,13 +67,13 @@ public class ApiClientService
     {
         try
         {
-            _logger.LogDebug("Fetching nearby players at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            _logger.LogDebug("Fetching nearby users and recruits at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
             return await _http.GetFromJsonAsync<List<NearbyPlayerDto>>(
                 $"api/players/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to fetch nearby players at ({Lat}, {Lng})", lat, lng);
+            _logger.LogWarning(ex, "Failed to fetch nearby users and recruits at ({Lat}, {Lng})", lat, lng);
             return new();
         }
     }
@@ -200,7 +200,7 @@ public class ApiClientService
     /// <summary>
     /// Captures a player at a pitch.
     /// </summary>
-    /// <param name="playerId">Captured player identifier.</param>
+    /// <param name="playerId">Captured recruit/player-card identifier.</param>
     /// <param name="pitchId">Pitch identifier.</param>
     /// <returns>Collection entry, if captured.</returns>
     public async Task<CollectionModel?> CapturePlayerAsync(int playerId, int pitchId)
@@ -263,7 +263,7 @@ public class ApiClientService
     /// Attempts player recruitment for an encounter.
     /// </summary>
     /// <param name="encounterId">Encounter identifier.</param>
-    /// <param name="playerId">Selected player identifier.</param>
+    /// <param name="playerId">Selected recruit/player-card identifier.</param>
     /// <param name="itemKind">Optional item to apply when starting a new recruitment session.</param>
     /// <param name="position">Optional latest browser GPS position to avoid depending on SignalR timing.</param>
     /// <returns>Recruitment result details.</returns>
@@ -333,7 +333,7 @@ public class ApiClientService
     /// Sends a new battle challenge.
     /// </summary>
     /// <param name="opponentUsername">Opponent user name.</param>
-    /// <param name="selectedPlayerId">Challenger collection player identifier.</param>
+    /// <param name="selectedPlayerId">Challenger collection recruit/player-card identifier.</param>
     /// <returns>Created battle summary.</returns>
     public async Task<BattleSummaryDto?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {
@@ -346,7 +346,7 @@ public class ApiClientService
     /// Accepts a battle challenge.
     /// </summary>
     /// <param name="battleId">Challenge identifier.</param>
-    /// <param name="selectedPlayerId">Selected player identifier.</param>
+    /// <param name="selectedPlayerId">Selected recruit/player-card identifier.</param>
     /// <returns>Resolved battle summary.</returns>
     public async Task<BattleSummaryDto?> AcceptChallengeAsync(int battleId, int selectedPlayerId)
     {

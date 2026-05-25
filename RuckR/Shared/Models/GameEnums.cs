@@ -43,6 +43,19 @@ namespace RuckR.Shared.Models
     }
 
     /// <summary>
+    /// Source of a nearby recruit listing.
+    /// </summary>
+    public enum NearbyRecruitSource
+    {
+        /// <summary>Uncaptured recruit discovered at its spawn location.</summary>
+        WildSpawn,
+        /// <summary>Captured recruit whose spawn location is within the search area.</summary>
+        OwnedSpawn,
+        /// <summary>Captured recruit carried by a nearby user with a recent GPS update.</summary>
+        NearbyUser
+    }
+
+    /// <summary>
     /// Temporary pub-kit items that can shorten a recruitment session.
     /// </summary>
     public enum RecruitmentItemKind

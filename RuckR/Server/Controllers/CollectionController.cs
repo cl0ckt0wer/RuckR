@@ -8,7 +8,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
-    /// <summary>API endpoints for player collections and capture actions.</summary>
+    /// <summary>API endpoints for user recruit collections and capture actions.</summary>
     [ApiController]
     [Route("api/[controller]")]
     /// <summary>Defines the server-side class CollectionController.</summary>
@@ -40,10 +40,10 @@ namespace RuckR.Server.Controllers
         }
 
         /// <summary>
-        /// GET /collection — returns all players collected by the current user,
+        /// GET /collection — returns all recruits collected by the current user,
         /// with the Player navigation property included.
         /// </summary>
-        /// <summary>Get the current user's captured player collection.</summary>
+        /// <summary>Get the current user's captured recruit collection.</summary>
         /// <returns>The operation result.</returns>
         [HttpGet]
         public async Task<ActionResult<List<CollectionModel>>> GetCollections()
@@ -70,11 +70,11 @@ namespace RuckR.Server.Controllers
         }
 
         /// <summary>
-        /// POST /collection/capture — capture a player at a pitch.
+        /// POST /collection/capture — capture a recruit at a pitch.
         /// Requires server-side GPS validation and proximity check.
         /// Rate-limited to 20 captures per hour per user.
         /// </summary>
-        /// <summary>Capture a player at a pitch after proximity and GPS checks.</summary>
+        /// <summary>Capture a recruit at a pitch after proximity and GPS checks.</summary>
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
         [HttpPost("capture")]
@@ -84,10 +84,10 @@ namespace RuckR.Server.Controllers
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
 
-            // 1. Validate player exists
+            // 1. Validate recruit exists
             var player = await _db.Players.FindAsync(request.PlayerId);
             if (player is null)
-                return NotFound($"Player with id {request.PlayerId} not found.");
+                return NotFound($"Recruit with id {request.PlayerId} not found.");
 
             // 2. Validate pitch exists
             var pitch = await _db.Pitches.FindAsync(request.PitchId);
@@ -117,12 +117,12 @@ namespace RuckR.Server.Controllers
                 .AnyAsync(c => c.UserId == userId && c.PlayerId == request.PlayerId);
 
             if (existingCollection)
-                return Conflict("Player already collected.");
+                return Conflict("Recruit already collected.");
 
             // 6. Rate limiting
             const int MaxCapturesPerHour = 20;
             if (!await _rateLimitService.IsAllowedAsync(userId, "capture", MaxCapturesPerHour, TimeSpan.FromHours(1)))
-                return StatusCode(429, $"Rate limit exceeded. You can capture up to {MaxCapturesPerHour} players per hour.");
+                return StatusCode(429, $"Rate limit exceeded. You can capture up to {MaxCapturesPerHour} recruits per hour.");
 
             // 7. Create and save collection entry
             var collection = new CollectionModel
@@ -142,7 +142,7 @@ namespace RuckR.Server.Controllers
             }
             catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
             {
-                return Conflict("Player already collected.");
+                return Conflict("Recruit already collected.");
             }
 
             // Detach navigation property to prevent JSON serialization errors
@@ -154,8 +154,8 @@ namespace RuckR.Server.Controllers
 
         /// <summary>
         /// GET /collection/capture-eligibility/{pitchId} — checks whether the current user
-        /// can capture players from a pitch based on recent GPS, accuracy, proximity, and
-        /// available uncaptured players.
+        /// can capture recruits from a pitch based on recent GPS, accuracy, proximity, and
+        /// available uncaptured recruits.
         /// </summary>
         /// <summary>Get whether capture is currently allowed for the specified pitch.</summary>
         /// <param name="pitchId">The pitchid.</param>

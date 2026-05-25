@@ -1549,7 +1549,7 @@
                     EncounterBrowseRadiusMeters);
 
                 _statusMessage = encounters.Count == 0
-                    ? "No recruitable players nearby. Head to a real-world park to find players."
+                    ? "No recruitable players nearby. Head to a real-world park to find recruits."
                     : null;
             }
             else
@@ -2065,7 +2065,7 @@
                 "GPS_REQUIRED" => "Enable GPS to capture players from this pitch.",
                 "GPS_INACCURATE" => $"Improve GPS accuracy to {MaxRecruitAccuracyMeters:0}m or better.",
                 "TOO_FAR" => $"Move closer. Capture unlocks within {FormatDistance(CaptureDistanceMeters)}.",
-                "NO_PLAYERS" => "No uncaptured players are available at this pitch right now.",
+                "NO_PLAYERS" => "No uncaptured recruits are available at this pitch right now.",
                 _ => "Capture is currently unavailable."
             };
         }

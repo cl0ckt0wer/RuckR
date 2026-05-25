@@ -59,7 +59,7 @@ namespace RuckR.Client.Services
         public event Action<PitchModel>? PitchDiscovered;
 
         /// <summary>
-        /// Raised when nearby players are refreshed by SignalR.
+        /// Raised when nearby users and recruits are refreshed by SignalR.
         /// </summary>
         public event Action<List<NearbyPlayerDto>>? NearbyPlayersUpdated;
 
@@ -194,7 +194,7 @@ namespace RuckR.Client.Services
         /// Sends or queues a battle acceptance action.
         /// </summary>
         /// <param name="battleId">Battle identifier.</param>
-        /// <param name="playerId">Selected player id for acceptance.</param>
+        /// <param name="playerId">Selected recruit/player-card id for acceptance.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         public async Task AcceptChallengeAsync(int battleId, int playerId)
         {

@@ -35,7 +35,7 @@
                     <MudText Typo="Typo.overline">Arena</MudText>
                     <MudText Typo="Typo.h4">Battle Arena</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Challenge seed players or resolve incoming matches instantly.
+                        Challenge seed users or resolve incoming matches instantly.
                     </MudText>
                 </div>
                 <MudStack Row="true" Spacing="1">
@@ -75,8 +75,8 @@
                             <MudPaper Elevation="1" Class="game-panel" data-testid="challenge-card">
                                 <MudStack Spacing="2">
                                     <MudText Typo="Typo.h6">Send a challenge</MudText>
-                                    <MudSelect T="int?" Label="Your player" @bind-Value="_selectedPlayerId" Variant="Variant.Outlined" Dense="true" data-testid="player-select">
-                                        <MudSelectItem T="int?" Value="@((int?)null)">Select a player</MudSelectItem>
+                                    <MudSelect T="int?" Label="Your recruit" @bind-Value="_selectedPlayerId" Variant="Variant.Outlined" Dense="true" data-testid="player-select">
+                                        <MudSelectItem T="int?" Value="@((int?)null)">Select a recruit</MudSelectItem>
                                         @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
                                         {
                                             <MudSelectItem T="int?" Value="@((int?)collection.Player!.Id)">
@@ -119,7 +119,7 @@
                                     <MudStack Spacing="2">
                                         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                                             <div>
-                                                <MudText Typo="Typo.overline">Selected player</MudText>
+                                                <MudText Typo="Typo.overline">Selected recruit</MudText>
                                                 <MudText Typo="Typo.h5">@player.Name</MudText>
                                             </div>
                                             <MudChip T="string" Color="@RarityColor(player.Rarity)" Variant="Variant.Filled">@player.Rarity</MudChip>
@@ -137,9 +137,9 @@
                                 <MudPaper Elevation="1" Class="game-panel empty-panel">
                                     <MudStack AlignItems="AlignItems.Center" Spacing="2">
                                         <MudIcon Icon="@Icons.Material.Filled.Stars" Size="Size.Large" Color="Color.Secondary" />
-                                        <MudText Typo="Typo.h6">Pick a player from your collection</MudText>
+                                        <MudText Typo="Typo.h6">Pick a recruit from your collection</MudText>
                                         <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                            Recruited players show their stats here before you send a challenge.
+                                            Recruits show their stats here before you send a challenge.
                                         </MudText>
                                         <MudButton Href="/map" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map">
                                             Recruit on map
@@ -196,14 +196,14 @@
         <MudPaper Elevation="8" Class="game-modal">
             <MudStack Spacing="2">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                    <MudText Typo="Typo.h6">Pick your player</MudText>
+                    <MudText Typo="Typo.h6">Pick your recruit</MudText>
                     <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseAcceptModal" data-testid="accept-cancel-btn" />
                 </MudStack>
                 <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Face @_acceptTargetBattle.ChallengerUsername with one of your collected players.
+                    Face @_acceptTargetBattle.ChallengerUsername with one of your collected recruits.
                 </MudText>
-                <MudSelect T="int?" Label="Your player" @bind-Value="_selectedPlayerForAccept" Variant="Variant.Outlined" Dense="true" data-testid="accept-player-select">
-                    <MudSelectItem T="int?" Value="@((int?)null)">Select a player</MudSelectItem>
+                <MudSelect T="int?" Label="Your recruit" @bind-Value="_selectedPlayerForAccept" Variant="Variant.Outlined" Dense="true" data-testid="accept-player-select">
+                    <MudSelectItem T="int?" Value="@((int?)null)">Select a recruit</MudSelectItem>
                     @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
                     {
                         <MudSelectItem T="int?" Value="@((int?)collection.Player!.Id)">
@@ -385,7 +385,7 @@
     {
         if (!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername))
         {
-            _formError = "Select a player and enter an opponent username.";
+            _formError = "Select a recruit and enter an opponent username.";
             return;
         }
 
@@ -412,7 +412,7 @@
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
-            _formError = "Check the opponent username, selected player, and pending challenge limit.";
+            _formError = "Check the opponent username, selected recruit, and pending challenge limit.";
         }
         catch (HttpRequestException ex) when ((int?)ex.StatusCode == 429)
         {
@@ -538,7 +538,7 @@
                 <MudChip T="string" Color="@StatusColor(challenge.Status)" Variant="Variant.Filled">@StatusLabel(challenge.Status)</MudChip>
             </MudStack>
             <MudText Typo="Typo.body2">
-                @(incoming ? "Their player" : "Your player"): @PlayerDisplay(incoming ? challenge.ChallengerPlayer : challenge.ChallengerPlayer)
+                @(incoming ? "Their recruit" : "Your recruit"): @PlayerDisplay(incoming ? challenge.ChallengerPlayer : challenge.ChallengerPlayer)
             </MudText>
             <MudText Typo="Typo.caption" Color="Color.Secondary">@GetRelativeTime(challenge.CreatedAt)</MudText>
             @if (incoming && challenge.Status == BattleStatus.Pending)
@@ -571,7 +571,7 @@
     </div>;
 
     private static string PlayerDisplay(BattlePlayerSummaryDto? player) =>
-        player is null ? "Unknown player" : $"{player.Name} ({player.Position}, {player.Rarity})";
+        player is null ? "Unknown recruit" : $"{player.Name} ({player.Position}, {player.Rarity})";
 
     private static double StatPercent(int value) => Math.Clamp(value, 0, 99) * 100.0 / 99.0;
 

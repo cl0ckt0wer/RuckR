@@ -4,10 +4,10 @@ using System.ComponentModel.DataAnnotations;
 namespace RuckR.Shared.Models
 {
     /// <summary>
-    /// Request payload used to challenge another player.
+    /// Request payload used to challenge another user.
     /// </summary>
-    /// <param name="OpponentUsername">Username of the challenged player.</param>
-    /// <param name="SelectedPlayerId">Player id to use in the battle.</param>
+    /// <param name="OpponentUsername">Username of the challenged user.</param>
+    /// <param name="SelectedPlayerId">Recruit/player-card id to use in the battle.</param>
     /// <param name="IdempotencyKey">Optional idempotency key for retriable requests.</param>
     public sealed record ChallengeRequest(
         string OpponentUsername,
@@ -17,11 +17,11 @@ namespace RuckR.Shared.Models
     /// <summary>
     /// Request payload used to accept a battle challenge.
     /// </summary>
-    /// <param name="SelectedPlayerId">Player id selected by the opponent.</param>
+    /// <param name="SelectedPlayerId">Recruit/player-card id selected by the opponent.</param>
     public sealed record AcceptChallengeRequest(int SelectedPlayerId);
 
     /// <summary>
-    /// Player details embedded in battle summaries.
+    /// Recruit/player-card details embedded in battle summaries.
     /// </summary>
     public sealed record BattlePlayerSummaryDto(
         int PlayerId,
@@ -35,7 +35,7 @@ namespace RuckR.Shared.Models
         int Kicking);
 
     /// <summary>
-    /// Battle details shaped for player-facing challenge, result, and history views.
+    /// Battle details shaped for user-facing challenge, result, and history views.
     /// </summary>
     public sealed record BattleSummaryDto(
         int Id,
@@ -116,9 +116,9 @@ namespace RuckR.Shared.Models
     /// Notification payload for a battle challenge.
     /// </summary>
     /// <param name="ChallengerUsername">Name of challenger.</param>
-    /// <param name="PlayerName">Selected player's name.</param>
-    /// <param name="PlayerPosition">Selected player's position.</param>
-    /// <param name="PlayerRarity">Selected player's rarity.</param>
+    /// <param name="PlayerName">Selected recruit name.</param>
+    /// <param name="PlayerPosition">Selected recruit position.</param>
+    /// <param name="PlayerRarity">Selected recruit rarity.</param>
     /// <param name="ChallengeId">Challenge identifier.</param>
     public sealed record ChallengeNotification(
         string ChallengerUsername,
@@ -132,8 +132,8 @@ namespace RuckR.Shared.Models
     /// </summary>
     /// <param name="WinnerUsername">Username of the winner.</param>
     /// <param name="LoserUsername">Username of the loser.</param>
-    /// <param name="WinnerPlayerName">Winner player name.</param>
-    /// <param name="LoserPlayerName">Loser player name.</param>
+    /// <param name="WinnerPlayerName">Winning recruit name.</param>
+    /// <param name="LoserPlayerName">Losing recruit name.</param>
     /// <param name="Method">How the battle concluded.</param>
     /// <param name="CreatedAt">Result creation timestamp.</param>
     public sealed record BattleResult(
@@ -145,26 +145,28 @@ namespace RuckR.Shared.Models
         DateTime CreatedAt);
 
     /// <summary>
-    /// Nearby player listing item used by discovery endpoints.
+    /// Nearby recruit listing item used by discovery endpoints.
     /// </summary>
-    /// <param name="PlayerId">Player identifier.</param>
+    /// <param name="PlayerId">Recruit/player-card identifier.</param>
     /// <param name="Name">Display name.</param>
-    /// <param name="Position">Player position.</param>
-    /// <param name="Rarity">Player rarity.</param>
+    /// <param name="Position">Recruit rugby position.</param>
+    /// <param name="Rarity">Recruit rarity.</param>
     /// <param name="DistanceBucket">Distance bucket classification.</param>
-    /// <param name="OwnerUsername">Owner username when already captured.</param>
+    /// <param name="OwnerUsername">User/account username when already captured.</param>
+    /// <param name="Source">How this recruit was found.</param>
     public sealed record NearbyPlayerDto(
         int PlayerId,
         string Name,
         string Position,
         string Rarity,
         DistanceBucket DistanceBucket,
-        string? OwnerUsername);
+        string? OwnerUsername,
+        NearbyRecruitSource Source = NearbyRecruitSource.WildSpawn);
 
     /// <summary>
-    /// Request payload to capture a player.
+    /// Request payload to capture a recruit/player-card.
     /// </summary>
-    /// <param name="PlayerId">Player identifier to capture.</param>
+    /// <param name="PlayerId">Recruit/player-card identifier to capture.</param>
     /// <param name="PitchId">Pitch used for capture attempt.</param>
     public sealed record CapturePlayerRequest(
         [Required] int PlayerId,
@@ -177,7 +179,7 @@ namespace RuckR.Shared.Models
     /// <param name="Reason">Failure or success reason.</param>
     /// <param name="DistanceBucket">Current distance bucket from pitch/player.</param>
     /// <param name="AccuracyMeters">Optional GPS accuracy in meters.</param>
-    /// <param name="AvailablePlayerCount">Remaining nearby players available to catch.</param>
+    /// <param name="AvailablePlayerCount">Remaining nearby recruits available to catch.</param>
     public sealed record CaptureEligibilityDto(
         bool CanCapture,
         string Reason,
@@ -189,11 +191,11 @@ namespace RuckR.Shared.Models
     /// Data for an active encounter.
     /// </summary>
     /// <param name="EncounterId">Encounter identifier.</param>
-    /// <param name="PlayerId">Player identifier.</param>
-    /// <param name="Name">Player name.</param>
-    /// <param name="Position">Player position.</param>
-    /// <param name="Rarity">Player rarity.</param>
-    /// <param name="Level">Player level.</param>
+    /// <param name="PlayerId">Recruit/player-card identifier.</param>
+    /// <param name="Name">Recruit name.</param>
+    /// <param name="Position">Recruit position.</param>
+    /// <param name="Rarity">Recruit rarity.</param>
+    /// <param name="Level">Recruit level.</param>
     /// <param name="Latitude">Encounter latitude.</param>
     /// <param name="Longitude">Encounter longitude.</param>
     /// <param name="ExpiresAtUtc">Expiration timestamp.</param>
@@ -232,7 +234,7 @@ namespace RuckR.Shared.Models
     /// Request payload for a recruitment attempt.
     /// </summary>
     /// <param name="EncounterId">Encounter identifier.</param>
-    /// <param name="PlayerId">Player identifier being recruited.</param>
+    /// <param name="PlayerId">Recruit/player-card identifier being recruited.</param>
     /// <param name="ItemKind">Optional item to apply when starting a timed recruitment session.</param>
     /// <param name="Latitude">Optional current user latitude used when no recent SignalR position is available.</param>
     /// <param name="Longitude">Optional current user longitude used when no recent SignalR position is available.</param>

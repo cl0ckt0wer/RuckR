@@ -8,7 +8,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
-    /// <summary>API endpoints for creating and managing player battles.</summary>
+    /// <summary>API endpoints for creating and managing user battles with selected recruits.</summary>
     [ApiController]
     [Route("api/[controller]")]
     /// <summary>Defines the server-side class BattlesController.</summary>
@@ -38,7 +38,7 @@ namespace RuckR.Server.Controllers
 
         /// <summary>
         /// POST /battles/challenge — send a challenge to another user.
-        /// Validates: not self, opponent exists, player owned, ≤3 pending, rate limit, idempotency.
+        /// Validates: not self, opponent exists, recruit owned, ≤3 pending, rate limit, idempotency.
         /// </summary>
         /// <summary>Send a battle challenge to another user.</summary>
         /// <param name="request">The request.</param>
@@ -73,15 +73,15 @@ namespace RuckR.Server.Controllers
             if (opponent.Id == userId)
                 return BadRequest("Cannot challenge yourself.");
 
-            // 2. Selected player exists and is in current user's collection
+            // 2. Selected recruit exists and is in current user's collection
             var player = await _db.Players.FindAsync(request.SelectedPlayerId);
             if (player is null)
-                return NotFound($"Player with id {request.SelectedPlayerId} not found.");
+                return NotFound($"Recruit with id {request.SelectedPlayerId} not found.");
 
             var playerInCollection = await _db.Collections
                 .AnyAsync(c => c.UserId == userId && c.PlayerId == request.SelectedPlayerId);
             if (!playerInCollection)
-                return BadRequest("Selected player is not in your collection.");
+                return BadRequest("Selected recruit is not in your collection.");
 
             // 3. Current user has ≤3 pending challenges (Status=Pending and not expired)
             var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
@@ -116,7 +116,7 @@ namespace RuckR.Server.Controllers
 
         /// <summary>
         /// POST /battles/{id}/accept — accept a pending challenge.
-        /// Validates: battle exists, pending, current user is opponent, player owned.
+        /// Validates: battle exists, pending, current user is opponent, recruit owned.
         /// Lazy-expiry: challenges older than 24h are expired on access.
         /// Optimistic concurrency: DbUpdateConcurrencyException → 409 Conflict.
         /// </summary>

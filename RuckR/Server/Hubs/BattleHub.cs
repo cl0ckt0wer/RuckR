@@ -67,7 +67,7 @@ namespace RuckR.Server.Hubs
             }
             await base.OnDisconnectedAsync(exception);
         }
-        /// <summary>Update the player's location and discover nearby pitches.</summary>
+        /// <summary>Update the current user's location and discover nearby pitches.</summary>
         /// <param name="latitude">The latitude.</param>
         /// <param name="longitude">The longitude.</param>
         /// <returns>The operation result.</returns>
@@ -110,7 +110,7 @@ namespace RuckR.Server.Hubs
         }
         /// <summary>Send a challenge to an opponent.</summary>
         /// <param name="opponentUsername">The opponent's username.</param>
-        /// <param name="playerId">The selected player identifier.</param>
+        /// <param name="playerId">The selected recruit/player-card identifier.</param>
         /// <param name="idempotencyKey">Optional idempotency key.</param>
         /// <returns>The operation result.</returns>
         public async Task SendChallenge(string opponentUsername, int playerId, string? idempotencyKey = null)
@@ -127,15 +127,15 @@ namespace RuckR.Server.Hubs
             if (opponent.Id == userId)
                 throw new HubException("Cannot challenge yourself.");
 
-            // 2. Selected player exists and is in current user's collection
+            // 2. Selected recruit exists and is in current user's collection
             var player = await _db.Players.FindAsync(playerId);
             if (player is null)
-                throw new HubException($"Player with id {playerId} not found.");
+                throw new HubException($"Recruit with id {playerId} not found.");
 
             var playerInCollection = await _db.Collections
                 .AnyAsync(c => c.UserId == userId && c.PlayerId == playerId);
             if (!playerInCollection)
-                throw new HubException("Selected player is not in your collection.");
+                throw new HubException("Selected recruit is not in your collection.");
 
             // 3. Check pending challenge count (shared limit from IBattleService)
             var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
@@ -201,9 +201,9 @@ namespace RuckR.Server.Hubs
             // 6. Confirm success to the caller
             await Clients.Caller.SendAsync("ChallengeSent", battle.Id);
         }
-        /// <summary>Accept a challenge and resolve it with the selected player.</summary>
+        /// <summary>Accept a challenge and resolve it with the selected recruit.</summary>
         /// <param name="battleId">The battle identifier.</param>
-        /// <param name="playerId">The selected player identifier.</param>
+        /// <param name="playerId">The selected recruit/player-card identifier.</param>
         /// <returns>The operation result.</returns>
         public async Task AcceptChallenge(int battleId, int playerId)
         {

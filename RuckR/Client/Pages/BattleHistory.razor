@@ -107,12 +107,12 @@
                                         <MudItem xs="12" md="6">
                                             <MudText Typo="Typo.subtitle2">Your side</MudText>
                                             <MudText Typo="Typo.body2">Role: @(isUserChallenger ? "Challenger" : "Opponent")</MudText>
-                                            <MudText Typo="Typo.body2">Player: @userPlayerDisplay</MudText>
+                                            <MudText Typo="Typo.body2">Recruit: @userPlayerDisplay</MudText>
                                         </MudItem>
                                         <MudItem xs="12" md="6">
                                             <MudText Typo="Typo.subtitle2">Opponent</MudText>
                                             <MudText Typo="Typo.body2">User: @opponentDisplay</MudText>
-                                            <MudText Typo="Typo.body2">Player: @opponentPlayerDisplay</MudText>
+                                            <MudText Typo="Typo.body2">Recruit: @opponentPlayerDisplay</MudText>
                                         </MudItem>
                                     </MudGrid>
                                     <MudDivider />
@@ -222,9 +222,9 @@
         {
             if (!string.IsNullOrWhiteSpace(battle.WinnerUsername)
                 && string.Equals(battle.WinnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase))
-                return "Won. Your selected player prevailed.";
+                return "Won. Your selected recruit prevailed.";
             if (!string.IsNullOrWhiteSpace(battle.WinnerUsername))
-                return "Lost. The opponent's selected player prevailed.";
+                return "Lost. The opponent's selected recruit prevailed.";
             return "Completed.";
         }
 
@@ -236,7 +236,7 @@
     }
 
     private static string PlayerDisplay(BattlePlayerSummaryDto? player) =>
-        player is null ? "No player selected" : $"{player.Name} ({player.Position}, {player.Rarity})";
+        player is null ? "No recruit selected" : $"{player.Name} ({player.Position}, {player.Rarity})";
 
     private static string HistoryCardClass(bool expanded) => expanded
         ? "game-panel history-card history-card--expanded"

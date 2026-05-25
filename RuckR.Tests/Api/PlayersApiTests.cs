@@ -145,6 +145,43 @@ public class PlayersApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies get Players Nearby labels uncaptured spawn results as wild recruits.
+    /// </summary>
+    [Fact]
+    public async Task GetPlayersNearby_LabelsWildSpawnRecruit()
+    {
+        var playerId = 0;
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var player = new PlayerModel
+            {
+                Name = $"Wild Source Test {Guid.NewGuid():N}",
+                Position = PlayerPosition.Wing,
+                Rarity = PlayerRarity.Common,
+                Level = 1,
+                Speed = 50,
+                Strength = 50,
+                Agility = 50,
+                Kicking = 50,
+                SpawnLocation = new Point(-0.1278, 51.5074) { SRID = 4326 }
+            };
+            db.Players.Add(player);
+            await db.SaveChangesAsync();
+            playerId = player.Id;
+        });
+
+        var response = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=-0.1278&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var players = await response.Content.ReadFromJsonAsync<List<NearbyPlayerDto>>();
+        Assert.NotNull(players);
+
+        var wildRecruit = Assert.Single(players, p => p.PlayerId == playerId);
+        Assert.Null(wildRecruit.OwnerUsername);
+        Assert.Equal(NearbyRecruitSource.WildSpawn, wildRecruit.Source);
+    }
+
+    /// <summary>
     /// Verifies get Players Nearby Includes Owned Players For Nearby Tracked Users.
     /// </summary>
     [Fact]
@@ -193,6 +230,7 @@ public class PlayersApiTests : IAsyncLifetime
             p.PlayerId == playerId
             && p.OwnerUsername == otherUsername);
         Assert.Equal(DistanceBucket.Within50m, liveOwnedPlayer.DistanceBucket);
+        Assert.Equal(NearbyRecruitSource.NearbyUser, liveOwnedPlayer.Source);
     }
 
     /// <summary>

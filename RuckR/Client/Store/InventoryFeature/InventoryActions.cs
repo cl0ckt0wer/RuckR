@@ -14,7 +14,7 @@ public record FetchInventoryAction;
 public record FetchInventoryResultAction(IReadOnlyList<CollectionModel> Players);
 
 /// <summary>
-/// Adds a captured player to local inventory.
+/// Adds a captured recruit to local inventory.
 /// </summary>
 /// <param name="Player">Captured player payload.</param>
 public record AddPlayerAction(CollectionModel Player);

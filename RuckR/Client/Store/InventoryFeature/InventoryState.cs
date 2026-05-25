@@ -4,7 +4,7 @@ using RuckR.Shared.Models;
 namespace RuckR.Client.Store.InventoryFeature;
 
 /// <summary>
-/// Inventory feature state for captured player collection.
+/// Inventory feature state for captured recruit collection.
 /// </summary>
 [FeatureState]
 public record InventoryState
@@ -15,7 +15,7 @@ public record InventoryState
     public bool IsLoading { get; init; }
 
     /// <summary>
-    /// All captured players in the player's collection.
+    /// All captured recruits in the current user's collection.
     /// </summary>
     public IReadOnlyList<CollectionModel> CollectedPlayers { get; init; } = Array.Empty<CollectionModel>();
 

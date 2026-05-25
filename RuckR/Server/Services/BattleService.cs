@@ -91,21 +91,21 @@ public class BattleService : IBattleService
 
         var opponentPlayer = await _db.Players.FindAsync(selectedPlayerId);
         if (opponentPlayer is null)
-            throw new BattleOperationException(HttpStatusCode.NotFound, $"Player with id {selectedPlayerId} not found.");
+            throw new BattleOperationException(HttpStatusCode.NotFound, $"Recruit with id {selectedPlayerId} not found.");
 
         var opponentOwnsPlayer = await _db.Collections
             .AnyAsync(c => c.UserId == opponentUserId && c.PlayerId == selectedPlayerId);
         if (!opponentOwnsPlayer)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "Selected player is not in your collection.");
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Selected recruit is not in your collection.");
 
         var challengerPlayer = await _db.Players.FindAsync(battle.ChallengerPlayerId);
         if (challengerPlayer is null)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger's player no longer exists.");
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger's recruit no longer exists.");
 
         var challengerOwnsPlayer = await _db.Collections
             .AnyAsync(c => c.UserId == battle.ChallengerId && c.PlayerId == battle.ChallengerPlayerId);
         if (!challengerOwnsPlayer)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger no longer owns the selected player.");
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger no longer owns the selected recruit.");
 
         var challengerUser = await _userManager.FindByIdAsync(battle.ChallengerId);
         var opponentUser = await _userManager.FindByIdAsync(opponentUserId);
@@ -134,7 +134,7 @@ public class BattleService : IBattleService
         return await ToSummaryAsync(battle, result);
     }
 
-    /// <summary>Builds a player-facing battle summary DTO.</summary>
+    /// <summary>Builds a user-facing battle summary DTO.</summary>
     public async Task<BattleSummaryDto> ToSummaryAsync(BattleModel battle, BattleResult? result = null)
     {
         var userIds = new[] { battle.ChallengerId, battle.OpponentId }
@@ -179,7 +179,7 @@ public class BattleService : IBattleService
             battle.IdempotencyKey);
     }
 
-    /// <summary>Builds player-facing battle summary DTOs.</summary>
+    /// <summary>Builds user-facing battle summary DTOs.</summary>
     public async Task<IReadOnlyList<BattleSummaryDto>> ToSummariesAsync(IEnumerable<BattleModel> battles)
     {
         var summaries = new List<BattleSummaryDto>();

@@ -40,10 +40,10 @@ namespace RuckR.Server.Services
         /// <summary>Accepts a pending challenge and resolves it immediately.</summary>
         Task<BattleSummaryDto> AcceptAndResolveChallengeAsync(int battleId, string opponentUserId, int selectedPlayerId);
 
-        /// <summary>Builds a player-facing battle summary DTO.</summary>
+        /// <summary>Builds a user-facing battle summary DTO.</summary>
         Task<BattleSummaryDto> ToSummaryAsync(BattleModel battle, BattleResult? result = null);
 
-        /// <summary>Builds player-facing battle summary DTOs.</summary>
+        /// <summary>Builds user-facing battle summary DTOs.</summary>
         Task<IReadOnlyList<BattleSummaryDto>> ToSummariesAsync(IEnumerable<BattleModel> battles);
     }
 }
