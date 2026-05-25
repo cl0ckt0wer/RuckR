@@ -64,6 +64,16 @@ namespace RuckR.Client.Services
         public event Action<List<NearbyPlayerDto>>? NearbyPlayersUpdated;
 
         /// <summary>
+        /// Raised when a shared recruitment encounter changed.
+        /// </summary>
+        public event Action<Guid>? RecruitmentEncounterChanged;
+
+        /// <summary>
+        /// Raised when a shared recruitment encounter was removed.
+        /// </summary>
+        public event Action<Guid>? RecruitmentEncounterRemoved;
+
+        /// <summary>
         /// Initializes a new SignalR client service.
         /// </summary>
         /// <param name="dispatcher">Dispatcher for Fluxor action notifications.</param>
@@ -118,6 +128,8 @@ namespace RuckR.Client.Services
             _hubConnection.On<BattleResult>("BattleResolved", HandleBattleResolved);
             _hubConnection.On<PitchModel>("PitchDiscovered", HandlePitchDiscovered);
             _hubConnection.On<List<NearbyPlayerDto>>("NearbyPlayersUpdated", HandleNearbyPlayersUpdated);
+            _hubConnection.On<Guid>("RecruitmentEncounterChanged", HandleRecruitmentEncounterChanged);
+            _hubConnection.On<Guid>("RecruitmentEncounterRemoved", HandleRecruitmentEncounterRemoved);
 
             _hubConnection.Reconnecting += HandleReconnecting;
             _hubConnection.Reconnected += HandleReconnected;
@@ -273,6 +285,16 @@ namespace RuckR.Client.Services
         private void HandleNearbyPlayersUpdated(List<NearbyPlayerDto> players)
         {
             NearbyPlayersUpdated?.Invoke(players);
+        }
+
+        private void HandleRecruitmentEncounterChanged(Guid encounterId)
+        {
+            RecruitmentEncounterChanged?.Invoke(encounterId);
+        }
+
+        private void HandleRecruitmentEncounterRemoved(Guid encounterId)
+        {
+            RecruitmentEncounterRemoved?.Invoke(encounterId);
         }
 
         private Task HandleReconnecting(Exception? ex)

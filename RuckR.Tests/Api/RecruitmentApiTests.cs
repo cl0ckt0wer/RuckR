@@ -34,6 +34,12 @@ public class RecruitmentApiTests : IAsyncLifetime
     {
         _factory.LocationTracker.ClearAll();
         _factory.ParkService.UseDefaultPark();
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            db.RecruitmentParticipants.RemoveRange(db.RecruitmentParticipants);
+            db.PlayerEncounters.RemoveRange(db.PlayerEncounters);
+            await db.SaveChangesAsync();
+        });
         _username = $"recruit_{Guid.NewGuid():N}";
         _userId = await _factory.CreateTestUserAsync(_username, "TestPass123!");
         _client = _factory.CreateAuthenticatedClient(_userId, _username);
@@ -124,6 +130,36 @@ public class RecruitmentApiTests : IAsyncLifetime
 
         var secondIds = secondEncounters!.Select(e => e.EncounterId).ToHashSet();
         Assert.All(firstEncounters!, encounter => Assert.Contains(encounter.EncounterId, secondIds));
+    }
+
+    /// <summary>
+    /// Verifies users in the same park area see the same shared encounters.
+    /// </summary>
+    [Fact]
+    public async Task GetEncounters_SameArea_ReturnsSameSharedEncounterForTwoUsers()
+    {
+        var otherUsername = $"recruit_other_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        using var otherClient = _factory.CreateAuthenticatedClient(otherUserId, otherUsername);
+
+        var anchor = await GetAnyPlayerLocationAsync();
+        _factory.LocationTracker.SetPosition(_userId, anchor.lat, anchor.lng);
+        _factory.LocationTracker.SetPosition(otherUserId, anchor.lat, anchor.lng);
+
+        var firstResponse = await _client.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        firstResponse.EnsureSuccessStatusCode();
+        var firstEncounters = await firstResponse.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(firstEncounters);
+        Assert.NotEmpty(firstEncounters);
+
+        var secondResponse = await otherClient.GetAsync($"/api/map/encounters?lat={anchor.lat}&lng={anchor.lng}&radius=1000");
+        secondResponse.EnsureSuccessStatusCode();
+        var secondEncounters = await secondResponse.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+        Assert.NotNull(secondEncounters);
+        Assert.NotEmpty(secondEncounters);
+
+        var secondIds = secondEncounters!.Select(e => e.EncounterId).ToHashSet();
+        Assert.Contains(firstEncounters![0].EncounterId, secondIds);
     }
 
     /// <summary>
@@ -453,32 +489,55 @@ public class RecruitmentApiTests : IAsyncLifetime
     [Fact]
     public async Task AttemptRecruitment_StartsTimedSession_UsesLocalPlayersAndItems()
     {
-        var otherUserId = await _factory.CreateTestUserAsync($"local_{Guid.NewGuid():N}", "TestPass123!");
+        var otherUsername = $"local_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        using var otherClient = _factory.CreateAuthenticatedClient(otherUserId, otherUsername);
+        await SetAllPlayerRaritiesAsync(PlayerRarity.Rare);
         var encounter = await CreateEncounterAsync();
         _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
         _factory.LocationTracker.SetPosition(otherUserId, encounter.Latitude, encounter.Longitude);
 
-        var response = await _client.PostAsJsonAsync(
+        var startResponse = await _client.PostAsJsonAsync(
             "/api/recruitment/attempt",
             new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId, RecruitmentItemKind.Chips));
-        response.EnsureSuccessStatusCode();
+        startResponse.EnsureSuccessStatusCode();
 
-        var result = await response.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        var startResult = await startResponse.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+        Assert.NotNull(startResult);
+        Assert.Equal(1, startResult!.ParticipantCount);
+        Assert.Equal(RecruitmentItemKind.Chips, startResult.ItemKind);
+
+        var otherProfile = await otherClient.GetAsync("/api/recruitment/profile");
+        otherProfile.EnsureSuccessStatusCode();
+
+        var joinResponse = await otherClient.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId, RecruitmentItemKind.Whiskey));
+        joinResponse.EnsureSuccessStatusCode();
+
+        var result = await joinResponse.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
         Assert.NotNull(result);
         Assert.False(result!.Success);
         Assert.False(result.Completed);
-        Assert.True(result.LocalPlayerCount >= 1);
+        Assert.Equal(2, result.ParticipantCount);
+        Assert.Equal(2, result.LocalPlayerCount);
         Assert.Equal(RecruitmentItemKind.Chips, result.ItemKind);
         Assert.Equal(encounter.BaseRecruitmentSeconds, result.BaseDurationSeconds);
-        Assert.True(result.RequiredDurationSeconds < result.BaseDurationSeconds);
+        Assert.True(result.RequiredDurationSeconds < startResult.RequiredDurationSeconds);
         Assert.True(result.RemainingSeconds > 0);
-        Assert.Contains(result.Boosts!, boost => boost.Label.Contains("local recruiter", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(result.Boosts!, boost => boost.Label.Contains("participants", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(result.Boosts!, boost => boost.Label.Contains("Chips", StringComparison.OrdinalIgnoreCase));
 
         await _factory.ExecuteInDbAsync(async db =>
         {
             var chips = await db.UserRecruitmentItems.SingleAsync(i => i.UserId == _userId && i.ItemKind == RecruitmentItemKind.Chips);
             Assert.Equal(2, chips.Quantity);
+
+            var otherWhiskey = await db.UserRecruitmentItems.SingleAsync(i => i.UserId == otherUserId && i.ItemKind == RecruitmentItemKind.Whiskey);
+            Assert.Equal(1, otherWhiskey.Quantity);
+
+            var participantCount = await db.RecruitmentParticipants.CountAsync(p => p.EncounterId == encounter.EncounterId);
+            Assert.Equal(2, participantCount);
         });
     }
 
@@ -539,6 +598,89 @@ public class RecruitmentApiTests : IAsyncLifetime
             Assert.Equal(startXp + 25, profile!.Experience);
             Assert.Equal(100, profile.Level);
         });
+    }
+
+    /// <summary>
+    /// Verifies finishing a shared recruitment awards every explicit participant.
+    /// </summary>
+    [Fact]
+    public async Task AttemptRecruitment_SharedSuccess_AwardsAllParticipantsAndRemovesEncounter()
+    {
+        await SetUserProfileAsync(level: 1, xp: 0);
+        var otherUsername = $"shared_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        using var otherClient = _factory.CreateAuthenticatedClient(otherUserId, otherUsername);
+        await SetUserProfileAsync(otherUserId, level: 1, xp: 0);
+
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+        _factory.LocationTracker.SetPosition(otherUserId, encounter.Latitude, encounter.Longitude);
+
+        var firstJoin = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        firstJoin.EnsureSuccessStatusCode();
+        var secondJoin = await otherClient.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        secondJoin.EnsureSuccessStatusCode();
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var entity = await db.PlayerEncounters.FirstAsync(e => e.Id == encounter.EncounterId);
+            entity.RecruitmentCompletesAtUtc = DateTime.UtcNow.AddSeconds(-1);
+            await db.SaveChangesAsync();
+        });
+
+        var finish = await otherClient.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId));
+        finish.EnsureSuccessStatusCode();
+        var result = await finish.Content.ReadFromJsonAsync<RecruitmentAttemptResultDto>();
+
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        Assert.Equal(2, result.AwardedUserCount);
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            Assert.True(await db.Collections.AnyAsync(c => c.UserId == _userId && c.PlayerId == encounter.PlayerId));
+            Assert.True(await db.Collections.AnyAsync(c => c.UserId == otherUserId && c.PlayerId == encounter.PlayerId));
+            Assert.False(await db.PlayerEncounters.AnyAsync(e => e.Id == encounter.EncounterId));
+            Assert.False(await db.RecruitmentParticipants.AnyAsync(p => p.EncounterId == encounter.EncounterId));
+
+            var firstProfile = await db.UserGameProfiles.FirstAsync(p => p.UserId == _userId);
+            var secondProfile = await db.UserGameProfiles.FirstAsync(p => p.UserId == otherUserId);
+            Assert.Equal(25, firstProfile.Experience);
+            Assert.Equal(25, secondProfile.Experience);
+        });
+    }
+
+    /// <summary>
+    /// Verifies players already collected by the current user are filtered out of shared encounters.
+    /// </summary>
+    [Fact]
+    public async Task GetEncounters_UserAlreadyCollectedPlayer_DoesNotReturnSharedEncounter()
+    {
+        var encounter = await CreateEncounterAsync();
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            db.Collections.Add(new CollectionModel
+            {
+                UserId = _userId,
+                PlayerId = encounter.PlayerId,
+                CapturedAt = DateTime.UtcNow,
+                IsFavorite = false
+            });
+            await db.SaveChangesAsync();
+        });
+
+        var response = await _client.GetAsync($"/api/map/encounters?lat={encounter.Latitude}&lng={encounter.Longitude}&radius=1000");
+        response.EnsureSuccessStatusCode();
+        var encounters = await response.Content.ReadFromJsonAsync<List<PlayerEncounterDto>>();
+
+        Assert.NotNull(encounters);
+        Assert.DoesNotContain(encounters!, e => e.EncounterId == encounter.EncounterId);
     }
 
     /// <summary>
@@ -664,14 +806,19 @@ public class RecruitmentApiTests : IAsyncLifetime
 
     private async Task SetUserProfileAsync(int level, int xp)
     {
+        await SetUserProfileAsync(_userId, level, xp);
+    }
+
+    private async Task SetUserProfileAsync(string userId, int level, int xp)
+    {
         await _factory.ExecuteInDbAsync(async db =>
         {
-            var profile = await db.UserGameProfiles.FirstOrDefaultAsync(p => p.UserId == _userId);
+            var profile = await db.UserGameProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
             if (profile is null)
             {
                 db.UserGameProfiles.Add(new UserGameProfileModel
                 {
-                    UserId = _userId,
+                    UserId = userId,
                     Level = level,
                     Experience = xp
                 });
@@ -680,6 +827,20 @@ public class RecruitmentApiTests : IAsyncLifetime
             {
                 profile.Level = level;
                 profile.Experience = xp;
+            }
+
+            await db.SaveChangesAsync();
+        });
+    }
+
+    private async Task SetAllPlayerRaritiesAsync(PlayerRarity rarity)
+    {
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var players = await db.Players.ToListAsync();
+            foreach (var player in players)
+            {
+                player.Rarity = rarity;
             }
 
             await db.SaveChangesAsync();

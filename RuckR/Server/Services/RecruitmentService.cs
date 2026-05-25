@@ -1,9 +1,12 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using RuckR.Server.Data;
+using RuckR.Server.Hubs;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
+
 /// <summary>Defines the server-side class RecruitmentService.</summary>
 public class RecruitmentService : IRecruitmentService
 {
@@ -12,24 +15,28 @@ public class RecruitmentService : IRecruitmentService
     private const int RecruitSuccessXp = 25;
     private const int MinimumRecruitDurationSeconds = 10;
     private static readonly TimeSpan EncounterLifetime = TimeSpan.FromHours(2);
-    private static readonly TimeSpan LocalRecruiterWindow = TimeSpan.FromSeconds(90);
     private static readonly GeometryFactory GeometryFactory =
         NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
     private readonly RuckRDbContext _db;
     private readonly IRealWorldParkService _parkService;
-    private readonly ILocationTracker _locationTracker;
+    private readonly IHubContext<BattleHub> _hubContext;
+
     /// <summary>Initializes a new instance of RecruitmentService.</summary>
     /// <param name="db">The db.</param>
     /// <param name="parkService">The park service.</param>
-    /// <param name="locationTracker">The location tracker.</param>
-    public RecruitmentService(RuckRDbContext db, IRealWorldParkService parkService, ILocationTracker locationTracker)
+    /// <param name="hubContext">The hub context used to notify clients about shared encounter changes.</param>
+    public RecruitmentService(
+        RuckRDbContext db,
+        IRealWorldParkService parkService,
+        IHubContext<BattleHub> hubContext)
     {
         _db = db;
         _parkService = parkService;
-        _locationTracker = locationTracker;
+        _hubContext = hubContext;
     }
-    /// <summary>Get active recruitment encounters for a user in a radius.</summary>
+
+    /// <summary>Get active shared recruitment encounters for a user in a radius.</summary>
     /// <param name="userId">The user identifier.</param>
     /// <param name="lat">The lat.</param>
     /// <param name="lng">The lng.</param>
@@ -54,8 +61,8 @@ public class RecruitmentService : IRecruitmentService
 
         var activeEncounters = await _db.PlayerEncounters
             .Include(e => e.Player)
-            .Where(e => e.UserId == userId
-                && e.ExpiresAtUtc > now
+            .Include(e => e.Participants)
+            .Where(e => e.ExpiresAtUtc > now
                 && !collectedPlayerIds.Contains(e.PlayerId))
             .AsNoTracking()
             .ToListAsync();
@@ -69,7 +76,7 @@ public class RecruitmentService : IRecruitmentService
         var encounters = new List<PlayerEncounterDto>(MaxVisibleEncounters);
         foreach (var activeEncounter in visibleActiveEncounters)
         {
-            encounters.Add(ToEncounterDto(activeEncounter, activeEncounter.Player!, nearbyParks));
+            encounters.Add(ToEncounterDto(activeEncounter, activeEncounter.Player!, nearbyParks, userId));
         }
 
         var remainingSlots = MaxVisibleEncounters - encounters.Count;
@@ -100,15 +107,18 @@ public class RecruitmentService : IRecruitmentService
         foreach (var player in topCandidates)
         {
             var park = nearbyParks[Random.Shared.Next(nearbyParks.Count)];
-            var parkLocation = GeometryFactory.CreatePoint(new Coordinate(park.Longitude, park.Latitude));
-
-            var entry = await GetOrCreateEncounterAsync(userId, player, now, parkLocation, nearbyParks);
-            encounters.Add(ToEncounterDto(entry, player, nearbyParks));
+            var entry = await GetOrCreateSharedEncounterAsync(userId, player, now, park);
+            encounters.Add(ToEncounterDto(entry, player, nearbyParks, userId));
         }
 
-        return encounters;
+        return encounters
+            .GroupBy(e => e.EncounterId)
+            .Select(g => g.First())
+            .Take(MaxVisibleEncounters)
+            .ToList();
     }
-    /// <summary>Start, check, or complete timed recruitment for a specific encounter.</summary>
+
+    /// <summary>Start, join, check, or complete timed recruitment for a specific shared encounter.</summary>
     /// <param name="userId">The user identifier.</param>
     /// <param name="request">The request.</param>
     /// <param name="userPosition">The current user position.</param>
@@ -117,10 +127,12 @@ public class RecruitmentService : IRecruitmentService
     {
         var now = DateTime.UtcNow;
         var encounter = await _db.PlayerEncounters
-            .FirstOrDefaultAsync(e => e.Id == request.EncounterId && e.UserId == userId && e.PlayerId == request.PlayerId);
-        if (encounter is null)
+            .Include(e => e.Player)
+            .Include(e => e.Participants)
+            .FirstOrDefaultAsync(e => e.Id == request.EncounterId && e.PlayerId == request.PlayerId);
+        if (encounter?.Player is null)
         {
-            return RecruitmentFailure("Encounter expired or invalid.");
+            return await RecruitmentAlreadyCompletedOrInvalidAsync(userId, request.PlayerId);
         }
 
         if (encounter.ExpiresAtUtc <= now)
@@ -136,68 +148,177 @@ public class RecruitmentService : IRecruitmentService
             return RecruitmentFailure("Go to the park to recruit this player.");
         }
 
-        var player = await _db.Players.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.PlayerId);
-        if (player is null)
-        {
-            return RecruitmentFailure("Player not found.");
-        }
-
-        var alreadyCollected = await _db.Collections.AnyAsync(c => c.UserId == userId && c.PlayerId == player.Id);
+        var alreadyCollected = await _db.Collections.AnyAsync(c => c.UserId == userId && c.PlayerId == encounter.PlayerId);
         if (alreadyCollected)
         {
             return RecruitmentFailure("You already recruited this player.");
         }
 
-        if (encounter.RecruitmentStartedAtUtc is null || encounter.RecruitmentCompletesAtUtc is null)
+        var currentUserParticipant = encounter.Participants.FirstOrDefault(p => p.UserId == userId);
+        var timerReady = encounter.RecruitmentCompletesAtUtc.HasValue
+            && encounter.RecruitmentCompletesAtUtc.Value <= now;
+
+        if (currentUserParticipant is null && timerReady)
         {
-            var itemKind = await ConsumeRecruitmentItemAsync(userId, request.ItemKind, now);
-            if (request.ItemKind != RecruitmentItemKind.None && itemKind == RecruitmentItemKind.None)
+            return RecruitmentFailure("Recruitment is already ready to claim. Refresh the map and choose another recruit.");
+        }
+
+        if (currentUserParticipant is null)
+        {
+            var isStartingTimer = encounter.RecruitmentStartedAtUtc is null || encounter.RecruitmentCompletesAtUtc is null;
+            var itemKind = RecruitmentItemKind.None;
+            if (isStartingTimer)
             {
-                return RecruitmentFailure($"{request.ItemKind} is not available.");
+                itemKind = await ConsumeRecruitmentItemAsync(userId, request.ItemKind, now);
+                if (request.ItemKind != RecruitmentItemKind.None && itemKind == RecruitmentItemKind.None)
+                {
+                    return RecruitmentFailure($"{request.ItemKind} is not available.");
+                }
             }
 
-            StartRecruitmentSession(userId, encounter, player, itemKind, now);
+            currentUserParticipant = new RecruitmentParticipantModel
+            {
+                EncounterId = encounter.Id,
+                UserId = userId,
+                JoinedAtUtc = now,
+                Latitude = userPosition.Latitude,
+                Longitude = userPosition.Longitude,
+                AccuracyMeters = userPosition.Accuracy
+            };
+
+            encounter.Participants.Add(currentUserParticipant);
+            _db.RecruitmentParticipants.Add(currentUserParticipant);
+
+            if (isStartingTimer)
+            {
+                encounter.RecruitmentStartedAtUtc = now;
+                encounter.RecruitmentItemKind = itemKind;
+            }
+
+            RecalculateSharedRecruitmentTimer(encounter, encounter.Player, now);
             await _db.SaveChangesAsync();
+            await NotifyRecruitmentChangedAsync(encounter.Id);
 
             return RecruitmentInProgress(
-                "Recruitment started. Stay nearby until the timer finishes.",
+                isStartingTimer
+                    ? "Recruitment started. Everyone who joins before the timer finishes can claim this player."
+                    : "Joined shared recruitment. Stay nearby until the timer finishes.",
                 encounter,
-                now);
+                now,
+                currentUserJoined: true);
         }
 
-        if (encounter.RecruitmentCompletesAtUtc > now)
+        if (!timerReady)
         {
-            return RecruitmentInProgress("Recruitment in progress. Stay nearby.", encounter, now);
+            return RecruitmentInProgress("Recruitment in progress. Stay nearby.", encounter, now, currentUserJoined: true);
         }
 
-        var collection = new CollectionModel
-        {
-            UserId = userId,
-            PlayerId = player.Id,
-            CapturedAt = now,
-            IsFavorite = false,
-            CapturedAtPitchId = null
-        };
+        return await CompleteSharedRecruitmentAsync(userId, encounter, now);
+    }
 
-        var profile = await GetOrCreateProfileAsync(userId);
-        _db.Collections.Add(collection);
-        await AwardExperienceAsync(profile, RecruitSuccessXp);
+    private async Task<RecruitmentAttemptResultDto> RecruitmentAlreadyCompletedOrInvalidAsync(string userId, int playerId)
+    {
+        var collection = await _db.Collections.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.UserId == userId && c.PlayerId == playerId);
+        if (collection is not null)
+        {
+            return new RecruitmentAttemptResultDto(
+                true,
+                100,
+                "Recruitment already completed.",
+                collection,
+                Completed: true,
+                AwardedUserCount: 0,
+                CurrentUserJoined: true);
+        }
+
+        return RecruitmentFailure("Encounter expired or invalid.");
+    }
+
+    private async Task<RecruitmentAttemptResultDto> CompleteSharedRecruitmentAsync(
+        string currentUserId,
+        PlayerEncounterModel encounter,
+        DateTime now)
+    {
+        var participantUserIds = encounter.Participants
+            .Select(p => p.UserId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct()
+            .ToList();
+        if (!participantUserIds.Contains(currentUserId))
+        {
+            return RecruitmentFailure("Join this recruitment before claiming it.");
+        }
+
+        CollectionModel? currentUserCollection = null;
+        var awardedCount = 0;
+        foreach (var participantUserId in participantUserIds)
+        {
+            var existingCollection = await _db.Collections
+                .FirstOrDefaultAsync(c => c.UserId == participantUserId && c.PlayerId == encounter.PlayerId);
+            if (existingCollection is not null)
+            {
+                if (participantUserId == currentUserId)
+                {
+                    currentUserCollection = existingCollection;
+                }
+
+                continue;
+            }
+
+            var collection = new CollectionModel
+            {
+                UserId = participantUserId,
+                PlayerId = encounter.PlayerId,
+                CapturedAt = now,
+                IsFavorite = false,
+                CapturedAtPitchId = null
+            };
+
+            _db.Collections.Add(collection);
+            var profile = await GetOrCreateProfileAsync(participantUserId);
+            AwardExperience(profile, RecruitSuccessXp, now);
+            awardedCount++;
+
+            if (participantUserId == currentUserId)
+            {
+                currentUserCollection = collection;
+            }
+        }
+
+        foreach (var participant in encounter.Participants)
+        {
+            participant.CollectionAwardedAtUtc ??= now;
+        }
+
+        var baseSeconds = encounter.RecruitmentBaseDurationSeconds;
+        var requiredSeconds = encounter.RecruitmentRequiredDurationSeconds;
+        var participantCount = encounter.Participants.Count;
+        var groupItem = encounter.RecruitmentItemKind;
+        var boosts = BuildBoosts(baseSeconds, requiredSeconds, participantCount, groupItem);
+
+        _db.PlayerEncounters.Remove(encounter);
         await _db.SaveChangesAsync();
-        await DeleteEncounterAsync(request.EncounterId);
+        await NotifyRecruitmentRemovedAsync(encounter.Id);
 
         return new RecruitmentAttemptResultDto(
             true,
             100,
-            "Recruitment success!",
-            collection,
+            awardedCount > 1
+                ? $"Recruitment success! {awardedCount} teammates claimed this player."
+                : "Recruitment success!",
+            currentUserCollection,
             Completed: true,
-            BaseDurationSeconds: encounter.RecruitmentBaseDurationSeconds,
-            RequiredDurationSeconds: encounter.RecruitmentRequiredDurationSeconds,
+            BaseDurationSeconds: baseSeconds,
+            RequiredDurationSeconds: requiredSeconds,
             RemainingSeconds: 0,
             CompletesAtUtc: encounter.RecruitmentCompletesAtUtc,
-            LocalPlayerCount: encounter.RecruitmentLocalPlayerCount,
-            ItemKind: encounter.RecruitmentItemKind,
-            Boosts: BuildBoosts(encounter.RecruitmentBaseDurationSeconds, encounter.RecruitmentRequiredDurationSeconds, encounter.RecruitmentLocalPlayerCount, encounter.RecruitmentItemKind));
+            LocalPlayerCount: participantCount,
+            ItemKind: groupItem,
+            Boosts: boosts,
+            ParticipantCount: participantCount,
+            CurrentUserJoined: true,
+            AwardedUserCount: awardedCount);
     }
 
     private async Task<UserGameProfileModel> GetOrCreateProfileAsync(string userId)
@@ -216,7 +337,6 @@ public class RecruitmentService : IRecruitmentService
             UpdatedAtUtc = DateTime.UtcNow
         };
         _db.UserGameProfiles.Add(profile);
-        await _db.SaveChangesAsync();
         return profile;
     }
 
@@ -230,38 +350,27 @@ public class RecruitmentService : IRecruitmentService
         _ => 60
     };
 
-    private void StartRecruitmentSession(
-        string userId,
+    private static void RecalculateSharedRecruitmentTimer(
         PlayerEncounterModel encounter,
         PlayerModel player,
-        RecruitmentItemKind itemKind,
         DateTime now)
     {
+        var startedAt = encounter.RecruitmentStartedAtUtc ?? now;
         var baseSeconds = BaseRecruitmentSeconds(player.Rarity);
-        var localPlayerCount = CountLocalRecruiters(userId, encounter);
-        var requiredSeconds = CalculateRequiredRecruitmentSeconds(baseSeconds, localPlayerCount, itemKind);
+        var participantCount = Math.Max(1, encounter.Participants.Select(p => p.UserId).Distinct().Count());
+        var requiredSeconds = CalculateRequiredRecruitmentSeconds(baseSeconds, participantCount, encounter.RecruitmentItemKind);
 
-        encounter.RecruitmentStartedAtUtc = now;
-        encounter.RecruitmentCompletesAtUtc = now.AddSeconds(requiredSeconds);
+        encounter.RecruitmentStartedAtUtc = startedAt;
+        encounter.RecruitmentCompletesAtUtc = startedAt.AddSeconds(requiredSeconds);
         encounter.RecruitmentBaseDurationSeconds = baseSeconds;
         encounter.RecruitmentRequiredDurationSeconds = requiredSeconds;
-        encounter.RecruitmentLocalPlayerCount = localPlayerCount;
-        encounter.RecruitmentItemKind = itemKind;
+        encounter.RecruitmentLocalPlayerCount = participantCount;
     }
 
-    private int CountLocalRecruiters(string userId, PlayerEncounterModel encounter)
+    private static int CalculateRequiredRecruitmentSeconds(int baseSeconds, int participantCount, RecruitmentItemKind itemKind)
     {
-        var encounterPosition = new GeoPosition { Latitude = encounter.Latitude, Longitude = encounter.Longitude };
-        return _locationTracker
-            .GetRecentPositions(LocalRecruiterWindow)
-            .Where(entry => entry.Key != userId)
-            .Count(entry => GeoPosition.HaversineDistance(entry.Value.Position, encounterPosition) <= RecruitDistanceMeters);
-    }
-
-    private static int CalculateRequiredRecruitmentSeconds(int baseSeconds, int localPlayerCount, RecruitmentItemKind itemKind)
-    {
-        var cappedLocalCount = Math.Clamp(localPlayerCount, 0, 4);
-        var localReductionPercent = cappedLocalCount switch
+        var helperCount = Math.Clamp(participantCount - 1, 0, 4);
+        var localReductionPercent = helperCount switch
         {
             0 => 0,
             1 => 15,
@@ -272,7 +381,7 @@ public class RecruitmentService : IRecruitmentService
 
         var itemReductionPercent = itemKind switch
         {
-            RecruitmentItemKind.Beer when cappedLocalCount > 0 => 20,
+            RecruitmentItemKind.Beer when helperCount > 0 => 20,
             RecruitmentItemKind.Beer => 10,
             RecruitmentItemKind.Whiskey => 35,
             _ => 0
@@ -290,9 +399,11 @@ public class RecruitmentService : IRecruitmentService
     private static RecruitmentAttemptResultDto RecruitmentInProgress(
         string message,
         PlayerEncounterModel encounter,
-        DateTime now)
+        DateTime now,
+        bool currentUserJoined)
     {
         var remainingSeconds = Math.Max(0, (int)Math.Ceiling(((encounter.RecruitmentCompletesAtUtc ?? now) - now).TotalSeconds));
+        var participantCount = Math.Max(1, encounter.Participants.Select(p => p.UserId).Distinct().Count());
         return new RecruitmentAttemptResultDto(
             false,
             100,
@@ -303,28 +414,31 @@ public class RecruitmentService : IRecruitmentService
             RequiredDurationSeconds: encounter.RecruitmentRequiredDurationSeconds,
             RemainingSeconds: remainingSeconds,
             CompletesAtUtc: encounter.RecruitmentCompletesAtUtc,
-            LocalPlayerCount: encounter.RecruitmentLocalPlayerCount,
+            LocalPlayerCount: participantCount,
             ItemKind: encounter.RecruitmentItemKind,
-            Boosts: BuildBoosts(encounter.RecruitmentBaseDurationSeconds, encounter.RecruitmentRequiredDurationSeconds, encounter.RecruitmentLocalPlayerCount, encounter.RecruitmentItemKind));
+            Boosts: BuildBoosts(encounter.RecruitmentBaseDurationSeconds, encounter.RecruitmentRequiredDurationSeconds, participantCount, encounter.RecruitmentItemKind),
+            ParticipantCount: participantCount,
+            CurrentUserJoined: currentUserJoined);
     }
 
     private static IReadOnlyList<RecruitmentBoostDto> BuildBoosts(
         int baseSeconds,
         int requiredSeconds,
-        int localPlayerCount,
+        int participantCount,
         RecruitmentItemKind itemKind)
     {
         var boosts = new List<RecruitmentBoostDto>();
-        if (localPlayerCount > 0)
+        var helperCount = Math.Clamp(participantCount - 1, 0, 4);
+        if (helperCount > 0)
         {
-            var percent = Math.Clamp(localPlayerCount, 0, 4) switch
+            var percent = helperCount switch
             {
                 1 => 15,
                 2 => 25,
                 3 => 35,
                 _ => 45
             };
-            boosts.Add(new RecruitmentBoostDto($"{localPlayerCount} local recruiter{(localPlayerCount == 1 ? string.Empty : "s")}", 0, percent));
+            boosts.Add(new RecruitmentBoostDto($"{participantCount} participants", 0, percent));
         }
 
         if (itemKind != RecruitmentItemKind.None)
@@ -381,32 +495,33 @@ public class RecruitmentService : IRecruitmentService
         await _db.SaveChangesAsync();
     }
 
-    private async Task<PlayerEncounterModel> GetOrCreateEncounterAsync(
-        string userId,
+    private async Task<PlayerEncounterModel> GetOrCreateSharedEncounterAsync(
+        string createdByUserId,
         PlayerModel player,
         DateTime now,
-        Point parkLocation,
-        IReadOnlyList<RealWorldPark> nearbyParks)
+        RealWorldPark park)
     {
+        var areaKey = AreaKeyForPark(park);
         var existing = await _db.PlayerEncounters
-            .FirstOrDefaultAsync(e => e.UserId == userId && e.PlayerId == player.Id && e.ExpiresAtUtc > now);
+            .Include(e => e.Participants)
+            .FirstOrDefaultAsync(e => e.AreaKey == areaKey
+                && e.PlayerId == player.Id
+                && e.ExpiresAtUtc > now);
         if (existing is not null)
         {
-            if (nearbyParks.Any(park => IsNearPark(existing, park)))
-            {
-                return existing;
-            }
-
-            _db.PlayerEncounters.Remove(existing);
+            return existing;
         }
 
+        var parkLocation = GeometryFactory.CreatePoint(new Coordinate(park.Longitude, park.Latitude));
         var newEntry = new PlayerEncounterModel
         {
             Id = Guid.NewGuid(),
-            UserId = userId,
+            UserId = createdByUserId,
             PlayerId = player.Id,
             Latitude = parkLocation.Y,
             Longitude = parkLocation.X,
+            AreaKey = areaKey,
+            ParkPlaceId = park.PlaceId,
             ExpiresAtUtc = now.Add(EncounterLifetime),
             CreatedAtUtc = now
         };
@@ -416,8 +531,19 @@ public class RecruitmentService : IRecruitmentService
         return newEntry;
     }
 
+    private static string AreaKeyForPark(RealWorldPark park) =>
+        !string.IsNullOrWhiteSpace(park.PlaceId)
+            ? $"place:{park.PlaceId.Trim().ToLowerInvariant()}"
+            : $"geo:{Math.Round(park.Latitude, 5):F5}:{Math.Round(park.Longitude, 5):F5}";
+
     private static bool IsNearPark(PlayerEncounterModel encounter, RealWorldPark park)
     {
+        if (!string.IsNullOrWhiteSpace(encounter.ParkPlaceId)
+            && string.Equals(encounter.ParkPlaceId, park.PlaceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         var encounterPosition = new GeoPosition
         {
             Latitude = encounter.Latitude,
@@ -462,9 +588,14 @@ public class RecruitmentService : IRecruitmentService
     private static PlayerEncounterDto ToEncounterDto(
         PlayerEncounterModel encounter,
         PlayerModel player,
-        IReadOnlyList<RealWorldPark> nearbyParks)
+        IReadOnlyList<RealWorldPark> nearbyParks,
+        string currentUserId)
     {
         var encounterPark = GetNearestPark(encounter.Latitude, encounter.Longitude, nearbyParks);
+        var participantCount = encounter.Participants
+            .Select(p => p.UserId)
+            .Distinct()
+            .Count();
         return new PlayerEncounterDto(
             encounter.Id,
             player.Id,
@@ -478,7 +609,13 @@ public class RecruitmentService : IRecruitmentService
             100,
             BaseRecruitmentSeconds(player.Rarity),
             encounterPark?.Name,
-            encounterPark?.PlaceId);
+            encounter.ParkPlaceId ?? encounterPark?.PlaceId,
+            participantCount,
+            encounter.Participants.Any(p => p.UserId == currentUserId),
+            encounter.RecruitmentItemKind,
+            encounter.RecruitmentStartedAtUtc,
+            encounter.RecruitmentCompletesAtUtc,
+            encounter.RecruitmentRequiredDurationSeconds);
     }
 
     private async Task DeleteEncounterAsync(Guid encounterId)
@@ -491,6 +628,7 @@ public class RecruitmentService : IRecruitmentService
 
         _db.PlayerEncounters.Remove(encounter);
         await _db.SaveChangesAsync();
+        await NotifyRecruitmentRemovedAsync(encounterId);
     }
 
     private async Task CleanupExpiredEncountersAsync(DateTime now)
@@ -512,12 +650,20 @@ public class RecruitmentService : IRecruitmentService
         return Math.Clamp(1 + (xp / 100), 1, 100);
     }
 
-    private static Task AwardExperienceAsync(UserGameProfileModel profile, int xp)
+    private static void AwardExperience(UserGameProfileModel profile, int xp, DateTime now)
     {
         profile.Experience = Math.Max(0, profile.Experience + xp);
         profile.Level = LevelForXp(profile.Experience);
-        profile.UpdatedAtUtc = DateTime.UtcNow;
-        return Task.CompletedTask;
+        profile.UpdatedAtUtc = now;
+    }
+
+    private async Task NotifyRecruitmentChangedAsync(Guid encounterId)
+    {
+        await _hubContext.Clients.All.SendAsync("RecruitmentEncounterChanged", encounterId);
+    }
+
+    private async Task NotifyRecruitmentRemovedAsync(Guid encounterId)
+    {
+        await _hubContext.Clients.All.SendAsync("RecruitmentEncounterRemoved", encounterId);
     }
 }
-

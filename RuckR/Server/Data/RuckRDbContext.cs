@@ -20,6 +20,8 @@ namespace RuckR.Server.Data
         public DbSet<UserGameProfileModel> UserGameProfiles { get; set; }
         /// <summary>Gets or sets active recruitment encounters.</summary>
         public DbSet<PlayerEncounterModel> PlayerEncounters { get; set; }
+        /// <summary>Gets or sets shared recruitment participants.</summary>
+        public DbSet<RecruitmentParticipantModel> RecruitmentParticipants { get; set; }
         /// <summary>Gets or sets user visible profile records.</summary>
         public DbSet<UserProfileModel> UserProfiles { get; set; }
         /// <summary>Gets or sets all API rate limit records.</summary>
@@ -99,9 +101,25 @@ namespace RuckR.Server.Data
             modelBuilder.Entity<PlayerEncounterModel>(entity =>
             {
                 entity.HasIndex(e => new { e.UserId, e.PlayerId });
+                entity.HasIndex(e => new { e.AreaKey, e.PlayerId });
+                entity.HasIndex(e => new { e.AreaKey, e.ExpiresAtUtc });
                 entity.HasIndex(e => e.ExpiresAtUtc);
+                entity.Property(e => e.UserId).IsRequired(false);
+                entity.Property(e => e.AreaKey).HasMaxLength(160);
+                entity.Property(e => e.ParkPlaceId).HasMaxLength(128);
                 entity.Property(e => e.RecruitmentItemKind).HasConversion<string>().HasMaxLength(20);
                 entity.HasOne(e => e.Player).WithMany().HasForeignKey(e => e.PlayerId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<RecruitmentParticipantModel>(entity =>
+            {
+                entity.HasKey(p => new { p.EncounterId, p.UserId });
+                entity.HasIndex(p => p.UserId);
+                entity.HasIndex(p => p.CollectionAwardedAtUtc);
+                entity.HasOne(p => p.Encounter)
+                    .WithMany(e => e.Participants)
+                    .HasForeignKey(p => p.EncounterId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<UserRecruitmentItemModel>(entity =>

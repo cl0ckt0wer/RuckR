@@ -69,8 +69,9 @@ public class RecruitmentController : ControllerBase
         var active = await _db.PlayerEncounters
             .AsNoTracking()
             .Include(e => e.Player)
-            .Where(e => e.UserId == userId
-                && e.ExpiresAtUtc > now
+            .Include(e => e.Participants)
+            .Where(e => e.ExpiresAtUtc > now
+                && e.Participants.Any(p => p.UserId == userId)
                 && e.RecruitmentStartedAtUtc != null
                 && e.RecruitmentCompletesAtUtc != null)
             .OrderBy(e => e.RecruitmentCompletesAtUtc)
@@ -96,7 +97,8 @@ public class RecruitmentController : ControllerBase
                     active.RecruitmentBaseDurationSeconds,
                     active.RecruitmentRequiredDurationSeconds,
                     active.RecruitmentLocalPlayerCount,
-                    active.RecruitmentItemKind));
+                    active.RecruitmentItemKind),
+                active.Participants.Select(p => p.UserId).Distinct().Count());
         }
 
         return Ok(new RecruitmentProfileDto(level, experience, nextLevelExperience, items, activeDto));
@@ -172,12 +174,12 @@ public class RecruitmentController : ControllerBase
     private static IReadOnlyList<RecruitmentBoostDto> BuildRecruitmentBoosts(
         int baseSeconds,
         int requiredSeconds,
-        int localPlayerCount,
+        int participantCount,
         RecruitmentItemKind itemKind)
     {
         var boosts = new List<RecruitmentBoostDto>();
-        var cappedLocalCount = Math.Min(localPlayerCount, 4);
-        var localPercent = cappedLocalCount switch
+        var helperCount = Math.Clamp(participantCount - 1, 0, 4);
+        var localPercent = helperCount switch
         {
             1 => 15,
             2 => 25,
@@ -188,7 +190,7 @@ public class RecruitmentController : ControllerBase
 
         if (localPercent > 0)
         {
-            boosts.Add(new RecruitmentBoostDto($"{localPlayerCount} local recruiter{(localPlayerCount == 1 ? string.Empty : "s")}", 0, localPercent));
+            boosts.Add(new RecruitmentBoostDto($"{participantCount} participants", 0, localPercent));
         }
 
         if (itemKind != RecruitmentItemKind.None)

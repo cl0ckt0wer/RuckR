@@ -11,9 +11,8 @@ public class PlayerEncounterModel
     [Key]
     public Guid Id { get; set; }
 
-    /// <summary>Encounter owner user identifier.</summary>
-    [Required]
-    public string UserId { get; set; } = string.Empty;
+    /// <summary>User that first caused this shared encounter to be created, when known.</summary>
+    public string? UserId { get; set; }
 
     /// <summary>Player identifier for this encounter.</summary>
     [Required]
@@ -26,6 +25,14 @@ public class PlayerEncounterModel
     /// <summary>Encounter longitude.</summary>
     [Range(-180.0, 180.0)]
     public double Longitude { get; set; }
+
+    /// <summary>Stable key for the real-world area this shared encounter belongs to.</summary>
+    [MaxLength(160)]
+    public string? AreaKey { get; set; }
+
+    /// <summary>External park/place identifier for this encounter, when known.</summary>
+    [MaxLength(128)]
+    public string? ParkPlaceId { get; set; }
 
     /// <summary>UTC expiration time for the encounter.</summary>
     public DateTime ExpiresAtUtc { get; set; }
@@ -53,4 +60,7 @@ public class PlayerEncounterModel
 
     /// <summary>Related player reference for this encounter.</summary>
     public PlayerModel? Player { get; set; }
+
+    /// <summary>Users explicitly participating in this shared recruitment encounter.</summary>
+    public List<RecruitmentParticipantModel> Participants { get; set; } = new();
 }

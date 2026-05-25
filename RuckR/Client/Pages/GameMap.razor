@@ -328,6 +328,17 @@
         <div class="encounter-card__state mb-2 encounter-card__state--@RecruitStateCssClass" data-testid="spotlight-recruit-state">
             @RecruitStateLabel
         </div>
+        <div class="encounter-card__meta mb-2" data-testid="recruit-shared-state">
+            <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">@RecruitParticipantText</MudChip>
+            @if (RecruitGroupItemText is not null)
+            {
+                <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@RecruitGroupItemText</MudChip>
+            }
+            @if (CurrentUserJoinedRecruitment)
+            {
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">Joined</MudChip>
+            }
+        </div>
         <div class="encounter-card__chance mb-3"
              role="timer"
              aria-label="Recruitment time needed"
@@ -339,7 +350,7 @@
                    Label="Use item"
                    Variant="Variant.Outlined"
                    Dense="true"
-                   Disabled="@(_activeRecruitment is not null)"
+                   Disabled="@(!CanChooseRecruitmentItem)"
                    @bind-Value="_selectedRecruitItem"
                    data-testid="recruit-item-picker">
             <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.None">No item @RecruitItemCountText(RecruitmentItemKind.None)</MudSelectItem>
@@ -1224,6 +1235,8 @@
             }
 
             GeolocationService.PositionChanged += OnPositionChanged;
+            SignalRClient.RecruitmentEncounterChanged += OnRecruitmentEncounterChanged;
+            SignalRClient.RecruitmentEncounterRemoved += OnRecruitmentEncounterRemoved;
             MapState.StateChanged += OnMapStateChanged;
             LocationState.StateChanged += OnLocationStateChanged;
             _subscriptionsActive = true;
@@ -1279,6 +1292,43 @@
     private void OnLocationStateChanged(object? sender, EventArgs e)
     {
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnRecruitmentEncounterChanged(Guid encounterId)
+    {
+        _ = RefreshSharedRecruitmentMapAsync(encounterId, clearSelection: false);
+    }
+
+    private void OnRecruitmentEncounterRemoved(Guid encounterId)
+    {
+        _ = RefreshSharedRecruitmentMapAsync(encounterId, clearSelection: MapState.Value.SelectedEncounterId == encounterId);
+    }
+
+    private async Task RefreshSharedRecruitmentMapAsync(Guid encounterId, bool clearSelection)
+    {
+        if (_isDisposing || !_enableGameGraphics)
+        {
+            return;
+        }
+
+        try
+        {
+            var position = _lastKnownPosition;
+            await InvokeAsync(async () =>
+            {
+                if (clearSelection)
+                {
+                    ClearEncounterSelection();
+                }
+
+                await RefreshGameProgress();
+                await LoadPitchMarkersAsync(position?.Latitude ?? _latitude, position?.Longitude ?? _longitude);
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to refresh shared recruitment encounter {EncounterId}", encounterId);
+        }
     }
 
     private async Task OnViewInitializedAsync()
@@ -2703,7 +2753,7 @@
     {
         get
         {
-            if (_activeRecruitment is { Completed: false })
+            if (CurrentRecruitmentCompletesAtUtc is not null)
             {
                 return $"{FormatDuration(ActiveRecruitmentRemainingSeconds)} remaining";
             }
@@ -2719,12 +2769,12 @@
     {
         get
         {
-            if (_activeRecruitment?.CompletesAtUtc is null)
+            if (CurrentRecruitmentCompletesAtUtc is null)
             {
                 return 0;
             }
 
-            return Math.Max(0, (int)Math.Ceiling((_activeRecruitment.CompletesAtUtc.Value - DateTime.UtcNow).TotalSeconds));
+            return Math.Max(0, (int)Math.Ceiling((CurrentRecruitmentCompletesAtUtc.Value - DateTime.UtcNow).TotalSeconds));
         }
     }
 
@@ -2732,24 +2782,66 @@
     {
         get
         {
-            if (_activeRecruitment is null || _activeRecruitment.RequiredDurationSeconds <= 0)
+            var requiredSeconds = CurrentRecruitmentRequiredSeconds;
+            if (requiredSeconds <= 0)
             {
                 return 100;
             }
 
-            var elapsed = _activeRecruitment.RequiredDurationSeconds - ActiveRecruitmentRemainingSeconds;
-            return Math.Clamp(elapsed / (double)_activeRecruitment.RequiredDurationSeconds * 100, 0, 100);
+            var elapsed = requiredSeconds - ActiveRecruitmentRemainingSeconds;
+            return Math.Clamp(elapsed / (double)requiredSeconds * 100, 0, 100);
         }
     }
 
     private string RecruitButtonText =>
-        _activeRecruitment is { Completed: false }
-            ? ActiveRecruitmentRemainingSeconds <= 0 ? "Finish recruit" : "Check recruit progress"
+        CurrentRecruitmentCompletesAtUtc is not null
+            ? CurrentUserJoinedRecruitment
+                ? ActiveRecruitmentRemainingSeconds <= 0 ? "Finish recruit" : "Check recruit progress"
+                : "Join shared recruit"
             : $"Recruit {_selectedEncounter?.Name}";
 
-    private Color RecruitButtonColor => _activeRecruitment is { Completed: false } && ActiveRecruitmentRemainingSeconds > 0
+    private Color RecruitButtonColor => CurrentRecruitmentCompletesAtUtc is not null && ActiveRecruitmentRemainingSeconds > 0
         ? Color.Info
         : Color.Success;
+
+    private DateTime? CurrentRecruitmentCompletesAtUtc =>
+        _activeRecruitment?.CompletesAtUtc ?? _selectedEncounter?.RecruitmentCompletesAtUtc;
+
+    private int CurrentRecruitmentRequiredSeconds =>
+        _activeRecruitment?.RequiredDurationSeconds
+        ?? _selectedEncounter?.RequiredRecruitmentSeconds
+        ?? 0;
+
+    private int CurrentRecruitmentParticipantCount =>
+        Math.Max(
+            _activeRecruitment?.ParticipantCount
+            ?? _selectedEncounter?.ParticipantCount
+            ?? 0,
+            CurrentUserJoinedRecruitment ? 1 : 0);
+
+    private bool CurrentUserJoinedRecruitment =>
+        _activeRecruitment?.CurrentUserJoined
+        ?? _selectedEncounter?.CurrentUserJoined
+        ?? false;
+
+    private RecruitmentItemKind CurrentRecruitmentGroupItem =>
+        _activeRecruitment?.ItemKind
+        ?? _selectedEncounter?.GroupItemKind
+        ?? RecruitmentItemKind.None;
+
+    private string RecruitParticipantText =>
+        CurrentRecruitmentParticipantCount <= 0
+            ? "No participants yet"
+            : $"{CurrentRecruitmentParticipantCount} participant{(CurrentRecruitmentParticipantCount == 1 ? string.Empty : "s")}";
+
+    private string? RecruitGroupItemText =>
+        CurrentRecruitmentGroupItem == RecruitmentItemKind.None
+            ? null
+            : $"Group item: {CurrentRecruitmentGroupItem}";
+
+    private bool CanChooseRecruitmentItem =>
+        CurrentRecruitmentCompletesAtUtc is null
+        && CurrentRecruitmentGroupItem == RecruitmentItemKind.None;
 
     private Severity RecruitMessageSeverity => _recruitMessageClass == "danger"
         ? Severity.Error
@@ -2803,7 +2895,7 @@
 
         try
         {
-            var itemKind = _activeRecruitment is null ? _selectedRecruitItem : RecruitmentItemKind.None;
+            var itemKind = CanChooseRecruitmentItem ? _selectedRecruitItem : RecruitmentItemKind.None;
             var result = await ApiClient.AttemptRecruitmentAsync(
                 _selectedEncounter.EncounterId,
                 _selectedEncounter.PlayerId,
@@ -2993,6 +3085,8 @@
         if (_subscriptionsActive)
         {
             GeolocationService.PositionChanged -= OnPositionChanged;
+            SignalRClient.RecruitmentEncounterChanged -= OnRecruitmentEncounterChanged;
+            SignalRClient.RecruitmentEncounterRemoved -= OnRecruitmentEncounterRemoved;
             MapState.StateChanged -= OnMapStateChanged;
             LocationState.StateChanged -= OnLocationStateChanged;
             _subscriptionsActive = false;

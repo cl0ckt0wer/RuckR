@@ -15,6 +15,8 @@ namespace RuckR.Tests.E2E;
 [Collection(nameof(TestCollection))]
 public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
+    private const string MapStartupSmokePath = "map?basemap=empty&mapGraphics=false&autoGps=false&mapDiagnostics=false";
+
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
     private IBrowserContext _context = null!;
@@ -32,6 +34,12 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
         "Arg_PlatformNotSupported",
         "401 (Unauthorized)",  // Expected: unauthenticated UserInfo + API calls
         "404 (Not Found)",     // Expected: static assets that may not exist
+    };
+
+    private static readonly string[] KnownBenignGeoBlazorFetchErrors =
+    {
+        "TypeError: Failed to fetch",
+        "_content/dymaptic.GeoBlazor.Core/js/core_chunk_"
     };
 
     /// <summary>
@@ -159,7 +167,7 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
             await page.GotoAsync(_baseUrl);
             await WaitForAppPageLoadedAsync(page);
 
-            await page.GotoAsync($"{_baseUrl}map");
+            await page.GotoAsync($"{_baseUrl}{MapStartupSmokePath}");
             await page.WaitForTimeoutAsync(3000);
             await page.GotoAsync($"{_baseUrl}catalog");
             await page.WaitForTimeoutAsync(3000);
@@ -324,7 +332,7 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
             await page.GotoAsync(_baseUrl);
             await WaitForAppPageLoadedAsync(page);
 
-            await page.GotoAsync($"{_baseUrl}map");
+            await page.GotoAsync($"{_baseUrl}{MapStartupSmokePath}");
             await page.WaitForTimeoutAsync(3000);
             await page.GotoAsync($"{_baseUrl}catalog");
             await page.WaitForTimeoutAsync(3000);
@@ -376,9 +384,23 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     private static List<IConsoleMessage> FilterBenignErrors(List<IConsoleMessage> errors)
     {
         return errors
-            .Where(e => !KnownBenignWasmErrors.Any(k =>
-                e.Text.Contains(k, StringComparison.OrdinalIgnoreCase)))
+            .Where(e => !IsBenignConsoleError(e.Text))
             .ToList();
+    }
+
+    private static bool IsBenignConsoleError(string text)
+    {
+        if (KnownBenignWasmErrors.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // GeoBlazor's bundled Calcite components attempt optional localization
+        // fetches during startup. In the route-change smoke test those fetches
+        // can be aborted by navigation; the map-specific tests still assert the
+        // actual GeoBlazor surface and game layers render.
+        return KnownBenignGeoBlazorFetchErrors.All(k =>
+            text.Contains(k, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

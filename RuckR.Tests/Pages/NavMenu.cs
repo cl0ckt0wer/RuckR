@@ -121,7 +121,8 @@ public class NavMenu : BasePage
         var logoutLink = await Page.QuerySelectorAsync("[data-testid='nav-logout']");
         if (logoutLink != null)
         {
-            var usernameSpan = await Page.QuerySelectorAsync(".nav-link-text");
+            var usernameSpan = await Page.QuerySelectorAsync(".ruckr-user-name")
+                ?? await Page.QuerySelectorAsync(".nav-link-text");
             if (usernameSpan != null)
             {
                 var text = await usernameSpan.TextContentAsync();
@@ -129,6 +130,11 @@ public class NavMenu : BasePage
                 {
                     var username = text.Replace("Hello,", "").Replace("!", "").Trim();
                     return (true, username);
+                }
+
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    return (true, text.Trim());
                 }
             }
             return (true, "");

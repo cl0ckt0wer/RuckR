@@ -201,6 +201,12 @@ namespace RuckR.Shared.Models
     /// <param name="BaseRecruitmentSeconds">Base time required to recruit before social/item reductions.</param>
     /// <param name="ParkName">Optional park name.</param>
     /// <param name="ParkPlaceId">Optional external place identifier.</param>
+    /// <param name="ParticipantCount">Number of users who explicitly joined the shared recruitment.</param>
+    /// <param name="CurrentUserJoined">Whether the current user joined this shared recruitment.</param>
+    /// <param name="GroupItemKind">The one group item applied to the shared timer.</param>
+    /// <param name="RecruitmentStartedAtUtc">UTC time when the shared timer started.</param>
+    /// <param name="RecruitmentCompletesAtUtc">UTC time when the shared timer can be claimed.</param>
+    /// <param name="RequiredRecruitmentSeconds">Current shared timer duration after participant and item reductions.</param>
     public sealed record PlayerEncounterDto(
         Guid EncounterId,
         int PlayerId,
@@ -214,7 +220,13 @@ namespace RuckR.Shared.Models
         int SuccessChancePercent,
         int BaseRecruitmentSeconds = 0,
         string? ParkName = null,
-        string? ParkPlaceId = null);
+        string? ParkPlaceId = null,
+        int ParticipantCount = 0,
+        bool CurrentUserJoined = false,
+        RecruitmentItemKind GroupItemKind = RecruitmentItemKind.None,
+        DateTime? RecruitmentStartedAtUtc = null,
+        DateTime? RecruitmentCompletesAtUtc = null,
+        int RequiredRecruitmentSeconds = 0);
 
     /// <summary>
     /// Request payload for a recruitment attempt.
@@ -267,7 +279,8 @@ namespace RuckR.Shared.Models
         int RemainingSeconds,
         int LocalPlayerCount,
         RecruitmentItemKind ItemKind,
-        IReadOnlyList<RecruitmentBoostDto>? Boosts);
+        IReadOnlyList<RecruitmentBoostDto>? Boosts,
+        int ParticipantCount = 0);
 
     /// <summary>
     /// Recruitment result payload.
@@ -284,6 +297,9 @@ namespace RuckR.Shared.Models
     /// <param name="LocalPlayerCount">Nearby recruiters counted for the session.</param>
     /// <param name="ItemKind">Item consumed for this session.</param>
     /// <param name="Boosts">Time reducers applied to this session.</param>
+    /// <param name="ParticipantCount">Number of joined users in this shared recruitment.</param>
+    /// <param name="CurrentUserJoined">Whether the current user joined this shared recruitment.</param>
+    /// <param name="AwardedUserCount">Number of participants awarded when the shared recruitment completed.</param>
     public sealed record RecruitmentAttemptResultDto(
         bool Success,
         int SuccessChancePercent,
@@ -296,7 +312,10 @@ namespace RuckR.Shared.Models
         DateTime? CompletesAtUtc = null,
         int LocalPlayerCount = 0,
         RecruitmentItemKind ItemKind = RecruitmentItemKind.None,
-        IReadOnlyList<RecruitmentBoostDto>? Boosts = null);
+        IReadOnlyList<RecruitmentBoostDto>? Boosts = null,
+        int ParticipantCount = 0,
+        bool CurrentUserJoined = false,
+        int AwardedUserCount = 0);
 
     /// <summary>
     /// Lightweight representation of player progression.

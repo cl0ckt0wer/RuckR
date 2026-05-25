@@ -103,8 +103,13 @@ namespace RuckR.Server.Controllers
             var collections = _db.Collections.Where(c => c.UserId == userId);
             _db.Collections.RemoveRange(collections);
 
-            var encounters = _db.PlayerEncounters.Where(e => e.UserId == userId);
-            _db.PlayerEncounters.RemoveRange(encounters);
+            var recruitmentParticipants = _db.RecruitmentParticipants.Where(p => p.UserId == userId);
+            _db.RecruitmentParticipants.RemoveRange(recruitmentParticipants);
+
+            foreach (var encounter in _db.PlayerEncounters.Where(e => e.UserId == userId))
+            {
+                encounter.UserId = null;
+            }
 
             var profiles = _db.UserProfiles.Where(p => p.UserId == userId);
             _db.UserProfiles.RemoveRange(profiles);

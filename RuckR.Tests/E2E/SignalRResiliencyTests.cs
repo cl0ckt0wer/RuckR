@@ -16,6 +16,8 @@ namespace RuckR.Tests.E2E;
 [Collection(nameof(TestCollection))]
 public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 {
+    private const string SignalRSmokePath = "map?basemap=empty&mapGraphics=false&autoGps=false&mapDiagnostics=false";
+
     private readonly CustomWebApplicationFactory _factory;
     private readonly PlaywrightFixture _playwright;
     private IBrowserContext _context = null!;
@@ -70,8 +72,7 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
 
         try
         {
-            await page.GotoAsync(_baseUrl);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await NavigateToSignalRSmokePageAsync(page);
 
             // Wait for SignalR to establish the initial connection
             await page.WaitForTimeoutAsync(3000);
@@ -120,8 +121,7 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
 
         try
         {
-            await page.GotoAsync(_baseUrl);
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await NavigateToSignalRSmokePageAsync(page);
             await page.WaitForTimeoutAsync(3000);
 
             // Force offline
@@ -163,8 +163,7 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
 
         try
         {
-            await page.GotoAsync($"{_baseUrl}map");
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await NavigateToSignalRSmokePageAsync(page);
 
             // Give SignalR time to connect
             await page.WaitForTimeoutAsync(5000);
@@ -177,6 +176,19 @@ public class SignalRResiliencyTests : IClassFixture<PlaywrightFixture>, IAsyncLi
         {
             await page.CloseAsync();
         }
+    }
+
+    private async Task NavigateToSignalRSmokePageAsync(IPage page)
+    {
+        await page.GotoAsync($"{_baseUrl}{SignalRSmokePath}", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded
+        });
+
+        await page.WaitForSelectorAsync("[data-testid='status-dot']", new PageWaitForSelectorOptions
+        {
+            Timeout = 30_000
+        });
     }
 }
 
