@@ -21,6 +21,41 @@ namespace RuckR.Shared.Models
     public sealed record AcceptChallengeRequest(int SelectedPlayerId);
 
     /// <summary>
+    /// Player details embedded in battle summaries.
+    /// </summary>
+    public sealed record BattlePlayerSummaryDto(
+        int PlayerId,
+        string Name,
+        string Position,
+        string Rarity,
+        int Level,
+        int Speed,
+        int Strength,
+        int Agility,
+        int Kicking);
+
+    /// <summary>
+    /// Battle details shaped for player-facing challenge, result, and history views.
+    /// </summary>
+    public sealed record BattleSummaryDto(
+        int Id,
+        BattleStatus Status,
+        string ChallengerId,
+        string ChallengerUsername,
+        string OpponentId,
+        string OpponentUsername,
+        int ChallengerPlayerId,
+        int OpponentPlayerId,
+        BattlePlayerSummaryDto? ChallengerPlayer,
+        BattlePlayerSummaryDto? OpponentPlayer,
+        string? WinnerId,
+        string? WinnerUsername,
+        BattleResult? Result,
+        DateTime CreatedAt,
+        DateTime? ResolvedAt,
+        [MaxLength(36)] string? IdempotencyKey = null);
+
+    /// <summary>
     /// Request payload used to create a pitch manually.
     /// </summary>
     /// <param name="Name">Pitch display name.</param>
@@ -210,6 +245,31 @@ namespace RuckR.Shared.Models
         int PercentReduction);
 
     /// <summary>
+    /// Recruitment item quantity for the current user.
+    /// </summary>
+    public sealed record RecruitmentItemDto(
+        RecruitmentItemKind ItemKind,
+        int Quantity);
+
+    /// <summary>
+    /// Current timed recruitment session for the signed-in user.
+    /// </summary>
+    public sealed record ActiveRecruitmentSessionDto(
+        Guid EncounterId,
+        int PlayerId,
+        string PlayerName,
+        string Position,
+        string Rarity,
+        DateTime StartedAtUtc,
+        DateTime CompletesAtUtc,
+        int BaseDurationSeconds,
+        int RequiredDurationSeconds,
+        int RemainingSeconds,
+        int LocalPlayerCount,
+        RecruitmentItemKind ItemKind,
+        IReadOnlyList<RecruitmentBoostDto>? Boosts);
+
+    /// <summary>
     /// Recruitment result payload.
     /// </summary>
     /// <param name="Success">Whether recruitment succeeded.</param>
@@ -248,4 +308,14 @@ namespace RuckR.Shared.Models
         int Level,
         int Experience,
         int NextLevelExperience);
+
+    /// <summary>
+    /// Current user recruitment profile, including progress, item inventory, and active session.
+    /// </summary>
+    public sealed record RecruitmentProfileDto(
+        int Level,
+        int Experience,
+        int NextLevelExperience,
+        IReadOnlyList<RecruitmentItemDto> Items,
+        ActiveRecruitmentSessionDto? ActiveRecruitment);
 }

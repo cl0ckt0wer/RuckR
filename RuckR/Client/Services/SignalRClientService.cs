@@ -221,16 +221,22 @@ namespace RuckR.Client.Services
 
         private void HandleReceiveChallenge(ChallengeNotification notification)
         {
-            var battle = new BattleModel
-            {
-                Id = notification.ChallengeId,
-                ChallengerId = notification.ChallengerUsername,
-                OpponentId = string.Empty,
-                ChallengerPlayerId = 0,
-                OpponentPlayerId = 0,
-                Status = BattleStatus.Pending,
-                CreatedAt = DateTime.UtcNow
-            };
+            var battle = new BattleSummaryDto(
+                notification.ChallengeId,
+                BattleStatus.Pending,
+                notification.ChallengerUsername,
+                notification.ChallengerUsername,
+                string.Empty,
+                string.Empty,
+                0,
+                0,
+                new BattlePlayerSummaryDto(0, notification.PlayerName, notification.PlayerPosition, notification.PlayerRarity, 0, 0, 0, 0, 0),
+                null,
+                null,
+                null,
+                null,
+                DateTime.UtcNow,
+                null);
 
             _dispatcher.Dispatch(new ChallengeReceivedAction(battle));
             ChallengeReceived?.Invoke(notification);
@@ -238,14 +244,22 @@ namespace RuckR.Client.Services
 
         private void HandleBattleResolved(BattleResult result)
         {
-            var battle = new BattleModel
-            {
-                ChallengerId = result.WinnerUsername,
-                OpponentId = result.LoserUsername,
-                Status = BattleStatus.Completed,
-                WinnerId = result.WinnerUsername,
-                CreatedAt = result.CreatedAt
-            };
+            var battle = new BattleSummaryDto(
+                0,
+                BattleStatus.Completed,
+                result.WinnerUsername,
+                result.WinnerUsername,
+                result.LoserUsername,
+                result.LoserUsername,
+                0,
+                0,
+                null,
+                null,
+                result.WinnerUsername,
+                result.WinnerUsername,
+                result,
+                result.CreatedAt,
+                result.CreatedAt);
 
             _dispatcher.Dispatch(new BattleCompletedAction(battle));
             BattleResolved?.Invoke(result);

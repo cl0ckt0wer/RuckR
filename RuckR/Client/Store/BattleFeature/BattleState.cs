@@ -17,12 +17,12 @@ public record BattleState
     /// <summary>
     /// Active challenge list.
     /// </summary>
-    public IReadOnlyList<BattleModel> ActiveChallenges { get; init; } = Array.Empty<BattleModel>();
+    public IReadOnlyList<BattleSummaryDto> ActiveChallenges { get; init; } = Array.Empty<BattleSummaryDto>();
 
     /// <summary>
     /// Completed battle history.
     /// </summary>
-    public IReadOnlyList<BattleModel> BattleHistory { get; init; } = Array.Empty<BattleModel>();
+    public IReadOnlyList<BattleSummaryDto> BattleHistory { get; init; } = Array.Empty<BattleSummaryDto>();
 
     /// <summary>
     /// Last battle-related error message.

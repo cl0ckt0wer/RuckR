@@ -200,27 +200,30 @@
 
         @if (_isAuthenticated && _selectedEncounter is null && MapState.Value.VisibleEncounters.Count > 0)
         {
-            <div class="encounter-radar" data-testid="encounter-radar">
-                <div class="encounter-radar__header">
-                    <span>Recruit board</span>
-                    <strong>@MapState.Value.VisibleEncounters.Count</strong>
-                </div>
+            <MudPaper Elevation="3" Class="encounter-radar" data-testid="encounter-radar">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__header">
+                    <MudText Typo="Typo.caption">Recruit board</MudText>
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">@MapState.Value.VisibleEncounters.Count</MudChip>
+                </MudStack>
                 @if (SpotlightEncounter is not null)
                 {
-                    <button class="encounter-radar__target encounter-radar__target--spotlight"
-                            data-testid="spotlight-encounter-btn"
-                            type="button"
-                            aria-label="Rare sighting: @SpotlightEncounter.Name"
-                            @onclick="() => SelectEncounterAsync(SpotlightEncounter)">
-                        <span>
-                            <small class="encounter-radar__kicker">Rare sighting</small>
-                            <strong>@SpotlightEncounter.Name</strong>
-                            <small>@SpotlightSightingSummary(SpotlightEncounter)</small>
-                        </span>
-                        <span class="encounter-radar__timer">@EncounterExpiresText(SpotlightEncounter)</span>
-                    </button>
+                    <MudButton Class="encounter-radar__target encounter-radar__target--spotlight"
+                               Variant="Variant.Text"
+                               FullWidth="true"
+                               data-testid="spotlight-encounter-btn"
+                               aria-label="@($"Rare sighting: {SpotlightEncounter.Name}")"
+                               OnClick="() => SelectEncounterAsync(SpotlightEncounter)">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__target-inner">
+                            <span>
+                                <small class="encounter-radar__kicker">Rare sighting</small>
+                                <strong>@SpotlightEncounter.Name</strong>
+                                <small>@SpotlightSightingSummary(SpotlightEncounter)</small>
+                            </span>
+                            <span class="encounter-radar__timer">@EncounterExpiresText(SpotlightEncounter)</span>
+                        </MudStack>
+                    </MudButton>
                 }
-            </div>
+            </MudPaper>
         }
     }
 </div>
@@ -280,34 +283,28 @@
 
 @if (_selectedEncounter is not null && _showRecruitBoard)
 {
-    <div class="map-overlay map-overlay--encounter @(IsSpotlightEncounter(_selectedEncounter) ? "map-overlay--spotlight" : null)" data-testid="encounter-overlay">
-        <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-                <div class="encounter-card__eyebrow" data-testid="encounter-kicker">
-                    @(IsSpotlightEncounter(_selectedEncounter) ? "Rare sighting" : EncounterParkName(_selectedEncounter))
+    <MudPaper Elevation="4" Class="@EncounterOverlayClass(_selectedEncounter)" data-testid="encounter-overlay">
+        <MudStack Spacing="2">
+            <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                <div>
+                    <MudText Typo="Typo.overline" Class="encounter-card__eyebrow" data-testid="encounter-kicker">
+                        @(IsSpotlightEncounter(_selectedEncounter) ? "Rare sighting" : EncounterParkName(_selectedEncounter))
+                    </MudText>
+                    <MudText Typo="Typo.h6" data-testid="encounter-name">@_selectedEncounter.Name</MudText>
                 </div>
-                <h5 class="mb-0" data-testid="encounter-name">@_selectedEncounter.Name</h5>
-            </div>
-            <button type="button" class="btn-close" data-testid="encounter-close" @onclick="ClearEncounterSelection" aria-label="Close"></button>
-        </div>
-        <div class="mb-2 d-flex gap-2 flex-wrap">
-            <span class="badge bg-@EncounterRarityBadgeClass(_selectedEncounter.Rarity) me-2">@_selectedEncounter.Rarity</span>
-            @if (IsSpotlightEncounter(_selectedEncounter))
-            {
-                <span class="badge spotlight-timer" data-testid="spotlight-timer">@EncounterExpiresText(_selectedEncounter)</span>
-            }
-            <span class="badge bg-secondary">Level @_selectedEncounter.Level</span>
-            <span class="badge bg-dark">@_selectedEncounter.Position</span>
-            @if (!IsSpotlightEncounter(_selectedEncounter))
-            {
-                <span class="badge bg-info text-dark">@EncounterExpiresText(_selectedEncounter)</span>
-            }
-        </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Inherit" data-testid="encounter-close" OnClick="ClearEncounterSelection" aria-label="Close" />
+            </MudStack>
+            <MudChipSet T="string">
+                <MudChip T="string" Color="@EncounterRarityColor(_selectedEncounter.Rarity)" Variant="Variant.Filled">@_selectedEncounter.Rarity</MudChip>
+                <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined">Level @_selectedEncounter.Level</MudChip>
+                <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">@_selectedEncounter.Position</MudChip>
+                <MudChip T="string" Color="@(IsSpotlightEncounter(_selectedEncounter) ? Color.Warning : Color.Info)" Variant="Variant.Filled" data-testid="spotlight-timer">@EncounterExpiresText(_selectedEncounter)</MudChip>
+            </MudChipSet>
         @if (IsSpotlightEncounter(_selectedEncounter))
         {
-            <p class="encounter-card__spotlight-copy" data-testid="spotlight-copy">
+            <MudText Typo="Typo.body2" Class="encounter-card__spotlight-copy" data-testid="spotlight-copy">
                 Last chance at @EncounterParkName(_selectedEncounter). Close the distance and recruit before the bell.
-            </p>
+            </MudText>
         }
         <div class="encounter-card__route mb-2">
             <span>@EncounterDistanceText(_selectedEncounter)</span>
@@ -323,54 +320,51 @@
             <div style="width:@RecruitTimeProgressPercent%"></div>
             <span>@RecruitTimerText</span>
         </div>
-        <div class="encounter-card__items mb-3" data-testid="recruit-item-picker">
-            <label class="form-label small mb-1" for="recruit-item">Use item</label>
-            <select id="recruit-item"
-                    class="form-select form-select-sm"
-                    disabled="@(_activeRecruitment is not null)"
-                    @bind="_selectedRecruitItem">
-                <option value="@RecruitmentItemKind.None">No item</option>
-                <option value="@RecruitmentItemKind.Chips">Chips</option>
-                <option value="@RecruitmentItemKind.Beer">Beer</option>
-                <option value="@RecruitmentItemKind.Whiskey">Whiskey</option>
-            </select>
-        </div>
+        <MudSelect T="RecruitmentItemKind"
+                   Label="Use item"
+                   Variant="Variant.Outlined"
+                   Dense="true"
+                   Disabled="@(_activeRecruitment is not null)"
+                   @bind-Value="_selectedRecruitItem"
+                   data-testid="recruit-item-picker">
+            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.None">No item @RecruitItemCountText(RecruitmentItemKind.None)</MudSelectItem>
+            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Chips">Chips @RecruitItemCountText(RecruitmentItemKind.Chips)</MudSelectItem>
+            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Beer">Beer @RecruitItemCountText(RecruitmentItemKind.Beer)</MudSelectItem>
+            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Whiskey">Whiskey @RecruitItemCountText(RecruitmentItemKind.Whiskey)</MudSelectItem>
+        </MudSelect>
         @if (_activeRecruitment?.Boosts is { Count: > 0 } boosts)
         {
             <div class="encounter-card__boosts mb-3" data-testid="recruit-boosts">
                 @foreach (var boost in boosts)
                 {
-                    <span>@boost.Label</span>
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@boost.Label</MudChip>
                 }
             </div>
         }
-        <button class="btn btn-sm btn-@RecruitButtonClass()"
-                data-testid="recruit-btn"
-                disabled="@(!_canRecruit)"
-                title="@_recruitBlockedReason"
-                @onclick="AttemptRecruitment">
-            @if (_isRecruiting)
-            {
-                <span class="spinner-border spinner-border-sm" role="status"></span>
-            }
-            else
-            {
-                @RecruitButtonText
-            }
-        </button>
+        <MudButton Variant="Variant.Filled"
+                   Color="@RecruitButtonColor"
+                   StartIcon="@Icons.Material.Filled.PersonAdd"
+                   FullWidth="true"
+                   Disabled="@(!_canRecruit)"
+                   title="@_recruitBlockedReason"
+                   OnClick="AttemptRecruitment"
+                   data-testid="recruit-btn">
+            @(_isRecruiting ? "Recruiting..." : RecruitButtonText)
+        </MudButton>
         @if (!_canRecruit)
         {
-            <p class="small mt-2 mb-0 text-warning">@_recruitBlockedReason</p>
+            <MudText Typo="Typo.caption" Color="Color.Warning">@_recruitBlockedReason</MudText>
         }
         @if (GpsActionHint is not null)
         {
-            <p class="small mt-1 mb-0 text-muted" data-testid="recruit-gps-hint">@GpsActionHint</p>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="recruit-gps-hint">@GpsActionHint</MudText>
         }
         @if (_recruitMessage is not null)
         {
-            <p class="small mt-2 mb-0 text-@_recruitMessageClass">@_recruitMessage</p>
+            <MudAlert Severity="@RecruitMessageSeverity" Dense="true">@_recruitMessage</MudAlert>
         }
-    </div>
+        </MudStack>
+    </MudPaper>
 }
 
 @if (_selectedCandidatePlace is not null)
@@ -535,7 +529,7 @@
      }
      .encounter-radar {
          position: absolute;
-         top: 25.75rem;
+         top: 8.75rem;
          left: 0.75rem;
          z-index: 10;
          width: min(260px, calc(100vw - 1.5rem));
@@ -580,6 +574,11 @@
          background: rgba(255,255,255,0.06);
          color: inherit;
          text-align: left;
+         text-transform: none;
+     }
+     .encounter-radar__target-inner {
+         width: 100%;
+         min-width: 0;
      }
      .encounter-radar__target:hover {
          background: rgba(34,197,94,0.14);
@@ -1032,6 +1031,7 @@
     private string? _candidateCreateMessage;
     private string _candidateCreateMessageClass = "success";
     private GameProgressDto? _gameProgress;
+    private RecruitmentProfileDto? _recruitmentProfile;
     private int _prevLevelXp;
     private bool _canRecruit;
     private bool _isRecruiting;
@@ -2624,6 +2624,38 @@
             ? ActiveRecruitmentRemainingSeconds <= 0 ? "Finish recruit" : "Check recruit progress"
             : $"Recruit {_selectedEncounter?.Name}";
 
+    private Color RecruitButtonColor => _activeRecruitment is { Completed: false } && ActiveRecruitmentRemainingSeconds > 0
+        ? Color.Info
+        : Color.Success;
+
+    private Severity RecruitMessageSeverity => _recruitMessageClass == "danger"
+        ? Severity.Error
+        : Severity.Success;
+
+    private string EncounterOverlayClass(PlayerEncounterDto encounter) =>
+        IsSpotlightEncounter(encounter)
+            ? "map-overlay map-overlay--encounter map-overlay--spotlight"
+            : "map-overlay map-overlay--encounter";
+
+    private static Color EncounterRarityColor(string rarity) => rarity switch
+    {
+        "Common" => Color.Secondary,
+        "Uncommon" => Color.Success,
+        "Rare" => Color.Primary,
+        "Epic" => Color.Tertiary,
+        "Legendary" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private string RecruitItemCountText(RecruitmentItemKind itemKind)
+    {
+        if (itemKind == RecruitmentItemKind.None)
+            return string.Empty;
+
+        var quantity = _recruitmentProfile?.Items.FirstOrDefault(i => i.ItemKind == itemKind)?.Quantity ?? 0;
+        return $"({quantity})";
+    }
+
     private static string FormatDuration(int seconds)
     {
         if (seconds < 60)
@@ -2700,9 +2732,12 @@
     private async Task RefreshGameProgress()
     {
         await RefreshAuthenticationStateAsync();
-        _gameProgress = _isAuthenticated
-            ? await ApiClient.GetGameProgressAsync()
+        _recruitmentProfile = _isAuthenticated
+            ? await ApiClient.GetRecruitmentProfileAsync()
             : null;
+        _gameProgress = _recruitmentProfile is null
+            ? null
+            : new GameProgressDto(_recruitmentProfile.Level, _recruitmentProfile.Experience, _recruitmentProfile.NextLevelExperience);
         _prevLevelXp = _gameProgress is null ? 0 : _gameProgress.Level <= 1 ? 0 : (_gameProgress.Level - 1) * 100;
     }
 

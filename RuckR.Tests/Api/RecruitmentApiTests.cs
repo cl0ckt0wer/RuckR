@@ -558,6 +558,49 @@ public class RecruitmentApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies get Profile Returns Recruitment Items.
+    /// </summary>
+    [Fact]
+    public async Task GetProfile_ReturnsStarterRecruitmentItems()
+    {
+        var response = await _client.GetAsync("/api/recruitment/profile");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var profile = await response.Content.ReadFromJsonAsync<RecruitmentProfileDto>();
+        Assert.NotNull(profile);
+        Assert.Contains(profile!.Items, i => i.ItemKind == RecruitmentItemKind.Chips && i.Quantity == 3);
+        Assert.Contains(profile.Items, i => i.ItemKind == RecruitmentItemKind.Beer && i.Quantity == 2);
+        Assert.Contains(profile.Items, i => i.ItemKind == RecruitmentItemKind.Whiskey && i.Quantity == 1);
+        Assert.Null(profile.ActiveRecruitment);
+    }
+
+    /// <summary>
+    /// Verifies get Profile Includes Active Recruitment Session.
+    /// </summary>
+    [Fact]
+    public async Task GetProfile_WithActiveRecruitment_ReturnsSession()
+    {
+        var encounter = await CreateEncounterAsync();
+        _factory.LocationTracker.SetPosition(_userId, encounter.Latitude, encounter.Longitude);
+
+        var startResponse = await _client.PostAsJsonAsync(
+            "/api/recruitment/attempt",
+            new RecruitmentAttemptRequest(encounter.EncounterId, encounter.PlayerId, RecruitmentItemKind.Chips));
+        Assert.Equal(HttpStatusCode.OK, startResponse.StatusCode);
+
+        var response = await _client.GetAsync("/api/recruitment/profile");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var profile = await response.Content.ReadFromJsonAsync<RecruitmentProfileDto>();
+        Assert.NotNull(profile);
+        Assert.NotNull(profile!.ActiveRecruitment);
+        Assert.Equal(encounter.EncounterId, profile.ActiveRecruitment!.EncounterId);
+        Assert.Equal(encounter.PlayerId, profile.ActiveRecruitment.PlayerId);
+        Assert.Equal(RecruitmentItemKind.Chips, profile.ActiveRecruitment.ItemKind);
+        Assert.True(profile.ActiveRecruitment.RemainingSeconds > 0);
+    }
+
+    /// <summary>
     /// Verifies get Profile With Existing Record Returns Calculated Next Level Experience.
     /// </summary>
     [Fact]

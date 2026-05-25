@@ -45,13 +45,15 @@ namespace RuckR.Server.Controllers
         /// <param name="idempotencyKey">The idempotencykey.</param>
         /// <returns>The operation result.</returns>
         [HttpPost("challenge")]
-        public async Task<ActionResult<BattleModel>> Challenge(
+        public async Task<ActionResult<BattleSummaryDto>> Challenge(
             [FromBody] ChallengeRequest request,
             [FromQuery] string? idempotencyKey = null)
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
+
+            idempotencyKey ??= request.IdempotencyKey;
 
             // 0. Idempotency check
             if (!string.IsNullOrWhiteSpace(idempotencyKey))
@@ -60,7 +62,7 @@ namespace RuckR.Server.Controllers
                     .FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey
                         && b.ChallengerId == userId);
                 if (existing is not null)
-                    return Ok(existing);
+                    return Ok(await _battleService.ToSummaryAsync(existing));
             }
 
             // 1. Cannot challenge self
@@ -109,7 +111,7 @@ namespace RuckR.Server.Controllers
             _db.Battles.Add(battle);
             await _db.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetPending), new { id = battle.Id }, battle);
+            return CreatedAtAction(nameof(GetPending), new { id = battle.Id }, await _battleService.ToSummaryAsync(battle));
         }
 
         /// <summary>
@@ -123,57 +125,20 @@ namespace RuckR.Server.Controllers
         /// <param name="request">The request.</param>
         /// <returns>The operation result.</returns>
         [HttpPost("{id}/accept")]
-        public async Task<ActionResult<BattleModel>> Accept(int id, [FromBody] AcceptChallengeRequest request)
+        public async Task<ActionResult<BattleSummaryDto>> Accept(int id, [FromBody] AcceptChallengeRequest request)
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
 
-            var battle = await _db.Battles.FindAsync(id);
-            if (battle is null)
-                return NotFound($"Battle with id {id} not found.");
-
-            // Only the opponent can accept
-            if (battle.OpponentId != userId)
-                return Forbid();
-
-            // Must be pending
-            if (battle.Status != BattleStatus.Pending)
-                return BadRequest("Challenge is no longer pending.");
-
-            // Lazy-expiry: expire challenges older than 24h
-            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
-            {
-                battle.Status = BattleStatus.Expired;
-                battle.ResolvedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
-                return StatusCode(410, "Challenge expired.");
-            }
-
-            // Selected player exists and is in current user's collection
-            var player = await _db.Players.FindAsync(request.SelectedPlayerId);
-            if (player is null)
-                return NotFound($"Player with id {request.SelectedPlayerId} not found.");
-
-            var playerInCollection = await _db.Collections
-                .AnyAsync(c => c.UserId == userId && c.PlayerId == request.SelectedPlayerId);
-            if (!playerInCollection)
-                return BadRequest("Selected player is not in your collection.");
-
-            battle.OpponentPlayerId = request.SelectedPlayerId;
-            battle.Status = BattleStatus.Accepted;
-            battle.ResolvedAt = DateTime.UtcNow;
-
             try
             {
-                await _db.SaveChangesAsync();
+                return Ok(await _battleService.AcceptAndResolveChallengeAsync(id, userId, request.SelectedPlayerId));
             }
-            catch (DbUpdateConcurrencyException)
+            catch (BattleOperationException ex)
             {
-                return Conflict("This challenge was already accepted or modified concurrently.");
+                return MapBattleOperationException(ex);
             }
-
-            return Ok(battle);
         }
 
         /// <summary>
@@ -226,7 +191,7 @@ namespace RuckR.Server.Controllers
         /// <summary>Get pending challenges for the current user.</summary>
         /// <returns>The operation result.</returns>
         [HttpGet("pending")]
-        public async Task<ActionResult<List<BattleModel>>> GetPending()
+        public async Task<ActionResult<IReadOnlyList<BattleSummaryDto>>> GetPending()
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
@@ -252,7 +217,7 @@ namespace RuckR.Server.Controllers
 
             // Return only non-expired pending challenges
             var remaining = pendingBattles.Where(b => b.CreatedAt > expiryCutoff).ToList();
-            return Ok(remaining);
+            return Ok(await _battleService.ToSummariesAsync(remaining));
         }
 
         /// <summary>
@@ -262,7 +227,7 @@ namespace RuckR.Server.Controllers
         /// <summary>Get completed, declined, or expired battle history.</summary>
         /// <returns>The operation result.</returns>
         [HttpGet("history")]
-        public async Task<ActionResult<List<BattleModel>>> GetHistory()
+        public async Task<ActionResult<IReadOnlyList<BattleSummaryDto>>> GetHistory()
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
@@ -274,12 +239,24 @@ namespace RuckR.Server.Controllers
                 .OrderByDescending(b => b.ResolvedAt ?? b.CreatedAt)
                 .ToListAsync();
 
-            return Ok(history);
+            return Ok(await _battleService.ToSummariesAsync(history));
         }
 
         private string GetCurrentUserId()
         {
             return _userManager.GetUserId(User) ?? string.Empty;
+        }
+
+        private ActionResult MapBattleOperationException(BattleOperationException ex)
+        {
+            return ex.StatusCode switch
+            {
+                System.Net.HttpStatusCode.NotFound => NotFound(ex.Message),
+                System.Net.HttpStatusCode.Forbidden => Forbid(),
+                System.Net.HttpStatusCode.Gone => StatusCode(410, ex.Message),
+                System.Net.HttpStatusCode.Conflict => Conflict(ex.Message),
+                _ => BadRequest(ex.Message)
+            };
         }
     }
 }

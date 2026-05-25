@@ -6,13 +6,13 @@ namespace RuckR.Client.Store.BattleFeature;
 /// Signals that a battle challenge has been received by the current user.
 /// </summary>
 /// <param name="Challenge">Challenge payload.</param>
-public record ChallengeReceivedAction(BattleModel Challenge);
+public record ChallengeReceivedAction(BattleSummaryDto Challenge);
 
 /// <summary>
 /// Signals that a battle challenge has been sent by the current user.
 /// </summary>
 /// <param name="Challenge">Challenge payload.</param>
-public record ChallengeSentAction(BattleModel Challenge);
+public record ChallengeSentAction(BattleSummaryDto Challenge);
 
 /// <summary>
 /// Signals a battle status update from the server or UI.
@@ -25,14 +25,14 @@ public record ChallengeRespondedAction(int BattleId, BattleStatus NewStatus);
 /// Signals completion of a battle and final battle payload.
 /// </summary>
 /// <param name="Battle">Completed battle.</param>
-public record BattleCompletedAction(BattleModel Battle);
+public record BattleCompletedAction(BattleSummaryDto Battle);
 
 /// <summary>
 /// Replaces battle collections after a fetch operation.
 /// </summary>
 /// <param name="Pending">Pending battles.</param>
 /// <param name="History">Completed battle history.</param>
-public record FetchBattlesResultAction(IReadOnlyList<BattleModel> Pending, IReadOnlyList<BattleModel> History);
+public record FetchBattlesResultAction(IReadOnlyList<BattleSummaryDto> Pending, IReadOnlyList<BattleSummaryDto> History);
 
 /// <summary>
 /// Signals an error while loading or updating battle data.

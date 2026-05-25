@@ -12,325 +12,260 @@
 
 <PageTitle>Battle Arena</PageTitle>
 
-<h1>⚔️ Battle Arena</h1>
-
-@* --- AUTH CHECK --- *@
-@if (_requiresAuth)
-{
-    <p><em>Checking authentication...</em></p>
-    return;
-}
-
-@* --- LOADING --- *@
-@if (_isLoading)
-{
-    <div class="d-flex justify-content-center py-5" data-testid="battle-loading">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-        <span class="ms-3 align-self-center"><em>Loading battle arena...</em></span>
-    </div>
-    return;
-}
-
-@* --- ERROR --- *@
-@if (!string.IsNullOrEmpty(_errorMessage))
-{
-    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="battle-error">
-        <span>@_errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="battle-retry-btn" @onclick="LoadBattlesAsync">Retry</button>
-    </div>
-    return;
-}
-
-@* --- SUCCESS TOAST --- *@
-@if (!string.IsNullOrEmpty(_successMessage))
-{
-    <div class="alert alert-success alert-dismissible fade show" role="alert" data-testid="battle-success">
-        @_successMessage
-        <button type="button" class="btn-close" @onclick="() => _successMessage = null"></button>
-    </div>
-}
-
-@* --- TABS --- *@
-<ul class="nav nav-tabs mb-4" data-testid="battle-tabs">
-    <li class="nav-item">
-        <a class="nav-link @(_activeTab == "new" ? "active" : "")" href="#"
-           @onclick='() => SwitchTab("new")' @onclick:preventDefault data-testid="challenge-tab">
-            🆕 New Challenge
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link @(_activeTab == "active" ? "active" : "")" href="#"
-           @onclick='() => SwitchTab("active")' @onclick:preventDefault data-testid="active-tab">
-            ⚡ Active Challenges
-            @{
-                var totalActive = _incomingChallenges.Count + _outgoingChallenges.Count;
-            }
-            @if (totalActive > 0)
-            {
-                <span class="badge bg-danger ms-1">@totalActive</span>
-            }
-        </a>
-    </li>
-</ul>
-
-@* ---------- TAB 1: NEW CHALLENGE ---------- *@
-@if (_activeTab == "new")
-{
-    <div class="row justify-content-center">
-        <div class="col-md-8 col-lg-6">
-            <div class="card" data-testid="challenge-card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Send a Challenge</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label">Your Player</label>
-                        @if (_collectedPlayers.Count == 0)
-                        {
-                            <div class="alert alert-warning">
-                                You don&apos;t have any players to send! Head to the
-                                <a href="map">map</a> to collect some first.
-                            </div>
-                        }
-                        else
-                        {
-                            <select class="form-select" @bind="_selectedPlayerId" data-testid="player-select">
-                                <option value="">-- Select your fighter --</option>
-                                @foreach (var c in _collectedPlayers)
-                                {
-                                    if (c.Player is not null)
-                                    {
-                                        <option value="@c.Player.Id">
-                                            @c.Player.Name — @c.Player.Position, @c.Player.Rarity
-                                        </option>
-                                    }
-                                }
-                            </select>
-                        }
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Opponent Username</label>
-                        <input type="text" class="form-control" @bind="_opponentUsername"
-                               placeholder="Enter opponent&apos;s username" data-testid="opponent-input" />
-                    </div>
-                    <div class="mb-3">
-                        <small class="text-muted" data-testid="rate-limit-info">
-                            @_challengesSentThisHour of 10 challenges sent this hour
-                        </small>
-                    </div>
-                    @if (!string.IsNullOrEmpty(_formError))
-                    {
-                        <div class="alert alert-danger">@_formError</div>
-                    }
-                    <button class="btn btn-primary w-100"
-                            @onclick="SendChallengeAsync"
-                            disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)"
-                            data-testid="send-challenge-btn">
-                        @if (_isSubmitting)
-                        {
-                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                        }
-                        Send Challenge ⚔️
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
-@* ---------- TAB 2: ACTIVE CHALLENGES ---------- *@
-@if (_activeTab == "active")
-{
-    @* --- EMPTY STATE --- *@
-    @if (_incomingChallenges.Count == 0 && _outgoingChallenges.Count == 0)
+<MudContainer MaxWidth="MaxWidth.False" Class="game-page battle-page">
+    @if (_requiresAuth)
     {
-        <div class="text-center py-5" data-testid="battle-empty">
-            <div style="font-size: 4rem;">⚔️</div>
-            <h4 class="mt-3">No active challenges</h4>
-            <p class="text-muted">
-                Head to <a href="/players/nearby">/players/nearby</a> to find opponents!
-            </p>
-        </div>
+        <MudStack AlignItems="AlignItems.Center" Class="py-8">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Checking session...</MudText>
+        </MudStack>
+    }
+    else if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" data-testid="battle-loading">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Loading battle arena...</MudText>
+        </MudStack>
     }
     else
     {
-        @* --- INCOMING CHALLENGES --- *@
-        @if (_incomingChallenges.Count > 0)
-        {
-            <h4>Incoming Challenges</h4>
-            <p class="text-muted small">
-                @_incomingChallenges.Count of 3 pending
-            </p>
-            <div class="row g-3 mb-4" data-testid="incoming-challenges">
-                @foreach (var challenge in _incomingChallenges)
-                {
-                    <div class="col-md-6 col-lg-4">
-                        <div class="card h-100 @(challenge.Status == BattleStatus.Declined ? "border-secondary" : "")">
-                            <div class="card-body">
-                                <h6 class="card-title">@challenge.ChallengerId</h6>
-                                <p class="card-text small mb-1">
-                                    <span class="text-muted">Player:</span>
-                                    @GetPlayerDisplay(challenge.ChallengerPlayerId)
-                                </p>
-                                <p class="card-text">
-                                    <small class="text-muted">@GetRelativeTime(challenge.CreatedAt)</small>
-                                </p>
-                                @if (challenge.Status == BattleStatus.Pending)
-                                {
-                                    <div class="d-flex gap-2">
-                                        <button class="btn btn-success btn-sm"
-                                                data-testid="accept-btn"
-                                                @onclick="() => OpenAcceptModal(challenge)">
-                                            Accept
-                                        </button>
-                                        <button class="btn btn-outline-danger btn-sm"
-                                                data-testid="decline-btn"
-                                                @onclick="() => DeclineChallengeAsync(challenge.Id)">
-                                            Decline
-                                        </button>
-                                    </div>
-                                }
-                                else if (challenge.Status == BattleStatus.Declined)
-                                {
-                                    <span class="badge bg-secondary">Declined</span>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
+                <div>
+                    <MudText Typo="Typo.overline">Arena</MudText>
+                    <MudText Typo="Typo.h4">Battle Arena</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Challenge seed players or resolve incoming matches instantly.
+                    </MudText>
+                </div>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Href="/players/nearby" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Groups">
+                        Nearby
+                    </MudButton>
+                    <MudButton Href="/battles/history" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.History">
+                        History
+                    </MudButton>
+                </MudStack>
+            </MudStack>
 
-        @* --- OUTGOING CHALLENGES --- *@
-        @if (_outgoingChallenges.Count > 0)
-        {
-            <h4>Outgoing Challenges</h4>
-            <div class="row g-3" data-testid="outgoing-challenges">
-                @foreach (var challenge in _outgoingChallenges)
-                {
-                    <div class="col-md-6 col-lg-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h6 class="card-title">@challenge.OpponentId</h6>
-                                <p class="card-text small mb-1">
-                                    <span class="text-muted">Your player:</span>
-                                    @GetPlayerDisplay(challenge.ChallengerPlayerId)
-                                </p>
-                                <p class="card-text">
-                                    <small class="text-muted">@GetRelativeTime(challenge.CreatedAt)</small>
-                                </p>
-                                <span class="badge @StatusBadgeClass(challenge.Status)">
-                                    @StatusLabel(challenge.Status)
-                                </span>
-                                @if (challenge.Status == BattleStatus.Pending)
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" data-testid="battle-error">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <MudText>@_errorMessage</MudText>
+                        <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="LoadBattlesAsync" data-testid="battle-retry-btn">Retry</MudButton>
+                    </MudStack>
+                </MudAlert>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_successMessage))
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" data-testid="battle-success">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <MudText>@_successMessage</MudText>
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => _successMessage = null)" />
+                    </MudStack>
+                </MudAlert>
+            }
+
+            <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Rounded="true" Border="true" Class="battle-tabs" data-testid="battle-tabs">
+                <MudTabPanel Text="New Challenge" Icon="@Icons.Material.Filled.SportsMma" data-testid="challenge-tab">
+                    <MudGrid Class="mt-3" Spacing="3">
+                        <MudItem xs="12" lg="5">
+                            <MudPaper Elevation="1" Class="game-panel" data-testid="challenge-card">
+                                <MudStack Spacing="2">
+                                    <MudText Typo="Typo.h6">Send a challenge</MudText>
+                                    <MudSelect T="int?" Label="Your player" @bind-Value="_selectedPlayerId" Variant="Variant.Outlined" Dense="true" data-testid="player-select">
+                                        <MudSelectItem T="int?" Value="@((int?)null)">Select a player</MudSelectItem>
+                                        @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
+                                        {
+                                            <MudSelectItem T="int?" Value="@((int?)collection.Player!.Id)">
+                                                @collection.Player!.Name - @collection.Player.Position, @collection.Player.Rarity
+                                            </MudSelectItem>
+                                        }
+                                    </MudSelect>
+
+                                    <MudTextField T="string"
+                                                  Label="Opponent username"
+                                                  @bind-Value="_opponentUsername"
+                                                  Variant="Variant.Outlined"
+                                                  Placeholder="ruckr2@ruckr.game"
+                                                  data-testid="opponent-input" />
+
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="rate-limit-info">
+                                        @_challengesSentThisHour of 10 challenges sent this hour
+                                    </MudText>
+
+                                    @if (!string.IsNullOrWhiteSpace(_formError))
+                                    {
+                                        <MudAlert Severity="Severity.Error" Dense="true">@_formError</MudAlert>
+                                    }
+
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Send"
+                                               Disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)"
+                                               OnClick="SendChallengeAsync"
+                                               data-testid="send-challenge-btn">
+                                        @(_isSubmitting ? "Sending..." : "Send Challenge")
+                                    </MudButton>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" lg="7">
+                            @if (SelectedCollection?.Player is { } player)
+                            {
+                                <MudPaper Elevation="1" Class="game-panel player-detail-panel">
+                                    <MudStack Spacing="2">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                            <div>
+                                                <MudText Typo="Typo.overline">Selected player</MudText>
+                                                <MudText Typo="Typo.h5">@player.Name</MudText>
+                                            </div>
+                                            <MudChip T="string" Color="@RarityColor(player.Rarity)" Variant="Variant.Filled">@player.Rarity</MudChip>
+                                        </MudStack>
+                                        <MudChipSet T="string">
+                                            <MudChip T="string" Variant="Variant.Outlined">@player.Position</MudChip>
+                                            <MudChip T="string" Variant="Variant.Outlined">Level @player.Level</MudChip>
+                                        </MudChipSet>
+                                        @RenderStats(player)
+                                    </MudStack>
+                                </MudPaper>
+                            }
+                            else
+                            {
+                                <MudPaper Elevation="1" Class="game-panel empty-panel">
+                                    <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudIcon Icon="@Icons.Material.Filled.Stars" Size="Size.Large" Color="Color.Secondary" />
+                                        <MudText Typo="Typo.h6">Pick a player from your collection</MudText>
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                            Recruited players show their stats here before you send a challenge.
+                                        </MudText>
+                                        <MudButton Href="/map" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map">
+                                            Recruit on map
+                                        </MudButton>
+                                    </MudStack>
+                                </MudPaper>
+                            }
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+
+                <MudTabPanel Text="@ActiveTabLabel" Icon="@Icons.Material.Filled.Bolt" data-testid="active-tab">
+                    <MudGrid Class="mt-3" Spacing="3">
+                        <MudItem xs="12" lg="6">
+                            <MudStack Spacing="2" data-testid="incoming-challenges">
+                                <MudText Typo="Typo.h6">Incoming</MudText>
+                                @if (_incomingChallenges.Count == 0)
                                 {
-                                    <small class="text-muted ms-2">Waiting for response...</small>
+                                    <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="battle-empty">
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No incoming challenges.</MudText>
+                                    </MudPaper>
                                 }
-                            </div>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
+                                @foreach (var challenge in _incomingChallenges)
+                                {
+                                    @RenderChallengeCard(challenge, incoming: true)
+                                }
+                            </MudStack>
+                        </MudItem>
+                        <MudItem xs="12" lg="6">
+                            <MudStack Spacing="2" data-testid="outgoing-challenges">
+                                <MudText Typo="Typo.h6">Outgoing</MudText>
+                                @if (_outgoingChallenges.Count == 0)
+                                {
+                                    <MudPaper Elevation="0" Class="game-panel empty-panel">
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No outgoing challenges.</MudText>
+                                    </MudPaper>
+                                }
+                                @foreach (var challenge in _outgoingChallenges)
+                                {
+                                    @RenderChallengeCard(challenge, incoming: false)
+                                }
+                            </MudStack>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+            </MudTabs>
+        </MudStack>
     }
-}
+</MudContainer>
 
-@* ---------- ACCEPT MODAL ---------- *@
 @if (_showAcceptModal && _acceptTargetBattle is not null)
 {
-    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" data-testid="accept-modal">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Pick Your Fighter</h5>
-                    <button type="button" class="btn-close" data-testid="accept-cancel-btn" @onclick="CloseAcceptModal"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Choose a player to face <strong>@_acceptTargetBattle.ChallengerId</strong>:</p>
-                    @if (_collectedPlayers.Count == 0)
+    <div class="game-modal-backdrop" data-testid="accept-modal">
+        <MudPaper Elevation="8" Class="game-modal">
+            <MudStack Spacing="2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">Pick your player</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseAcceptModal" data-testid="accept-cancel-btn" />
+                </MudStack>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Face @_acceptTargetBattle.ChallengerUsername with one of your collected players.
+                </MudText>
+                <MudSelect T="int?" Label="Your player" @bind-Value="_selectedPlayerForAccept" Variant="Variant.Outlined" Dense="true" data-testid="accept-player-select">
+                    <MudSelectItem T="int?" Value="@((int?)null)">Select a player</MudSelectItem>
+                    @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
                     {
-                        <div class="alert alert-warning">
-                            You don&apos;t have any players in your collection.
-                        </div>
+                        <MudSelectItem T="int?" Value="@((int?)collection.Player!.Id)">
+                            @collection.Player!.Name - @collection.Player.Position, @collection.Player.Rarity
+                        </MudSelectItem>
                     }
-                    else
-                    {
-                        <select class="form-select" @bind="_selectedPlayerForAccept" data-testid="accept-player-select">
-                            <option value="">-- Select your player --</option>
-                            @foreach (var c in _collectedPlayers)
-                            {
-                                if (c.Player is not null)
-                                {
-                                    <option value="@c.Player.Id">@c.Player.Name (@c.Player.Position, @c.Player.Rarity)</option>
-                                }
-                            }
-                        </select>
-                    }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-testid="accept-cancel-btn" @onclick="CloseAcceptModal">Cancel</button>
-                    <button type="button" class="btn btn-success"
-                            data-testid="accept-fight-btn"
-                            @onclick="ConfirmAcceptAsync"
-                            disabled="@(!_selectedPlayerForAccept.HasValue || _isAccepting)">
-                        @if (_isAccepting)
-                        {
-                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
-                        }
-                        Fight! ⚔️
-                    </button>
-                </div>
-            </div>
-        </div>
+                </MudSelect>
+                <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="1">
+                    <MudButton Variant="Variant.Text" OnClick="CloseAcceptModal">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Success"
+                               StartIcon="@Icons.Material.Filled.Check"
+                               Disabled="@(!_selectedPlayerForAccept.HasValue || _isAccepting)"
+                               OnClick="ConfirmAcceptAsync"
+                               data-testid="accept-fight-btn">
+                        @(_isAccepting ? "Resolving..." : "Accept and Battle")
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+        </MudPaper>
     </div>
 }
 
-@* ---------- BATTLE RESULT MODAL ---------- *@
 @if (_showResultModal && _resultToShow is { } result)
 {
     var isWinner = string.Equals(result.WinnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
-
-    <div class="modal d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" data-testid="result-modal">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header @(isWinner ? "bg-success text-white" : "bg-danger text-white")" data-testid="result-header">
-                    <h5 class="modal-title">
-                        @(isWinner ? "🏆 Victory!" : "💔 Defeat")
-                    </h5>
-                </div>
-                <div class="modal-body text-center">
-                    <div class="row mb-3">
-                        <div class="col-5">
-                            <div class="p-2 rounded @(result.WinnerUsername == _currentUsername ? "bg-success bg-opacity-10" : "bg-danger bg-opacity-10")">
-                                <h6>@result.WinnerUsername</h6>
-                                <p class="mb-0 small">@result.WinnerPlayerName</p>
-                                <span class="badge bg-success">Winner</span>
-                            </div>
-                        </div>
-                        <div class="col-2 d-flex align-items-center justify-content-center">
-                            <span class="fs-3 fw-bold">VS</span>
-                        </div>
-                        <div class="col-5">
-                            <div class="p-2 rounded @(result.LoserUsername == _currentUsername ? "bg-danger bg-opacity-10" : "bg-success bg-opacity-10")">
-                                <h6>@result.LoserUsername</h6>
-                                <p class="mb-0 small">@result.LoserPlayerName</p>
-                                <span class="badge bg-danger">Loser</span>
-                            </div>
-                        </div>
+    <div class="game-modal-backdrop" data-testid="result-modal">
+        <MudPaper Elevation="8" Class="game-modal result-modal">
+            <MudStack Spacing="3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <div>
+                        <MudText Typo="Typo.overline">Battle result</MudText>
+                        <MudText Typo="Typo.h5" Color="@(isWinner ? Color.Success : Color.Error)" data-testid="result-header">
+                            @(isWinner ? "Victory" : "Defeat")
+                        </MudText>
                     </div>
-                    <hr />
-                    <p class="mb-0">
-                        <strong>Method of Victory:</strong>
-                        <span class="badge bg-info ms-2">@result.Method</span>
-                    </p>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-primary" data-testid="result-close-btn" @onclick="DismissResultModal">Close</button>
-                </div>
-            </div>
-        </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="DismissResultModal" data-testid="result-close-btn" />
+                </MudStack>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6">
+                        <div class="result-side result-side--winner">
+                            <MudText Typo="Typo.caption">Winner</MudText>
+                            <MudText Typo="Typo.h6">@result.WinnerUsername</MudText>
+                            <MudText Typo="Typo.body2">@result.WinnerPlayerName</MudText>
+                        </div>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <div class="result-side">
+                            <MudText Typo="Typo.caption">Defeated</MudText>
+                            <MudText Typo="Typo.h6">@result.LoserUsername</MudText>
+                            <MudText Typo="Typo.body2">@result.LoserPlayerName</MudText>
+                        </div>
+                    </MudItem>
+                </MudGrid>
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    Method: @result.Method
+                </MudAlert>
+                <MudButton Href="/battles/history" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.History">
+                    View History
+                </MudButton>
+            </MudStack>
+        </MudPaper>
     </div>
 }
 
@@ -343,40 +278,41 @@
     private bool _isSubmitting;
     private bool _isAccepting;
     private string _currentUsername = string.Empty;
-    private string _activeTab = "new";
-
-    // New challenge form
+    private int _activeTabIndex;
     private string _opponentUsername = string.Empty;
     private int? _selectedPlayerId;
-
-    // Accept modal
     private bool _showAcceptModal;
-    private BattleModel? _acceptTargetBattle;
+    private BattleSummaryDto? _acceptTargetBattle;
     private int? _selectedPlayerForAccept;
-
-    // Result modal
     private bool _showResultModal;
     private BattleResult? _resultToShow;
-
-    // Rate limit tracking (local, per-session)
     private int _challengesSentThisHour;
     private DateTime _rateLimitWindowStart = DateTime.UtcNow;
-
-    // Player name lookup from inventory
     private IReadOnlyList<CollectionModel> _collectedPlayers = Array.Empty<CollectionModel>();
-
-    // Computed from BattleState
-    private List<BattleModel> _incomingChallenges => BattleState.Value.ActiveChallenges
-        .Where(b => string.Equals(b.OpponentId, _currentUsername, StringComparison.OrdinalIgnoreCase)
-                    && b.Status == BattleStatus.Pending)
-        .ToList();
-
-    private List<BattleModel> _outgoingChallenges => BattleState.Value.ActiveChallenges
-        .Where(b => string.Equals(b.ChallengerId, _currentUsername, StringComparison.OrdinalIgnoreCase))
-        .ToList();
-
-    // Track previously shown result to avoid duplicate modals
     private BattleResult? _lastShownResult;
+
+    private CollectionModel? SelectedCollection =>
+        _selectedPlayerId.HasValue ? _collectedPlayers.FirstOrDefault(c => c.PlayerId == _selectedPlayerId.Value) : null;
+
+    private List<BattleSummaryDto> _incomingChallenges => BattleState.Value.ActiveChallenges
+        .Where(b => string.Equals(b.OpponentUsername, _currentUsername, StringComparison.OrdinalIgnoreCase)
+                    && b.Status == BattleStatus.Pending)
+        .OrderByDescending(b => b.CreatedAt)
+        .ToList();
+
+    private List<BattleSummaryDto> _outgoingChallenges => BattleState.Value.ActiveChallenges
+        .Where(b => string.Equals(b.ChallengerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(b => b.CreatedAt)
+        .ToList();
+
+    private string ActiveTabLabel
+    {
+        get
+        {
+            var count = _incomingChallenges.Count + _outgoingChallenges.Count;
+            return count == 0 ? "Active" : $"Active ({count})";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -393,40 +329,29 @@
         _requiresAuth = false;
         _currentUsername = user.Identity.Name ?? string.Empty;
 
-        // Parse query params
         var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        var opponentParam = query["opponent"];
-        if (!string.IsNullOrWhiteSpace(opponentParam))
-        {
-            _opponentUsername = opponentParam;
-            _activeTab = "new";
-        }
+        _opponentUsername = query["opponent"] ?? string.Empty;
+        if (int.TryParse(query["player"], out var playerId))
+            _selectedPlayerId = playerId;
 
-        // Load collected players from inventory
         _collectedPlayers = InventoryState.Value.CollectedPlayers;
-
-        // If inventory is empty, try fetching from API
         if (_collectedPlayers.Count == 0)
         {
             try
             {
                 var collection = await ApiClient.GetCollectionAsync();
-                _collectedPlayers = collection;
-                Dispatcher.Dispatch(new FetchInventoryResultAction(collection));
+                _collectedPlayers = collection.AsReadOnly();
+                Dispatcher.Dispatch(new FetchInventoryResultAction(collection.AsReadOnly()));
             }
             catch
             {
-                // Non-critical; user can still view challenges
+                _collectedPlayers = Array.Empty<CollectionModel>();
             }
         }
 
         await LoadBattlesAsync();
-
-        // Subscribe to BattleState changes for real-time updates
         BattleState.StateChanged += OnBattleStateChanged;
-
-        // Subscribe to SignalR events for result modal (has richer data than BattleModel)
         SignalRClient.BattleResolved += OnBattleResolved;
         SignalRClient.ChallengeReceived += OnChallengeReceived;
     }
@@ -440,19 +365,18 @@
         {
             var pending = await ApiClient.GetPendingBattlesAsync();
             var history = await ApiClient.GetBattleHistoryAsync();
-
-            Dispatcher.Dispatch(new FetchBattlesResultAction(pending, history));
-
-            _isLoading = false;
+            Dispatcher.Dispatch(new FetchBattlesResultAction(pending.AsReadOnly(), history.AsReadOnly()));
         }
         catch (HttpRequestException ex)
         {
             _errorMessage = $"Failed to load battles: {ex.Message}";
-            _isLoading = false;
         }
         catch (Exception ex)
         {
             _errorMessage = $"An unexpected error occurred: {ex.Message}";
+        }
+        finally
+        {
             _isLoading = false;
         }
     }
@@ -461,11 +385,10 @@
     {
         if (!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername))
         {
-            _formError = "Please select a player and enter an opponent username.";
+            _formError = "Select a player and enter an opponent username.";
             return;
         }
 
-        // Reset rate limit window if hour has passed
         if (DateTime.UtcNow - _rateLimitWindowStart > TimeSpan.FromHours(1))
         {
             _rateLimitWindowStart = DateTime.UtcNow;
@@ -478,24 +401,18 @@
         try
         {
             var battle = await ApiClient.SendChallengeAsync(_opponentUsername.Trim(), _selectedPlayerId.Value);
-
             if (battle is not null)
             {
                 Dispatcher.Dispatch(new ChallengeSentAction(battle));
                 _challengesSentThisHour++;
-                _successMessage = $"Challenge sent to {_opponentUsername}!";
+                _successMessage = $"Challenge sent to {battle.OpponentUsername}.";
                 _opponentUsername = string.Empty;
-                _selectedPlayerId = null;
-                _formError = null;
+                _activeTabIndex = 1;
             }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
-            _formError = "Invalid request. Check the opponent username and try again.";
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Conflict)
-        {
-            _formError = "You have too many pending challenges. Wait for responses or cancel some.";
+            _formError = "Check the opponent username, selected player, and pending challenge limit.";
         }
         catch (HttpRequestException ex) when ((int?)ex.StatusCode == 429)
         {
@@ -505,17 +422,13 @@
         {
             _formError = $"Failed to send challenge: {ex.Message}";
         }
-        catch (Exception ex)
-        {
-            _formError = $"An unexpected error occurred: {ex.Message}";
-        }
         finally
         {
             _isSubmitting = false;
         }
     }
 
-    private void OpenAcceptModal(BattleModel challenge)
+    private void OpenAcceptModal(BattleSummaryDto challenge)
     {
         _acceptTargetBattle = challenge;
         _selectedPlayerForAccept = null;
@@ -539,11 +452,16 @@
         try
         {
             var battle = await ApiClient.AcceptChallengeAsync(_acceptTargetBattle.Id, _selectedPlayerForAccept.Value);
-
             if (battle is not null)
             {
-                Dispatcher.Dispatch(new ChallengeRespondedAction(_acceptTargetBattle.Id, BattleStatus.Accepted));
-                _successMessage = "Challenge accepted! Battle is underway...";
+                Dispatcher.Dispatch(new BattleCompletedAction(battle));
+                if (battle.Result is not null)
+                {
+                    _resultToShow = battle.Result;
+                    _showResultModal = true;
+                }
+                _successMessage = "Challenge accepted and resolved.";
+                await LoadBattlesAsync();
             }
         }
         catch (HttpRequestException ex)
@@ -564,6 +482,7 @@
             await ApiClient.DeclineChallengeAsync(battleId);
             Dispatcher.Dispatch(new ChallengeRespondedAction(battleId, BattleStatus.Declined));
             _successMessage = "Challenge declined.";
+            await LoadBattlesAsync();
         }
         catch (HttpRequestException ex)
         {
@@ -571,28 +490,13 @@
         }
     }
 
-    private void SwitchTab(string tab)
-    {
-        _activeTab = tab;
-        _formError = null;
-
-        if (tab == "active")
-        {
-            _ = LoadBattlesAsync();
-        }
-    }
-
-    // --- REAL-TIME HANDLERS ---
-
     private void OnBattleStateChanged(object? sender, EventArgs e)
     {
-        // State changes trigger re-render via IState subscription
         _ = InvokeAsync(StateHasChanged);
     }
 
     private void OnBattleResolved(BattleResult result)
     {
-        // Check for duplicate (same result might fire twice from SignalR + state change)
         if (_lastShownResult is { } last &&
             last.WinnerUsername == result.WinnerUsername &&
             last.LoserUsername == result.LoserUsername &&
@@ -604,14 +508,18 @@
         _lastShownResult = result;
         _resultToShow = result;
         _showResultModal = true;
-
         _ = InvokeAsync(StateHasChanged);
     }
 
     private void OnChallengeReceived(ChallengeNotification notification)
     {
-        _successMessage = $"{notification.ChallengerUsername} challenged you with {notification.PlayerName}!";
-        _ = InvokeAsync(StateHasChanged);
+        _successMessage = $"{notification.ChallengerUsername} challenged you with {notification.PlayerName}.";
+        _activeTabIndex = 1;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadBattlesAsync();
+            StateHasChanged();
+        });
     }
 
     private void DismissResultModal()
@@ -620,24 +528,56 @@
         _resultToShow = null;
     }
 
-    // --- DISPLAY HELPERS ---
+    private RenderFragment RenderChallengeCard(BattleSummaryDto challenge, bool incoming) => @<MudPaper Elevation="1" Class="game-panel challenge-card" data-testid="@(incoming ? "incoming-card" : "outgoing-card")">
+        <MudStack Spacing="2">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <div>
+                    <MudText Typo="Typo.caption">@(incoming ? "From" : "To")</MudText>
+                    <MudText Typo="Typo.h6">@(incoming ? challenge.ChallengerUsername : challenge.OpponentUsername)</MudText>
+                </div>
+                <MudChip T="string" Color="@StatusColor(challenge.Status)" Variant="Variant.Filled">@StatusLabel(challenge.Status)</MudChip>
+            </MudStack>
+            <MudText Typo="Typo.body2">
+                @(incoming ? "Their player" : "Your player"): @PlayerDisplay(incoming ? challenge.ChallengerPlayer : challenge.ChallengerPlayer)
+            </MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">@GetRelativeTime(challenge.CreatedAt)</MudText>
+            @if (incoming && challenge.Status == BattleStatus.Pending)
+            {
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check" Size="Size.Small" OnClick="() => OpenAcceptModal(challenge)" data-testid="accept-btn">
+                        Accept
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="() => DeclineChallengeAsync(challenge.Id)" data-testid="decline-btn">
+                        Decline
+                    </MudButton>
+                </MudStack>
+            }
+        </MudStack>
+    </MudPaper>;
 
-    private string GetPlayerDisplay(int playerId)
-    {
-        // Look up in inventory first
-        var collection = _collectedPlayers.FirstOrDefault(c => c.PlayerId == playerId);
-        if (collection?.Player is not null)
-        {
-            return $"{collection.Player.Name} ({collection.Player.Position}, {collection.Player.Rarity})";
-        }
+    private RenderFragment RenderStats(PlayerModel player) => @<MudStack Spacing="1">
+        @RenderStat("Speed", player.Speed, Color.Success)
+        @RenderStat("Strength", player.Strength, Color.Error)
+        @RenderStat("Agility", player.Agility, Color.Info)
+        @RenderStat("Kicking", player.Kicking, Color.Warning)
+    </MudStack>;
 
-        return $"Player #{playerId}";
-    }
+    private RenderFragment RenderStat(string label, int value, Color color) => @<div class="stat-row">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.caption">@label</MudText>
+            <MudText Typo="Typo.caption">@value / 99</MudText>
+        </MudStack>
+        <MudProgressLinear Value="@StatPercent(value)" Color="@color" Rounded="true" />
+    </div>;
+
+    private static string PlayerDisplay(BattlePlayerSummaryDto? player) =>
+        player is null ? "Unknown player" : $"{player.Name} ({player.Position}, {player.Rarity})";
+
+    private static double StatPercent(int value) => Math.Clamp(value, 0, 99) * 100.0 / 99.0;
 
     private static string GetRelativeTime(DateTime utcTime)
     {
         var elapsed = DateTime.UtcNow - utcTime;
-
         if (elapsed.TotalSeconds < 60) return "just now";
         if (elapsed.TotalMinutes < 60) return $"{(int)elapsed.TotalMinutes} min ago";
         if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
@@ -645,14 +585,14 @@
         return utcTime.ToString("MMM d");
     }
 
-    private static string StatusBadgeClass(BattleStatus status) => status switch
+    private static Color StatusColor(BattleStatus status) => status switch
     {
-        BattleStatus.Pending => "bg-warning text-dark",
-        BattleStatus.Accepted => "bg-info",
-        BattleStatus.Completed => "bg-success",
-        BattleStatus.Declined => "bg-secondary",
-        BattleStatus.Expired => "bg-dark",
-        _ => "bg-secondary"
+        BattleStatus.Pending => Color.Warning,
+        BattleStatus.Accepted => Color.Info,
+        BattleStatus.Completed => Color.Success,
+        BattleStatus.Declined => Color.Secondary,
+        BattleStatus.Expired => Color.Dark,
+        _ => Color.Default
     };
 
     private static string StatusLabel(BattleStatus status) => status switch
@@ -665,6 +605,16 @@
         _ => status.ToString()
     };
 
+    private static Color RarityColor(PlayerRarity rarity) => rarity switch
+    {
+        PlayerRarity.Common => Color.Secondary,
+        PlayerRarity.Uncommon => Color.Success,
+        PlayerRarity.Rare => Color.Primary,
+        PlayerRarity.Epic => Color.Tertiary,
+        PlayerRarity.Legendary => Color.Warning,
+        _ => Color.Default
+    };
+
     public void Dispose()
     {
         BattleState.StateChanged -= OnBattleStateChanged;
@@ -672,3 +622,80 @@
         SignalRClient.ChallengeReceived -= OnChallengeReceived;
     }
 }
+
+<style>
+    .game-page {
+        padding: 1rem;
+    }
+
+    .game-page__header {
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .game-panel {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 8px;
+        padding: 1rem;
+        background: #fff;
+    }
+
+    .empty-panel {
+        min-height: 11rem;
+        display: grid;
+        place-items: center;
+        text-align: center;
+    }
+
+    .challenge-card {
+        min-height: 10rem;
+    }
+
+    .player-detail-panel {
+        min-height: 18rem;
+    }
+
+    .stat-row {
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .game-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 2600;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(15, 23, 42, 0.55);
+    }
+
+    .game-modal {
+        width: min(560px, 100%);
+        border-radius: 8px;
+        padding: 1rem;
+    }
+
+    .result-side {
+        min-height: 7.5rem;
+        border: 1px solid rgba(15, 23, 42, 0.12);
+        border-radius: 8px;
+        padding: 0.9rem;
+        background: #f8fafc;
+    }
+
+    .result-side--winner {
+        border-color: rgba(15, 118, 110, 0.35);
+        background: #ecfdf5;
+    }
+
+    @@media (max-width: 720px) {
+        .game-page {
+            padding: 0.75rem;
+        }
+
+        .game-panel {
+            padding: 0.85rem;
+        }
+    }
+</style>

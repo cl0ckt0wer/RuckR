@@ -9,150 +9,127 @@
 
 <PageTitle>Nearby Players</PageTitle>
 
-<h1>Nearby Players</h1>
-
-@* --- AUTH CHECK --- *@
-@if (_requiresAuth)
-{
-    <p><em>Checking authentication...</em></p>
-    return;
-}
-
-@* --- LOADING --- *@
-@if (_isLoading)
-{
-    <div class="d-flex justify-content-center py-5" data-testid="nearby-loading">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-        <span class="ms-3 align-self-center"><em>Scanning for nearby players...</em></span>
-    </div>
-    return;
-}
-
-@* --- NO GPS --- *@
-@if (_gpsDisabled)
-{
-    <div class="text-center py-5" data-testid="gps-disabled-state">
-        <div style="font-size: 4rem;">📍</div>
-        <h4 class="mt-3">Enable GPS to find nearby players</h4>
-        <p class="text-muted">We need your location to show players near you.</p>
-        <button class="btn btn-primary mt-2" data-testid="gps-enable-btn" @onclick="EnableGpsAsync">
-            📡 Enable GPS
-        </button>
-    </div>
-    return;
-}
-
-@* --- ERROR --- *@
-@if (!string.IsNullOrEmpty(_errorMessage))
-{
-    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="nearby-error">
-        <span>@_errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="nearby-retry-btn" @onclick="LoadNearbyPlayersAsync">Retry</button>
-    </div>
-    return;
-}
-
-@* --- RADIUS SELECTOR --- *@
-<div class="row mb-3 g-2 align-items-end">
-    <div class="col-auto">
-        <label class="form-label mb-1">Search Radius</label>
-        <select class="form-select form-select-sm" @bind="_selectedRadiusKm" @bind:after="OnRadiusChangedAsync" data-testid="radius-selector">
-            @foreach (var r in _radiusOptions)
-            {
-                <option value="@r">@r km</option>
-            }
-        </select>
-    </div>
-    <div class="col-auto">
-        <span class="text-muted small">
-            @_nearbyPlayers.Count players found within @_selectedRadiusKm km
-        </span>
-    </div>
-</div>
-
-@* --- EMPTY STATE --- *@
-@if (_nearbyPlayers.Count == 0)
-{
-    <div class="text-center py-5" data-testid="empty-state">
-        <div style="font-size: 4rem;">🔭</div>
-        <h4 class="mt-3">No players nearby</h4>
-        <p class="text-muted">
-            Try expanding your search radius or check back later!
-        </p>
-    </div>
-    return;
-}
-
-@* --- GRID OF NEARBY PLAYERS --- *@
-<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4" data-testid="nearby-grid">
-    @foreach (var item in _sortedPlayers)
+<MudContainer MaxWidth="MaxWidth.False" Class="game-page nearby-page">
+    @if (_requiresAuth)
     {
-        var isWild = string.IsNullOrWhiteSpace(item.OwnerUsername);
-        var isSelf = !isWild && string.Equals(item.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
-        var displayDistance = FormatDistanceBucket(item.DistanceBucket);
-
-        <div class="col">
-            <div class="card h-100" data-testid="player-card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0" data-testid="player-name">@item.Name</h5>
-                </div>
-                <div class="card-body d-flex flex-column">
-                    @* Owner status — only "Wild" or "You", never another user's name *@
-                    <p class="card-text mb-1">
-                        <small class="text-muted">Creature:</small>
-                        @if (isWild)
-                        {
-                            <span class="badge bg-secondary" data-testid="owner-badge">Wild</span>
-                        }
-                        else if (isSelf)
-                        {
-                            <span class="badge bg-info" data-testid="owner-badge">You</span>
-                        }
-                        else
-                        {
-                            <span class="badge bg-light text-dark" data-testid="owner-badge">Owned</span>
-                        }
-                    </p>
-
-                    @* Position badge *@
-                    <span class="badge bg-secondary mb-2" data-testid="position-badge">@item.Position</span>
-
-                    @* Rarity badge (color-coded) *@
-                    <span class="badge @RarityBadgeClass(item.Rarity) mb-3" data-testid="rarity-badge">@item.Rarity</span>
-
-                    @* Distance bucket (prominent) — no exact meters exposed *@
-                    <div class="text-center mb-3 p-2 rounded" style="background-color: #f8f9fa;" data-testid="distance-display">
-                        <span class="fs-4 fw-bold">@displayDistance</span>
-                    </div>
-
-                    @* Action button *@
-                    <div class="mt-auto">
-                        @if (isWild)
-                        {
-                            <button class="btn btn-outline-secondary btn-sm w-100" disabled data-testid="scout-btn">
-                                🔍 Scout (Coming Soon)
-                            </button>
-                        }
-                        else if (isSelf)
-                        {
-                            <span class="text-muted small">Your player</span>
-                        }
-                        else
-                        {
-                            <button class="btn btn-primary btn-sm w-100"
-                                    data-testid="challenge-btn"
-                                    @onclick="() => ChallengePlayer(item)">
-                                ⚔️ Challenge
-                            </button>
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
+        <MudStack AlignItems="AlignItems.Center" Class="py-8">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Checking session...</MudText>
+        </MudStack>
     }
-</div>
+    else if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" data-testid="nearby-loading">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Scanning nearby players...</MudText>
+        </MudStack>
+    }
+    else if (_gpsDisabled)
+    {
+        <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="gps-disabled-state">
+            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.MyLocation" Size="Size.Large" Color="Color.Warning" />
+                <MudText Typo="Typo.h5">Enable GPS to find nearby players</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">RuckR needs your location to list nearby wild and owned players.</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.GpsFixed" OnClick="EnableGpsAsync" data-testid="gps-enable-btn">
+                    Enable GPS
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
+                <div>
+                    <MudText Typo="Typo.overline">Scouting</MudText>
+                    <MudText Typo="Typo.h4">Nearby Players</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @_nearbyPlayers.Count players found within @_selectedRadiusKm km.
+                    </MudText>
+                </div>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudSelect T="int" Label="Radius" @bind-Value="_selectedRadiusKm" @bind-Value:after="OnRadiusChangedAsync" Variant="Variant.Outlined" Dense="true" Class="radius-select" data-testid="radius-selector">
+                        @foreach (var radius in _radiusOptions)
+                        {
+                            <MudSelectItem T="int" Value="@radius">@radius km</MudSelectItem>
+                        }
+                    </MudSelect>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadNearbyPlayersAsync" data-testid="nearby-retry-btn">
+                        Refresh
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" data-testid="nearby-error">@_errorMessage</MudAlert>
+            }
+            else if (_nearbyPlayers.Count == 0)
+            {
+                <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="empty-state">
+                    <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                        <MudIcon Icon="@Icons.Material.Filled.Radar" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h5">No players nearby</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Try a wider search radius or check the map for recruits.</MudText>
+                    </MudStack>
+                </MudPaper>
+            }
+            else
+            {
+                <MudGrid Spacing="3" data-testid="nearby-grid">
+                    @foreach (var item in _sortedPlayers)
+                    {
+                        var isWild = string.IsNullOrWhiteSpace(item.OwnerUsername);
+                        var isSelf = !isWild && string.Equals(item.OwnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+
+                        <MudItem xs="12" md="6" xl="4">
+                            <MudPaper Elevation="1" Class="game-panel player-card" data-testid="player-card">
+                                <MudStack Spacing="2">
+                                    <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                                        <div>
+                                            <MudText Typo="Typo.h6" data-testid="player-name">@item.Name</MudText>
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatDistanceBucket(item.DistanceBucket)</MudText>
+                                        </div>
+                                        <MudChip T="string" Color="@OwnerColor(isWild, isSelf)" Variant="Variant.Filled" data-testid="owner-badge">
+                                            @OwnerLabel(isWild, isSelf)
+                                        </MudChip>
+                                    </MudStack>
+
+                                    <MudChipSet T="string">
+                                        <MudChip T="string" Variant="Variant.Outlined" data-testid="position-badge">@item.Position</MudChip>
+                                        <MudChip T="string" Color="@RarityColor(item.Rarity)" Variant="Variant.Filled" data-testid="rarity-badge">@item.Rarity</MudChip>
+                                    </MudChipSet>
+
+                                    <div class="distance-block" data-testid="distance-display">
+                                        <MudText Typo="Typo.h5">@FormatDistanceBucket(item.DistanceBucket)</MudText>
+                                    </div>
+
+                                    @if (isWild)
+                                    {
+                                        <MudButton Variant="Variant.Outlined" Disabled="true" StartIcon="@Icons.Material.Filled.Search" data-testid="scout-btn">
+                                            Scout Soon
+                                        </MudButton>
+                                    }
+                                    else if (isSelf)
+                                    {
+                                        <MudAlert Severity="Severity.Info" Dense="true">This player is already yours.</MudAlert>
+                                    }
+                                    else
+                                    {
+                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Bolt" OnClick="() => ChallengePlayer(item)" data-testid="challenge-btn">
+                                            Challenge Owner
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudStack>
+    }
+</MudContainer>
 
 @code {
     private bool _requiresAuth = true;
@@ -185,10 +162,7 @@
         _requiresAuth = false;
         _currentUsername = user.Identity.Name ?? string.Empty;
 
-        var lat = LocationState.Value.UserLatitude;
-        var lng = LocationState.Value.UserLongitude;
-
-        if (!lat.HasValue || !lng.HasValue)
+        if (!LocationState.Value.UserLatitude.HasValue || !LocationState.Value.UserLongitude.HasValue)
         {
             _gpsDisabled = true;
             _isLoading = false;
@@ -214,8 +188,8 @@
                 return;
             }
 
-            var radiusMeters = _selectedRadiusKm * 1000;
-            _nearbyPlayers = await ApiClient.GetNearbyPlayersAsync(lat.Value, lng.Value, radiusMeters);
+            _gpsDisabled = false;
+            _nearbyPlayers = await ApiClient.GetNearbyPlayersAsync(lat.Value, lng.Value, _selectedRadiusKm * 1000);
         }
         catch (HttpRequestException ex)
         {
@@ -231,20 +205,6 @@
         }
     }
 
-    private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
-    {
-        DistanceBucket.Within50m => "< 50m",
-        DistanceBucket.Within100m => "< 100m",
-        DistanceBucket.Within250m => "< 250m",
-        DistanceBucket.Within500m => "< 500m",
-        _ => "> 500m"
-    };
-
-    private void ChallengePlayer(NearbyPlayerDto player)
-    {
-        Navigation.NavigateTo($"/battle?player={player.PlayerId}");
-    }
-
     private async Task EnableGpsAsync()
     {
         try
@@ -253,17 +213,6 @@
             _isLoading = true;
             await GeolocationService.StartWatchAsync();
             await Task.Delay(1500);
-
-            var lat = LocationState.Value.UserLatitude;
-            var lng = LocationState.Value.UserLongitude;
-
-            if (!lat.HasValue || !lng.HasValue)
-            {
-                _gpsDisabled = true;
-                _isLoading = false;
-                return;
-            }
-
             await LoadNearbyPlayersAsync();
         }
         catch
@@ -273,18 +222,100 @@
         }
     }
 
-    private static string RarityBadgeClass(string rarity) => rarity switch
+    private void ChallengePlayer(NearbyPlayerDto player)
     {
-        "Common" => "bg-secondary",
-        "Uncommon" => "bg-success",
-        "Rare" => "bg-primary",
-        "Epic" => "bg-purple text-white",
-        "Legendary" => "bg-warning text-dark",
-        _ => "bg-secondary"
-    };
+        if (!string.IsNullOrWhiteSpace(player.OwnerUsername))
+        {
+            Navigation.NavigateTo($"/battle?opponent={Uri.EscapeDataString(player.OwnerUsername)}");
+        }
+    }
 
     private async Task OnRadiusChangedAsync()
     {
         await LoadNearbyPlayersAsync();
     }
+
+    private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
+    {
+        DistanceBucket.Within50m => "< 50m",
+        DistanceBucket.Within100m => "< 100m",
+        DistanceBucket.Within250m => "< 250m",
+        DistanceBucket.Within500m => "< 500m",
+        _ => "> 500m"
+    };
+
+    private static string OwnerLabel(bool isWild, bool isSelf)
+    {
+        if (isWild) return "Wild";
+        if (isSelf) return "You";
+        return "Owned";
+    }
+
+    private static Color OwnerColor(bool isWild, bool isSelf)
+    {
+        if (isWild) return Color.Secondary;
+        if (isSelf) return Color.Info;
+        return Color.Primary;
+    }
+
+    private static Color RarityColor(string rarity) => rarity switch
+    {
+        "Common" => Color.Secondary,
+        "Uncommon" => Color.Success,
+        "Rare" => Color.Primary,
+        "Epic" => Color.Tertiary,
+        "Legendary" => Color.Warning,
+        _ => Color.Default
+    };
 }
+
+<style>
+    .game-page {
+        padding: 1rem;
+    }
+
+    .game-page__header {
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .game-panel {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 8px;
+        padding: 1rem;
+        background: #fff;
+    }
+
+    .empty-panel {
+        min-height: 18rem;
+        display: grid;
+        place-items: center;
+        text-align: center;
+    }
+
+    .player-card {
+        min-height: 17rem;
+    }
+
+    .radius-select {
+        width: 8.5rem;
+    }
+
+    .distance-block {
+        display: grid;
+        place-items: center;
+        min-height: 4rem;
+        border-radius: 8px;
+        background: #f1f5f9;
+    }
+
+    @@media (max-width: 720px) {
+        .game-page {
+            padding: 0.75rem;
+        }
+
+        .game-panel {
+            padding: 0.85rem;
+        }
+    }
+</style>

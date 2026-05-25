@@ -45,20 +45,61 @@ public class RecruitmentController : ControllerBase
     /// <summary>Get the current user's game progress profile.</summary>
     /// <returns>The operation result.</returns>
     [HttpGet("profile")]
-    public async Task<ActionResult<GameProgressDto>> GetProfile()
+    public async Task<ActionResult<RecruitmentProfileDto>> GetProfile()
     {
         var userId = _userManager.GetUserId(User);
         if (string.IsNullOrWhiteSpace(userId))
             return Unauthorized("User identity not found.");
 
+        var now = DateTime.UtcNow;
         var profile = await _db.UserGameProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId);
-        if (profile is null)
+        var level = profile?.Level ?? 1;
+        var experience = profile?.Experience ?? 0;
+        var nextLevelExperience = level >= 100 ? experience : level * 100;
+
+        await EnsureStarterRecruitmentItemsAsync(userId, now);
+
+        var items = await _db.UserRecruitmentItems
+            .AsNoTracking()
+            .Where(i => i.UserId == userId)
+            .OrderBy(i => i.ItemKind)
+            .Select(i => new RecruitmentItemDto(i.ItemKind, i.Quantity))
+            .ToListAsync();
+
+        var active = await _db.PlayerEncounters
+            .AsNoTracking()
+            .Include(e => e.Player)
+            .Where(e => e.UserId == userId
+                && e.ExpiresAtUtc > now
+                && e.RecruitmentStartedAtUtc != null
+                && e.RecruitmentCompletesAtUtc != null)
+            .OrderBy(e => e.RecruitmentCompletesAtUtc)
+            .FirstOrDefaultAsync();
+
+        ActiveRecruitmentSessionDto? activeDto = null;
+        if (active?.Player is not null && active.RecruitmentStartedAtUtc is { } startedAt && active.RecruitmentCompletesAtUtc is { } completesAt)
         {
-            return Ok(new GameProgressDto(Level: 1, Experience: 0, NextLevelExperience: 100));
+            activeDto = new ActiveRecruitmentSessionDto(
+                active.Id,
+                active.PlayerId,
+                active.Player.Name,
+                active.Player.Position.ToString(),
+                active.Player.Rarity.ToString(),
+                startedAt,
+                completesAt,
+                active.RecruitmentBaseDurationSeconds,
+                active.RecruitmentRequiredDurationSeconds,
+                Math.Max(0, (int)Math.Ceiling((completesAt - now).TotalSeconds)),
+                active.RecruitmentLocalPlayerCount,
+                active.RecruitmentItemKind,
+                BuildRecruitmentBoosts(
+                    active.RecruitmentBaseDurationSeconds,
+                    active.RecruitmentRequiredDurationSeconds,
+                    active.RecruitmentLocalPlayerCount,
+                    active.RecruitmentItemKind));
         }
 
-        var nextLevelExperience = profile.Level >= 100 ? profile.Experience : profile.Level * 100;
-        return Ok(new GameProgressDto(profile.Level, profile.Experience, nextLevelExperience));
+        return Ok(new RecruitmentProfileDto(level, experience, nextLevelExperience, items, activeDto));
     }
 
     /// <summary>Attempt to recruit a player from an encounter.</summary>
@@ -113,6 +154,56 @@ public class RecruitmentController : ControllerBase
         };
         _locationTracker.UpdatePosition(userId, requestPosition);
         return requestPosition;
+    }
+
+    private async Task EnsureStarterRecruitmentItemsAsync(string userId, DateTime now)
+    {
+        var hasAnyItems = await _db.UserRecruitmentItems.AnyAsync(i => i.UserId == userId);
+        if (hasAnyItems)
+            return;
+
+        _db.UserRecruitmentItems.AddRange(
+            new UserRecruitmentItemModel { UserId = userId, ItemKind = RecruitmentItemKind.Chips, Quantity = 3, UpdatedAtUtc = now },
+            new UserRecruitmentItemModel { UserId = userId, ItemKind = RecruitmentItemKind.Beer, Quantity = 2, UpdatedAtUtc = now },
+            new UserRecruitmentItemModel { UserId = userId, ItemKind = RecruitmentItemKind.Whiskey, Quantity = 1, UpdatedAtUtc = now });
+        await _db.SaveChangesAsync();
+    }
+
+    private static IReadOnlyList<RecruitmentBoostDto> BuildRecruitmentBoosts(
+        int baseSeconds,
+        int requiredSeconds,
+        int localPlayerCount,
+        RecruitmentItemKind itemKind)
+    {
+        var boosts = new List<RecruitmentBoostDto>();
+        var cappedLocalCount = Math.Min(localPlayerCount, 4);
+        var localPercent = cappedLocalCount switch
+        {
+            1 => 15,
+            2 => 25,
+            3 => 35,
+            >= 4 => 45,
+            _ => 0
+        };
+
+        if (localPercent > 0)
+        {
+            boosts.Add(new RecruitmentBoostDto($"{localPlayerCount} local recruiter{(localPlayerCount == 1 ? string.Empty : "s")}", 0, localPercent));
+        }
+
+        if (itemKind != RecruitmentItemKind.None)
+        {
+            var label = itemKind switch
+            {
+                RecruitmentItemKind.Chips => "Chips",
+                RecruitmentItemKind.Beer => "Beer",
+                RecruitmentItemKind.Whiskey => "Whiskey",
+                _ => itemKind.ToString()
+            };
+            boosts.Add(new RecruitmentBoostDto(label, Math.Max(0, baseSeconds - requiredSeconds), 0));
+        }
+
+        return boosts;
     }
 }
 

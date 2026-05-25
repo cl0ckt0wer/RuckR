@@ -82,6 +82,7 @@ namespace RuckR.Server.Services
 
             await SeedUsersAsync();
             await SeedCollectionsAsync();
+            await SeedRecruitmentItemsAsync();
         }
 
         private async Task SeedDefaultPitchAsync()
@@ -217,12 +218,18 @@ namespace RuckR.Server.Services
                 if (user is null)
                     continue;
 
-                var existingCollectionCount = await _db.Collections.CountAsync(c => c.UserId == user.Id);
-                if (existingCollectionCount >= sizePerUser)
+                var existingPlayerIds = await _db.Collections
+                    .Where(c => c.UserId == user.Id)
+                    .Select(c => c.PlayerId)
+                    .ToListAsync();
+                if (existingPlayerIds.Count >= sizePerUser)
                     continue;
 
-                var remaining = sizePerUser - existingCollectionCount;
-                var assignedPlayers = playerIds.OrderBy(_ => rng.Next()).Take(remaining);
+                var remaining = sizePerUser - existingPlayerIds.Count;
+                var assignedPlayers = playerIds
+                    .Except(existingPlayerIds)
+                    .OrderBy(_ => rng.Next())
+                    .Take(remaining);
 
                 foreach (var playerId in assignedPlayers)
                 {
@@ -243,6 +250,59 @@ namespace RuckR.Server.Services
 
             _logger.LogInformation("Seeded collections for {Count} users ({Size} players each).",
                 config.Users.Count, sizePerUser);
+        }
+
+        private async Task SeedRecruitmentItemsAsync()
+        {
+            var seedFile = Path.Combine(_env.ContentRootPath, "seed-users.json");
+            if (!File.Exists(seedFile))
+                return;
+
+            var json = await File.ReadAllTextAsync(seedFile);
+            var config = JsonSerializer.Deserialize<SeedUsersConfig>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            if (config?.Users is null)
+                return;
+
+            var now = DateTime.UtcNow;
+            foreach (var u in config.Users)
+            {
+                var user = await _userManager.FindByNameAsync(u.Email);
+                if (user is null)
+                    continue;
+
+                await EnsureRecruitmentItemAsync(user.Id, RecruitmentItemKind.Chips, 3, now);
+                await EnsureRecruitmentItemAsync(user.Id, RecruitmentItemKind.Beer, 2, now);
+                await EnsureRecruitmentItemAsync(user.Id, RecruitmentItemKind.Whiskey, 1, now);
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        private async Task EnsureRecruitmentItemAsync(string userId, RecruitmentItemKind itemKind, int minimumQuantity, DateTime now)
+        {
+            var item = await _db.UserRecruitmentItems
+                .FirstOrDefaultAsync(i => i.UserId == userId && i.ItemKind == itemKind);
+            if (item is null)
+            {
+                _db.UserRecruitmentItems.Add(new UserRecruitmentItemModel
+                {
+                    UserId = userId,
+                    ItemKind = itemKind,
+                    Quantity = minimumQuantity,
+                    UpdatedAtUtc = now
+                });
+                return;
+            }
+
+            if (item.Quantity < minimumQuantity)
+            {
+                item.Quantity = minimumQuantity;
+                item.UpdatedAtUtc = now;
+            }
         }
 
         private sealed record SeedUsersConfig(

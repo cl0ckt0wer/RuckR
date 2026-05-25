@@ -39,8 +39,10 @@ public static class BattleReducers
     {
         var list = state.ActiveChallenges.ToList();
         var idx = list.FindIndex(b => b.Id == action.BattleId);
-        if (idx >= 0)
-            list[idx] = CloneWithStatus(list[idx], action.NewStatus);
+        if (idx < 0)
+            return state;
+
+        list[idx] = CloneWithStatus(list[idx], action.NewStatus);
 
         // If completed/declined/expired, move from active to history
         if (action.NewStatus == BattleStatus.Completed
@@ -98,18 +100,6 @@ public static class BattleReducers
     public static BattleState ReduceBattleError(BattleState state, BattleErrorAction action) =>
         state with { IsLoading = false, ErrorMessage = action.ErrorMessage };
 
-    private static BattleModel CloneWithStatus(BattleModel source, BattleStatus newStatus) =>
-        new BattleModel
-        {
-            Id = source.Id,
-            ChallengerId = source.ChallengerId,
-            OpponentId = source.OpponentId,
-            ChallengerPlayerId = source.ChallengerPlayerId,
-            OpponentPlayerId = source.OpponentPlayerId,
-            Status = newStatus,
-            WinnerId = source.WinnerId,
-            CreatedAt = source.CreatedAt,
-            ResolvedAt = source.ResolvedAt,
-            RowVersion = source.RowVersion
-        };
+    private static BattleSummaryDto CloneWithStatus(BattleSummaryDto source, BattleStatus newStatus) =>
+        source with { Status = newStatus };
 }

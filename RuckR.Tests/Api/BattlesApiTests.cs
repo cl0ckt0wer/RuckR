@@ -104,11 +104,14 @@ public class BattlesApiTests : IAsyncLifetime
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var battle = await response.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
         Assert.Equal(_userIdA, battle.ChallengerId);
         Assert.Equal(_userIdB, battle.OpponentId);
+        Assert.Equal(_usernameA, battle.ChallengerUsername);
+        Assert.Equal(_usernameB, battle.OpponentUsername);
         Assert.Equal(_playerIdA, battle.ChallengerPlayerId);
+        Assert.NotNull(battle.ChallengerPlayer);
         Assert.Equal(BattleStatus.Pending, battle.Status);
         Assert.True(battle.Id > 0);
     }
@@ -171,19 +174,19 @@ public class BattlesApiTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// POST /battles/{id}/accept transitions to Accepted.
+    /// POST /battles/{id}/accept resolves the challenge immediately.
     /// </summary>
     /// <summary>
-    /// Verifies accept Transitions To Accepted.
+    /// Verifies accept resolves to completed.
     /// </summary>
     [Fact]
-    public async Task Accept_TransitionsToAccepted()
+    public async Task Accept_ResolvesToCompleted()
     {
         // Arrange: User A challenges User B
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
 
         // Act: User B accepts with their player
@@ -192,10 +195,13 @@ public class BattlesApiTests : IAsyncLifetime
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, acceptResponse.StatusCode);
-        var acceptedBattle = await acceptResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var acceptedBattle = await acceptResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(acceptedBattle);
-        Assert.Equal(BattleStatus.Accepted, acceptedBattle.Status);
+        Assert.Equal(BattleStatus.Completed, acceptedBattle.Status);
         Assert.Equal(_playerIdB, acceptedBattle.OpponentPlayerId);
+        Assert.NotNull(acceptedBattle.Result);
+        Assert.Contains(acceptedBattle.WinnerId, new[] { _userIdA, _userIdB });
+        Assert.Contains(acceptedBattle.WinnerUsername, new[] { _usernameA, _usernameB });
     }
 
     /// <summary>
@@ -211,7 +217,7 @@ public class BattlesApiTests : IAsyncLifetime
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
 
         // Act: User B declines
@@ -223,7 +229,7 @@ public class BattlesApiTests : IAsyncLifetime
         // Verify via history that it's declined
         var historyResponse = await _clientB.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-        var history = await historyResponse.Content.ReadFromJsonAsync<List<BattleModel>>();
+        var history = await historyResponse.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
         Assert.NotNull(history);
         var declinedBattle = history!.FirstOrDefault(b => b.Id == battle.Id);
         Assert.NotNull(declinedBattle);
@@ -244,22 +250,24 @@ public class BattlesApiTests : IAsyncLifetime
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
 
         // Act & Assert: User A sees outgoing pending challenge
         var pendingA = await _clientA.GetAsync("/api/battles/pending");
         Assert.Equal(HttpStatusCode.OK, pendingA.StatusCode);
-        var listA = await pendingA.Content.ReadFromJsonAsync<List<BattleModel>>();
+        var listA = await pendingA.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
         Assert.NotNull(listA);
         Assert.Contains(listA!, b => b.Id == battle.Id && b.ChallengerId == _userIdA);
+        Assert.Contains(listA!, b => b.Id == battle.Id && b.OpponentUsername == _usernameB);
 
         // Act & Assert: User B sees incoming pending challenge
         var pendingB = await _clientB.GetAsync("/api/battles/pending");
         Assert.Equal(HttpStatusCode.OK, pendingB.StatusCode);
-        var listB = await pendingB.Content.ReadFromJsonAsync<List<BattleModel>>();
+        var listB = await pendingB.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
         Assert.NotNull(listB);
         Assert.Contains(listB!, b => b.Id == battle.Id && b.OpponentId == _userIdB);
+        Assert.Contains(listB!, b => b.Id == battle.Id && b.ChallengerUsername == _usernameA);
     }
 
     /// <summary>
@@ -275,7 +283,7 @@ public class BattlesApiTests : IAsyncLifetime
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
 
         // Decline to move to history
@@ -284,13 +292,13 @@ public class BattlesApiTests : IAsyncLifetime
         // Act: check history for both users
         var historyA = await _clientA.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyA.StatusCode);
-        var listA = await historyA.Content.ReadFromJsonAsync<List<BattleModel>>();
+        var listA = await historyA.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
         Assert.NotNull(listA);
         Assert.Contains(listA!, b => b.Id == battle.Id);
 
         var historyB = await _clientB.GetAsync("/api/battles/history");
         Assert.Equal(HttpStatusCode.OK, historyB.StatusCode);
-        var listB = await historyB.Content.ReadFromJsonAsync<List<BattleModel>>();
+        var listB = await historyB.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
         Assert.NotNull(listB);
         Assert.Contains(listB!, b => b.Id == battle.Id);
     }
@@ -309,7 +317,7 @@ public class BattlesApiTests : IAsyncLifetime
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
 
         // Act: two independent clients for the opponent try to accept simultaneously.
@@ -349,7 +357,7 @@ public class BattlesApiTests : IAsyncLifetime
             $"/api/battles/challenge?idempotencyKey={idempotencyKey}",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
-        var battle1 = await r1.Content.ReadFromJsonAsync<BattleModel>();
+        var battle1 = await r1.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle1);
 
         // Second request with same key
@@ -357,7 +365,7 @@ public class BattlesApiTests : IAsyncLifetime
             $"/api/battles/challenge?idempotencyKey={idempotencyKey}",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
-        var battle2 = await r2.Content.ReadFromJsonAsync<BattleModel>();
+        var battle2 = await r2.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle2);
 
         // Same battle returned
@@ -377,18 +385,15 @@ public class BattlesApiTests : IAsyncLifetime
         var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
             new ChallengeRequest(_usernameB, _playerIdA));
         Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleModel>();
+        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
-
-        // Simulate stale RowVersion by reading and modifying the row version
-        var staleRowVersion = battle.RowVersion;
 
         // First accept succeeds
         var accept1 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
             new AcceptChallengeRequest(_playerIdB));
         Assert.Equal(HttpStatusCode.OK, accept1.StatusCode);
 
-        // Second accept should conflict (battle already Accepted)
+        // Second accept should conflict or observe the already-completed state.
         var accept2 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
             new AcceptChallengeRequest(_playerIdB));
 

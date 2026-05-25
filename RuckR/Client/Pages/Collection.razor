@@ -7,203 +7,144 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 
-<style>
-    .bg-purple { background-color: #6f42c1; color: #fff; }
-</style>
-
 <PageTitle>My Collection</PageTitle>
 
-<h3>My Collection</h3>
-
-@* --- AUTH CHECK --- *@
-@if (requiresAuth)
-{
-    <p><em>Checking authentication...</em></p>
-    return;
-}
-
-@* --- LOADING --- *@
-@if (isLoading)
-{
-    <div class="d-flex justify-content-center py-5" data-testid="collection-loading">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Loading...</span>
-        </div>
-        <span class="ms-3 align-self-center"><em>Loading your collection...</em></span>
-    </div>
-    return;
-}
-
-@* --- ERROR --- *@
-@if (!string.IsNullOrEmpty(errorMessage))
-{
-    <div class="alert alert-danger d-flex align-items-center" role="alert" data-testid="collection-error">
-        <span>@errorMessage</span>
-        <button class="btn btn-outline-danger btn-sm ms-auto" data-testid="collection-retry-btn" @onclick="LoadCollectionAsync">Retry</button>
-    </div>
-    return;
-}
-
-@* --- EMPTY STATE --- *@
-@if (collectedPlayers is null || collectedPlayers.Count == 0)
-{
-    <div class="text-center py-5" data-testid="empty-state">
-        <div style="font-size: 4rem;">🏉</div>
-        <h4 class="mt-3">You haven't discovered any players yet!</h4>
-        <p class="text-muted">Head to the map to find pitches and capture players.</p>
-        <button class="btn btn-primary btn-lg" @onclick="GoToMap">
-            Explore Map
-        </button>
-    </div>
-    return;
-}
-
-@* --- GRID OF COLLECTED PLAYERS --- *@
-<div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4" data-testid="collection-grid">
-    @foreach (var item in collectedPlayers)
+<MudContainer MaxWidth="MaxWidth.False" Class="game-page collection-page">
+    @if (requiresAuth)
     {
-        var player = item.Player;
-        var isExpanded = expandedId == item.Id;
-        var pitchName = item.CapturedAtPitchId is not null && pitchNames.TryGetValue(item.CapturedAtPitchId.Value, out var pn) ? pn : "Unknown pitch";
-
-        <div class="col">
-            <div class="card h-100 @(isExpanded ? "border-primary border-2" : "")" data-testid="collection-card">
-                @* --- CARD HEADER: Player Name + Favorite Toggle --- *@
-                <div class="card-header d-flex justify-content-between align-items-center"
-                     role="button" @onclick="() => ToggleExpand(item.Id)">
-                    <h5 class="card-title mb-0" data-testid="collection-player-name">@player!.Name</h5>
-                    <button class="btn btn-link p-0 border-0 text-decoration-none"
-                            data-testid="favorite-btn"
-                            style="font-size: 1.5rem;"
-                            @onclick="(e) => ToggleFavoriteAsync(item)"
-                            @onclick:stopPropagation="true"
-                            title="@(item.IsFavorite ? "Remove favorite" : "Add favorite")">
-                        @(item.IsFavorite ? "⭐" : "☆")
-                    </button>
-                </div>
-
-                <div class="card-body" role="button" @onclick="() => ToggleExpand(item.Id)">
-                    @* --- Position Badge --- *@
-                    <span class="badge bg-secondary me-1" data-testid="collection-position-badge">@player.Position</span>
-
-                    @* --- Rarity Badge (color-coded) --- *@
-                    <span class="badge @RarityBadgeClass(player.Rarity)" data-testid="collection-rarity-badge">@player.Rarity</span>
-
-                    @* --- Capture Info --- *@
-                    <p class="card-text mt-2 mb-1">
-                        <small class="text-muted">
-                            Captured on @item.CapturedAt.ToString("MMM dd, yyyy") at @pitchName
-                        </small>
-                    </p>
-
-                    @* --- Mini stat preview --- *@
-                    <div class="row g-1 mt-2">
-                        <div class="col-6"><small><strong>Speed:</strong> @player.Speed</small></div>
-                        <div class="col-6"><small><strong>Strength:</strong> @player.Strength</small></div>
-                        <div class="col-6"><small><strong>Agility:</strong> @player.Agility</small></div>
-                        <div class="col-6"><small><strong>Kicking:</strong> @player.Kicking</small></div>
-                    </div>
-                </div>
-
-                @* --- EXPANDED DETAIL --- *@
-                @if (isExpanded)
-                {
-                    <div class="card-footer bg-light" data-testid="collection-detail">
-                        @* --- Full Stat Bars --- *@
-                        <h6>Stats</h6>
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between">
-                                <small>Speed</small>
-                                <small>@player.Speed / 99</small>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-success"
-                                     role="progressbar"
-                                     style="width: @(player.Speed * 100 / 99)%;"
-                                     aria-valuenow="@player.Speed" aria-valuemin="0" aria-valuemax="99"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between">
-                                <small>Strength</small>
-                                <small>@player.Strength / 99</small>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-danger"
-                                     role="progressbar"
-                                     style="width: @(player.Strength * 100 / 99)%;"
-                                     aria-valuenow="@player.Strength" aria-valuemin="0" aria-valuemax="99"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between">
-                                <small>Agility</small>
-                                <small>@player.Agility / 99</small>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-info"
-                                     role="progressbar"
-                                     style="width: @(player.Agility * 100 / 99)%;"
-                                     aria-valuenow="@player.Agility" aria-valuemin="0" aria-valuemax="99"></div>
-                            </div>
-                        </div>
-                        <div class="mb-2">
-                            <div class="d-flex justify-content-between">
-                                <small>Kicking</small>
-                                <small>@player.Kicking / 99</small>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-warning"
-                                     role="progressbar"
-                                     style="width: @(player.Kicking * 100 / 99)%;"
-                                     aria-valuenow="@player.Kicking" aria-valuemin="0" aria-valuemax="99"></div>
-                            </div>
-                        </div>
-
-                        @* --- Team Name --- *@
-                        @if (!string.IsNullOrWhiteSpace(player.Team))
-                        {
-                            <div class="mb-2">
-                                <strong>Team:</strong> @player.Team
-                            </div>
-                        }
-
-                        @* --- Rarity with Description --- *@
-                        <div class="mb-2">
-                            <strong>Rarity:</strong>
-                            <span class="badge @RarityBadgeClass(player.Rarity)">@player.Rarity</span>
-                            <small class="text-muted ms-1">@RarityDescription(player.Rarity)</small>
-                        </div>
-
-                        @* --- Bio --- *@
-                        @if (!string.IsNullOrWhiteSpace(player.Bio))
-                        {
-                            <div class="mb-2">
-                                <strong>Bio:</strong>
-                                <p class="mb-0 fst-italic">@player.Bio</p>
-                            </div>
-                        }
-
-                        @* --- Capture Location + Date --- *@
-                        <div class="mb-2">
-                            <small class="text-muted">
-                                Captured at: <strong>@pitchName</strong> on @item.CapturedAt.ToString("MMM dd, yyyy")
-                            </small>
-                        </div>
-
-                        @* --- Challenge Button --- *@
-                        <button class="btn btn-outline-primary btn-sm w-100"
-                                data-testid="collection-challenge-btn"
-                                @onclick="(e) => ChallengePlayer(item)"
-                                @onclick:stopPropagation="true">
-                            Challenge Someone
-                        </button>
-                    </div>
-                }
-            </div>
-        </div>
+        <MudStack AlignItems="AlignItems.Center" Class="py-8">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Checking session...</MudText>
+        </MudStack>
     }
-</div>
+    else if (isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Class="py-8" data-testid="collection-loading">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2">Loading your collection...</MudText>
+        </MudStack>
+    }
+    else if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" data-testid="collection-error">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                <MudText>@errorMessage</MudText>
+                <MudButton Variant="Variant.Text" Color="Color.Inherit" OnClick="LoadCollectionAsync" data-testid="collection-retry-btn">Retry</MudButton>
+            </MudStack>
+        </MudAlert>
+    }
+    else if (collectedPlayers is null || collectedPlayers.Count == 0)
+    {
+        <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="empty-state">
+            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.TravelExplore" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h5">No recruited players yet</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Open the map and recruit players from nearby parks.</MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map" OnClick="GoToMap">
+                    Explore Map
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+    else
+    {
+        <MudStack Spacing="3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
+                <div>
+                    <MudText Typo="Typo.overline">Roster</MudText>
+                    <MudText Typo="Typo.h4">My Collection</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        @collectedPlayers.Count recruited players ready for challenges.
+                    </MudText>
+                </div>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Href="/map" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map">
+                        Recruit
+                    </MudButton>
+                    <MudButton Href="/battle" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Bolt">
+                        Battle
+                    </MudButton>
+                </MudStack>
+            </MudStack>
+
+            <MudGrid Spacing="3" data-testid="collection-grid">
+                @foreach (var item in collectedPlayers.OrderByDescending(c => c.IsFavorite).ThenBy(c => c.Player?.Name))
+                {
+                    var player = item.Player;
+                    if (player is null)
+                    {
+                        continue;
+                    }
+
+                    var isExpanded = expandedId == item.Id;
+                    var pitchName = item.CapturedAtPitchId is not null && pitchNames.TryGetValue(item.CapturedAtPitchId.Value, out var pn) ? pn : "Unknown pitch";
+
+                    <MudItem xs="12" md="6" xl="4">
+                        <MudPaper Elevation="1" Class="@CollectionCardClass(isExpanded)" data-testid="collection-card">
+                            <MudStack Spacing="2">
+                                <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                                    <div role="button" @onclick="() => ToggleExpand(item.Id)" class="collection-card__title">
+                                        <MudText Typo="Typo.h6" data-testid="collection-player-name">@player.Name</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            Captured @item.CapturedAt.ToString("MMM dd, yyyy") at @pitchName
+                                        </MudText>
+                                    </div>
+                                    <MudIconButton Icon="@(item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                                                   Color="@(item.IsFavorite ? Color.Warning : Color.Default)"
+                                                   OnClick="() => ToggleFavoriteAsync(item)"
+                                                   title="@(item.IsFavorite ? "Remove favorite" : "Add favorite")"
+                                                   data-testid="favorite-btn" />
+                                </MudStack>
+
+                                <MudChipSet T="string">
+                                    <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" data-testid="collection-position-badge">@player.Position</MudChip>
+                                    <MudChip T="string" Color="@RarityColor(player.Rarity)" Variant="Variant.Filled" data-testid="collection-rarity-badge">@player.Rarity</MudChip>
+                                    <MudChip T="string" Variant="Variant.Outlined">Level @player.Level</MudChip>
+                                </MudChipSet>
+
+                                @RenderCompactStats(player)
+
+                                <MudStack Row="true" Spacing="1">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               StartIcon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                               OnClick="() => ToggleExpand(item.Id)">
+                                        @(isExpanded ? "Less" : "Details")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.Bolt"
+                                               OnClick="() => ChallengePlayer(item)"
+                                               data-testid="collection-challenge-btn">
+                                        Challenge
+                                    </MudButton>
+                                </MudStack>
+
+                                @if (isExpanded)
+                                {
+                                    <div class="collection-card__detail" data-testid="collection-detail">
+                                        @RenderFullStats(player)
+                                        @if (!string.IsNullOrWhiteSpace(player.Team))
+                                        {
+                                            <MudText Typo="Typo.body2"><strong>Team:</strong> @player.Team</MudText>
+                                        }
+                                        <MudText Typo="Typo.body2">
+                                            <strong>Rarity:</strong> @RarityDescription(player.Rarity)
+                                        </MudText>
+                                        @if (!string.IsNullOrWhiteSpace(player.Bio))
+                                        {
+                                            <MudText Typo="Typo.body2">@player.Bio</MudText>
+                                        }
+                                    </div>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudStack>
+    }
+</MudContainer>
 
 @code {
     private bool requiresAuth = true;
@@ -244,7 +185,7 @@
             var collection = await ApiClient.GetCollectionAsync();
             Dispatcher.Dispatch(new FetchInventoryResultAction(collection.AsReadOnly()));
 
-            if (collection is { Count: > 0 })
+            if (collection.Count > 0)
             {
                 try
                 {
@@ -253,7 +194,6 @@
                 }
                 catch
                 {
-                    // Non-critical: if pitches fail to load, we show "Unknown pitch"
                     pitchNames = new();
                 }
             }
@@ -281,7 +221,6 @@
 
     private async Task ToggleFavoriteAsync(CollectionModel item)
     {
-        // Optimistic update: toggle locally immediately
         var previousValue = item.IsFavorite;
         item.IsFavorite = !item.IsFavorite;
         Dispatcher.Dispatch(new ToggleFavoriteAction(item.Id));
@@ -292,9 +231,8 @@
         }
         catch
         {
-            // Revert on failure
             item.IsFavorite = previousValue;
-            Dispatcher.Dispatch(new ToggleFavoriteAction(item.Id)); // toggle back
+            Dispatcher.Dispatch(new ToggleFavoriteAction(item.Id));
             errorMessage = "Failed to update favorite. Please try again.";
         }
     }
@@ -304,28 +242,111 @@
         Navigation.NavigateTo($"/battle?player={item.PlayerId}");
     }
 
-    private void NavigateToMap()
-    {
-        Navigation.NavigateTo("/map");
-    }
+    private RenderFragment RenderCompactStats(PlayerModel player) => @<MudGrid Spacing="1">
+        <MudItem xs="6"><MudText Typo="Typo.caption">Speed <strong>@player.Speed</strong></MudText></MudItem>
+        <MudItem xs="6"><MudText Typo="Typo.caption">Strength <strong>@player.Strength</strong></MudText></MudItem>
+        <MudItem xs="6"><MudText Typo="Typo.caption">Agility <strong>@player.Agility</strong></MudText></MudItem>
+        <MudItem xs="6"><MudText Typo="Typo.caption">Kicking <strong>@player.Kicking</strong></MudText></MudItem>
+    </MudGrid>;
 
-    private static string RarityBadgeClass(PlayerRarity rarity) => rarity switch
+    private RenderFragment RenderFullStats(PlayerModel player) => @<MudStack Spacing="1" Class="collection-stats">
+        @RenderStat("Speed", player.Speed, Color.Success)
+        @RenderStat("Strength", player.Strength, Color.Error)
+        @RenderStat("Agility", player.Agility, Color.Info)
+        @RenderStat("Kicking", player.Kicking, Color.Warning)
+    </MudStack>;
+
+    private RenderFragment RenderStat(string label, int value, Color color) => @<div class="stat-row">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.caption">@label</MudText>
+            <MudText Typo="Typo.caption">@value / 99</MudText>
+        </MudStack>
+        <MudProgressLinear Value="@StatPercent(value)" Color="@color" Rounded="true" />
+    </div>;
+
+    private static string CollectionCardClass(bool expanded) => expanded
+        ? "game-panel collection-card collection-card--expanded"
+        : "game-panel collection-card";
+
+    private static double StatPercent(int value) => Math.Clamp(value, 0, 99) * 100.0 / 99.0;
+
+    private static Color RarityColor(PlayerRarity rarity) => rarity switch
     {
-        PlayerRarity.Common => "bg-secondary",
-        PlayerRarity.Uncommon => "bg-success",
-        PlayerRarity.Rare => "bg-primary",
-        PlayerRarity.Epic => "bg-purple",
-        PlayerRarity.Legendary => "bg-warning text-dark",
-        _ => "bg-secondary"
+        PlayerRarity.Common => Color.Secondary,
+        PlayerRarity.Uncommon => Color.Success,
+        PlayerRarity.Rare => Color.Primary,
+        PlayerRarity.Epic => Color.Tertiary,
+        PlayerRarity.Legendary => Color.Warning,
+        _ => Color.Default
     };
 
     private static string RarityDescription(PlayerRarity rarity) => rarity switch
     {
-        PlayerRarity.Common => "Common — widespread, solid fundamentals.",
-        PlayerRarity.Uncommon => "Uncommon — above average, a step above the rest.",
-        PlayerRarity.Rare => "Rare — hard to find, exceptional talent.",
-        PlayerRarity.Epic => "Epic — legendary potential, a game-changer.",
-        PlayerRarity.Legendary => "Legendary — one of a kind, the ultimate prize.",
-        _ => ""
+        PlayerRarity.Common => "Common player with reliable fundamentals.",
+        PlayerRarity.Uncommon => "Above-average player with useful upside.",
+        PlayerRarity.Rare => "Hard-to-find player with strong match impact.",
+        PlayerRarity.Epic => "High-impact player for serious challenges.",
+        PlayerRarity.Legendary => "Top-tier player and a major battle threat.",
+        _ => string.Empty
     };
 }
+
+<style>
+    .game-page {
+        padding: 1rem;
+    }
+
+    .game-page__header {
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .game-panel {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 8px;
+        padding: 1rem;
+        background: #fff;
+    }
+
+    .empty-panel {
+        min-height: 18rem;
+        display: grid;
+        place-items: center;
+        text-align: center;
+    }
+
+    .collection-card {
+        min-height: 19rem;
+    }
+
+    .collection-card--expanded {
+        border-color: rgba(15, 118, 110, 0.4);
+    }
+
+    .collection-card__title {
+        min-width: 0;
+        cursor: pointer;
+    }
+
+    .collection-card__detail {
+        display: grid;
+        gap: 0.75rem;
+        border-top: 1px solid rgba(15, 23, 42, 0.08);
+        padding-top: 0.75rem;
+    }
+
+    .stat-row {
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    @@media (max-width: 720px) {
+        .game-page {
+            padding: 0.75rem;
+        }
+
+        .game-panel {
+            padding: 0.85rem;
+        }
+    }
+</style>

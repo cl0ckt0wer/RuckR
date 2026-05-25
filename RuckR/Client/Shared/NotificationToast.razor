@@ -6,6 +6,7 @@
 @inject IState<BattleState> BattleState
 @inject IDispatcher Dispatcher
 @inject SignalRClientService SignalRClient
+@inject ApiClientService ApiClient
 @inject NavigationManager Navigation
 
 <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999;" data-testid="toast-container">
@@ -115,8 +116,40 @@
 
     private async Task AcceptChallengeAsync(int challengeId)
     {
-        Navigation.NavigateTo("/battle");
-        _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+        try
+        {
+            var collection = await ApiClient.GetCollectionAsync();
+            var selected = collection.FirstOrDefault(c => c.Player is not null);
+            if (selected is null)
+            {
+                Navigation.NavigateTo("/battle");
+                _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+                return;
+            }
+
+            var battle = await ApiClient.AcceptChallengeAsync(challengeId, selected.PlayerId);
+            if (battle is not null)
+            {
+                Dispatcher.Dispatch(new BattleCompletedAction(battle));
+                if (battle.Result is not null)
+                {
+                    AddToast(new ToastItem(
+                        Id: Guid.NewGuid(),
+                        Title: "🏆 Battle Complete!",
+                        Message: $"{battle.Result.WinnerUsername} defeated {battle.Result.LoserUsername}",
+                        Type: ToastType.Result,
+                        CreatedAt: DateTime.UtcNow,
+                        Duration: TimeSpan.FromSeconds(5)));
+                }
+            }
+
+            _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+        }
+        catch
+        {
+            Navigation.NavigateTo("/battle");
+            _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+        }
     }
 
     private async Task DeclineChallengeAsync(int challengeId)

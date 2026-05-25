@@ -311,18 +311,35 @@ public class ApiClientService
         }
     }
 
+    /// <summary>
+    /// Gets the full recruitment profile, including progress, items, and active session.
+    /// </summary>
+    /// <returns>Recruitment profile summary.</returns>
+    public async Task<RecruitmentProfileDto?> GetRecruitmentProfileAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<RecruitmentProfileDto>("api/recruitment/profile");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch recruitment profile");
+            return null;
+        }
+    }
+
     // Battles
     /// <summary>
     /// Sends a new battle challenge.
     /// </summary>
     /// <param name="opponentUsername">Opponent user name.</param>
     /// <param name="selectedPlayerId">Challenger collection player identifier.</param>
-    /// <returns>Created <see cref="BattleModel"/>.</returns>
-    public async Task<BattleModel?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
+    /// <returns>Created battle summary.</returns>
+    public async Task<BattleSummaryDto?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
     {
         var response = await _http.PostAsJsonAsync("api/battles/challenge", new ChallengeRequest(opponentUsername, selectedPlayerId));
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<BattleModel>();
+        return await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
     }
 
     /// <summary>
@@ -330,12 +347,12 @@ public class ApiClientService
     /// </summary>
     /// <param name="battleId">Challenge identifier.</param>
     /// <param name="selectedPlayerId">Selected player identifier.</param>
-    /// <returns>Updated battle model.</returns>
-    public async Task<BattleModel?> AcceptChallengeAsync(int battleId, int selectedPlayerId)
+    /// <returns>Resolved battle summary.</returns>
+    public async Task<BattleSummaryDto?> AcceptChallengeAsync(int battleId, int selectedPlayerId)
     {
         var response = await _http.PostAsJsonAsync($"api/battles/{battleId}/accept", new AcceptChallengeRequest(selectedPlayerId));
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<BattleModel>();
+        return await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
     }
 
     /// <summary>
@@ -352,18 +369,18 @@ public class ApiClientService
     /// Gets pending battles for the current user.
     /// </summary>
     /// <returns>Pending battle list.</returns>
-    public async Task<List<BattleModel>> GetPendingBattlesAsync()
+    public async Task<List<BattleSummaryDto>> GetPendingBattlesAsync()
     {
-        return await _http.GetFromJsonAsync<List<BattleModel>>("api/battles/pending") ?? new();
+        return await _http.GetFromJsonAsync<List<BattleSummaryDto>>("api/battles/pending") ?? new();
     }
 
     /// <summary>
     /// Gets completed battle history for the current user.
     /// </summary>
     /// <returns>Battle history list.</returns>
-    public async Task<List<BattleModel>> GetBattleHistoryAsync()
+    public async Task<List<BattleSummaryDto>> GetBattleHistoryAsync()
     {
-        return await _http.GetFromJsonAsync<List<BattleModel>>("api/battles/history") ?? new();
+        return await _http.GetFromJsonAsync<List<BattleSummaryDto>>("api/battles/history") ?? new();
     }
 
     // Helper
