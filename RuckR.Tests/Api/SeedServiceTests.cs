@@ -76,6 +76,36 @@ public class SeedServiceTests
         }
     }
 
+    [Fact]
+    public async Task SeedIfEmptyAsync_WithChangedSeedPassword_RefreshesExistingSeedUsers()
+    {
+        var previousPassword = Environment.GetEnvironmentVariable("RUCKR_SEED_USER_PASSWORD");
+        var firstPassword = $"Seed-{Guid.NewGuid():N}aA1!";
+        var secondPassword = $"Seed-{Guid.NewGuid():N}bB2!";
+        Environment.SetEnvironmentVariable("RUCKR_SEED_USER_PASSWORD", firstPassword);
+
+        await using var scope = await CreateSeedScopeAsync();
+        try
+        {
+            await scope.SeedService.SeedIfEmptyAsync();
+            var user = await scope.UserManager.FindByEmailAsync("ruckr1@ruckr.game");
+            Assert.NotNull(user);
+            Assert.True(await scope.UserManager.CheckPasswordAsync(user!, firstPassword));
+
+            Environment.SetEnvironmentVariable("RUCKR_SEED_USER_PASSWORD", secondPassword);
+            await scope.SeedService.SeedIfEmptyAsync();
+
+            user = await scope.UserManager.FindByEmailAsync("ruckr1@ruckr.game");
+            Assert.NotNull(user);
+            Assert.False(await scope.UserManager.CheckPasswordAsync(user!, firstPassword));
+            Assert.True(await scope.UserManager.CheckPasswordAsync(user!, secondPassword));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RUCKR_SEED_USER_PASSWORD", previousPassword);
+        }
+    }
+
     private static async Task<SeedTestScope> CreateSeedScopeAsync()
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "ruckr-seed-tests", Guid.NewGuid().ToString("N"));
@@ -121,6 +151,7 @@ public class SeedServiceTests
             provider,
             serviceScope,
             db,
+            serviceScope.ServiceProvider.GetRequiredService<UserManager<IdentityUser>>(),
             serviceScope.ServiceProvider.GetRequiredService<SeedService>(),
             tempRoot);
     }
@@ -130,10 +161,13 @@ public class SeedServiceTests
         ServiceProvider provider,
         IServiceScope serviceScope,
         RuckRDbContext db,
+        UserManager<IdentityUser> userManager,
         SeedService seedService,
         string tempRoot) : IAsyncDisposable
     {
         public RuckRDbContext Db { get; } = db;
+
+        public UserManager<IdentityUser> UserManager { get; } = userManager;
 
         public SeedService SeedService { get; } = seedService;
 

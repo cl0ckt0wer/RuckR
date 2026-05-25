@@ -158,7 +158,10 @@ namespace RuckR.Server.Services
             {
                 var existing = await _userManager.FindByEmailAsync(u.Email);
                 if (existing is not null)
+                {
+                    await RefreshSeedUserPasswordAsync(existing, seedPassword, u.Username);
                     continue;
+                }
 
                 var user = new IdentityUser
                 {
@@ -182,6 +185,29 @@ namespace RuckR.Server.Services
                 "Seed users ready. Use any of the {Count} accounts configured in seed-users.json: {Usernames}",
                 config.Users.Count,
                 string.Join(", ", config.Users.Select(u => u.Username)));
+        }
+
+        private async Task RefreshSeedUserPasswordAsync(IdentityUser user, string seedPassword, string username)
+        {
+            IdentityResult result;
+            if (await _userManager.HasPasswordAsync(user))
+            {
+                var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                result = await _userManager.ResetPasswordAsync(user, token, seedPassword);
+            }
+            else
+            {
+                result = await _userManager.AddPasswordAsync(user, seedPassword);
+            }
+
+            if (result.Succeeded)
+            {
+                _logger.LogInformation("  Refreshed seed user password: {Username}", username);
+                return;
+            }
+
+            _logger.LogWarning("  Failed to refresh seed user {Username}: {Errors}",
+                username, string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
         private async Task SeedCollectionsAsync()
