@@ -38,7 +38,7 @@
                     </MudAlert>
                 }
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.GpsFixed" OnClick="EnableGpsAsync" data-testid="gps-enable-btn">
-                    @(IsLocationPermissionDenied ? "Check Again" : "Enable GPS")
+                    @(IsLocationSearchPending ? "Checking GPS" : IsLocationPermissionDenied ? "Check Again" : "Enable GPS")
                 </MudButton>
             </MudStack>
         </MudPaper>
@@ -147,17 +147,29 @@
     private int _selectedRadiusKm = 10;
     private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
 
+    private bool IsLocationSearchPending =>
+        GameMap.ShouldMonitorLocationSearch(
+            LocationState.Value.ErrorMessage,
+            LocationState.Value.SearchStartedAtUtc,
+            LocationState.Value.LastErrorAtUtc,
+            DateTime.UtcNow);
+
     private bool IsLocationPermissionDenied =>
-        LocationState.Value.PermissionStatus == GeolocationPermissionStatus.Denied
-        || GameMap.IsLocationPermissionDenied(LocationState.Value.ErrorMessage);
+        !IsLocationSearchPending
+        && (LocationState.Value.PermissionStatus == GeolocationPermissionStatus.Denied
+            || GameMap.IsLocationPermissionDenied(LocationState.Value.ErrorMessage));
 
-    private string GpsDisabledTitle => IsLocationPermissionDenied
-        ? "Location permission is off"
-        : "Enable GPS to find nearby players";
+    private string GpsDisabledTitle => IsLocationSearchPending
+        ? "Checking GPS"
+        : IsLocationPermissionDenied
+            ? "Location permission is off"
+            : "Enable GPS to find nearby players";
 
-    private string GpsDisabledBody => IsLocationPermissionDenied
-        ? "Nearby scouting still needs your browser to allow Location for this site."
-        : "RuckR needs your location to list nearby wild and owned players.";
+    private string GpsDisabledBody => IsLocationSearchPending
+        ? "Waiting for the browser to finish location permission and GPS lock."
+        : IsLocationPermissionDenied
+            ? "Nearby scouting still needs your browser to allow Location for this site."
+            : "RuckR needs your location to list nearby wild and owned players.";
 
     private IEnumerable<NearbyPlayerDto> _sortedPlayers =>
         _nearbyPlayers

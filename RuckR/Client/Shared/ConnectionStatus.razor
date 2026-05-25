@@ -179,7 +179,9 @@
         LocationState.Value.IsWatching,
         LocationState.Value.ErrorMessage,
         LastKnownPosition,
-        MaxActionAccuracyMeters);
+        MaxActionAccuracyMeters,
+        LocationState.Value.SearchStartedAtUtc,
+        LocationState.Value.LastErrorAtUtc);
     private GeoPosition? LastKnownPosition =>
         LocationState.Value.UserLatitude.HasValue && LocationState.Value.UserLongitude.HasValue
             ? new GeoPosition

@@ -134,6 +134,15 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
                 Timeout = 10_000
             });
 
+            var initialReadinessText = await page.GetByTestId("gps-readiness").InnerTextAsync();
+            Assert.True(
+                initialReadinessText.Contains("GPS needed", StringComparison.OrdinalIgnoreCase)
+                || initialReadinessText.Contains("Location permission is off", StringComparison.OrdinalIgnoreCase));
+            await page.WaitForFunctionAsync(
+                @"() => document.querySelector('[data-testid=""gps-readiness""]')?.innerText?.toLowerCase().includes('location permission is off') === true",
+                null,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+
             Assert.Contains("Location permission is off", await page.GetByTestId("gps-readiness").InnerTextAsync(), StringComparison.OrdinalIgnoreCase);
             Assert.True(await page.GetByTestId("gps-permission-help").IsVisibleAsync());
             Assert.Contains("Check again", await page.GetByTestId("gps-retry-btn").InnerTextAsync(), StringComparison.OrdinalIgnoreCase);

@@ -24,6 +24,17 @@ public enum GeolocationPermissionStatus
 }
 
 /// <summary>
+/// Shared timing policy for browser geolocation state transitions.
+/// </summary>
+public static class LocationSearchPolicy
+{
+    /// <summary>
+    /// Time to treat early permission errors as provisional while the browser may still resolve a GPS fix.
+    /// </summary>
+    public static readonly TimeSpan PendingErrorGracePeriod = TimeSpan.FromSeconds(8);
+}
+
+/// <summary>
 /// Location feature state (watch status and latest user coordinates).
 /// </summary>
 [FeatureState]
@@ -58,6 +69,16 @@ public record LocationState
     /// Last browser geolocation error code, when available.
     /// </summary>
     public int? LastErrorCode { get; init; }
+
+    /// <summary>
+    /// UTC time when the latest browser location search started.
+    /// </summary>
+    public DateTime? SearchStartedAtUtc { get; init; }
+
+    /// <summary>
+    /// UTC time when the latest browser geolocation error was observed.
+    /// </summary>
+    public DateTime? LastErrorAtUtc { get; init; }
 
     /// <summary>
     /// Current browser location permission state.

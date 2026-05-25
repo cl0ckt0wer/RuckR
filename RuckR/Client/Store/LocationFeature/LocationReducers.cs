@@ -23,7 +23,28 @@ public static class LocationReducers
             AccuracyMeters = action.Accuracy,
             ErrorMessage = null,
             LastErrorCode = null,
+            SearchStartedAtUtc = null,
+            LastErrorAtUtc = null,
             PermissionStatus = GeolocationPermissionStatus.Granted
+        };
+    }
+
+    /// <summary>
+    /// Marks a fresh browser geolocation search.
+    /// </summary>
+    /// <param name="state">Current location state.</param>
+    /// <param name="action">Search start action.</param>
+    /// <returns>Updated location state.</returns>
+    [ReducerMethod]
+    public static LocationState ReduceStartLocationSearch(LocationState state, StartLocationSearchAction action)
+    {
+        return state with
+        {
+            IsWatching = true,
+            ErrorMessage = null,
+            LastErrorCode = null,
+            SearchStartedAtUtc = action.StartedAtUtc,
+            LastErrorAtUtc = null
         };
     }
 
@@ -57,7 +78,33 @@ public static class LocationReducers
             ErrorMessage = action.ErrorMessage,
             LastErrorCode = action.ErrorCode,
             IsWatching = false,
+            LastErrorAtUtc = action.ErrorAtUtc ?? DateTime.UtcNow,
             PermissionStatus = permissionStatus
+        };
+    }
+
+    /// <summary>
+    /// Ends the provisional search window after an early error.
+    /// </summary>
+    /// <param name="state">Current location state.</param>
+    /// <param name="action">Search expiration action.</param>
+    /// <returns>Updated location state.</returns>
+    [ReducerMethod]
+    public static LocationState ReduceLocationSearchExpired(LocationState state, LocationSearchExpiredAction action)
+    {
+        if (state.UserLatitude.HasValue && state.UserLongitude.HasValue)
+        {
+            return state;
+        }
+
+        if (state.SearchStartedAtUtc is null || string.IsNullOrWhiteSpace(state.ErrorMessage))
+        {
+            return state;
+        }
+
+        return state with
+        {
+            SearchStartedAtUtc = null
         };
     }
 

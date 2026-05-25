@@ -1972,7 +1972,9 @@
         LocationState.Value.IsWatching,
         LocationState.Value.ErrorMessage,
         _lastKnownPosition,
-        MaxRecruitAccuracyMeters);
+        MaxRecruitAccuracyMeters,
+        LocationState.Value.SearchStartedAtUtc,
+        LocationState.Value.LastErrorAtUtc);
 
     private string? GpsActionHint => BuildGpsActionHint(GpsStatus, MaxRecruitAccuracyMeters);
 
@@ -2220,8 +2222,18 @@
         bool isWatching,
         string? errorMessage,
         GeoPosition? lastKnownPosition,
-        double maxActionAccuracyMeters)
+        double maxActionAccuracyMeters,
+        DateTime? searchStartedAtUtc = null,
+        DateTime? lastErrorAtUtc = null,
+        DateTime? nowUtc = null)
     {
+        var now = nowUtc ?? DateTime.UtcNow;
+        var isMonitoringLocationSearch = ShouldMonitorLocationSearch(
+            errorMessage,
+            searchStartedAtUtc,
+            lastErrorAtUtc,
+            now);
+
         if (!hasApiKey)
         {
             return new GpsStatusView(
@@ -2229,6 +2241,16 @@
                 "Map offline",
                 "Map services are not configured.",
                 "offline",
+                null);
+        }
+
+        if (!string.IsNullOrWhiteSpace(errorMessage) && isMonitoringLocationSearch)
+        {
+            return new GpsStatusView(
+                GpsStatusKind.Searching,
+                "Checking GPS",
+                "Waiting for the browser to finish location permission and GPS lock.",
+                "searching",
                 null);
         }
 
@@ -2246,8 +2268,8 @@
         {
             return new GpsStatusView(
                 GpsStatusKind.Searching,
-                isWatching ? "Searching" : "GPS idle",
-                isWatching
+                isWatching || isMonitoringLocationSearch ? "Searching" : "GPS idle",
+                isWatching || isMonitoringLocationSearch
                     ? "Waiting for browser location."
                     : "Enable GPS to unlock distance checks.",
                 "searching",
@@ -2356,6 +2378,32 @@
         && (errorMessage.Contains("permission", StringComparison.OrdinalIgnoreCase)
             || errorMessage.Contains("denied", StringComparison.OrdinalIgnoreCase)
             || errorMessage.Contains("site settings", StringComparison.OrdinalIgnoreCase));
+
+    public static bool ShouldMonitorLocationSearch(
+        string? errorMessage,
+        DateTime? searchStartedAtUtc,
+        DateTime? lastErrorAtUtc,
+        DateTime nowUtc)
+    {
+        if (searchStartedAtUtc is null)
+        {
+            return false;
+        }
+
+        if (nowUtc < searchStartedAtUtc.Value)
+        {
+            return true;
+        }
+
+        if (nowUtc - searchStartedAtUtc.Value > LocationSearchPolicy.PendingErrorGracePeriod)
+        {
+            return false;
+        }
+
+        return string.IsNullOrWhiteSpace(errorMessage)
+            || IsLocationPermissionDenied(errorMessage)
+            || lastErrorAtUtc is null;
+    }
 
     private static string EncounterRarityBadgeClass(string rarity) => rarity switch
     {

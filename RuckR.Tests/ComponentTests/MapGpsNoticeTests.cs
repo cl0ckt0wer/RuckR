@@ -1,4 +1,5 @@
 using RuckR.Shared.Models;
+using RuckR.Client.Store.LocationFeature;
 using Microsoft.Extensions.Configuration;
 using MapPage = RuckR.Client.Pages.GameMap;
 
@@ -171,6 +172,52 @@ public class MapGpsNoticeTests
         Assert.Contains("location permission", MapPage.BuildGpsActionHint(status, 50), StringComparison.OrdinalIgnoreCase);
         Assert.Equal("Location permission is off", MapPage.BuildGpsNoticeTitle(status));
         Assert.Contains("browser location permission", MapPage.BuildGpsNoticeBody(status), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies early permission errors are treated as an active GPS search.
+    /// </summary>
+    [Fact]
+    public void BuildGpsStatus_WhenPermissionErrorDuringSearchGrace_ReturnsSearching()
+    {
+        var startedAt = new DateTime(2026, 5, 25, 12, 0, 0, DateTimeKind.Utc);
+
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: false,
+            errorMessage: "Location permission is off.",
+            lastKnownPosition: null,
+            maxActionAccuracyMeters: 50,
+            searchStartedAtUtc: startedAt,
+            lastErrorAtUtc: startedAt.AddSeconds(1),
+            nowUtc: startedAt.AddSeconds(3));
+
+        Assert.Equal(MapPage.GpsStatusKind.Searching, status.Kind);
+        Assert.Equal("Checking GPS", status.Label);
+        Assert.Null(status.AccuracyText);
+        Assert.Equal("Waiting for GPS before checking range.", MapPage.BuildGpsActionHint(status, 50));
+    }
+
+    /// <summary>
+    /// Verifies permission errors become blocked after the browser search grace window expires.
+    /// </summary>
+    [Fact]
+    public void BuildGpsStatus_WhenPermissionErrorAfterSearchGrace_ReturnsBlocked()
+    {
+        var startedAt = new DateTime(2026, 5, 25, 12, 0, 0, DateTimeKind.Utc);
+
+        var status = MapPage.BuildGpsStatus(
+            hasApiKey: true,
+            isWatching: false,
+            errorMessage: "Location permission is off.",
+            lastKnownPosition: null,
+            maxActionAccuracyMeters: 50,
+            searchStartedAtUtc: startedAt,
+            lastErrorAtUtc: startedAt.AddSeconds(1),
+            nowUtc: startedAt.Add(LocationSearchPolicy.PendingErrorGracePeriod).AddMilliseconds(1));
+
+        Assert.Equal(MapPage.GpsStatusKind.Blocked, status.Kind);
+        Assert.Equal("GPS blocked", status.Label);
     }
 
     /// <summary>

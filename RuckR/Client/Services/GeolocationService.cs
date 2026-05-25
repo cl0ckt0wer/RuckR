@@ -17,6 +17,7 @@ public class GeolocationService : IGeolocationService
     private IJSObjectReference? _geoModule;
     private DotNetObjectReference<GeolocationService>? _dotNetRef;
     private double? _watchId;
+    private CancellationTokenSource? _searchMonitorCts;
     private DateTime? _lastPositionUpdate;
     private GeoPosition? _lastAcceptedPosition;
     private double _emaLat;
@@ -84,34 +85,39 @@ public class GeolocationService : IGeolocationService
     {
         var options = new PositionOptions(false, 15000, 5000);
 
+        StopWatch();
+        BeginLocationSearch(DateTime.UtcNow);
+
         var module = await GetGeoModuleAsync();
         var permissionStatus = await ReadPermissionStatusAsync(module);
         _dispatcher.Dispatch(new SetLocationPermissionAction(permissionStatus));
-        StopWatch();
-
-        if (permissionStatus == GeolocationPermissionStatus.Denied)
-        {
-            _dispatcher.Dispatch(new LocationErrorAction(
-                BuildLocationErrorMessage(PermissionDeniedErrorCode, null),
-                PermissionDeniedErrorCode,
-                GeolocationPermissionStatus.Denied));
-            return;
-        }
 
         if (permissionStatus == GeolocationPermissionStatus.Unavailable)
         {
-            _dispatcher.Dispatch(new LocationErrorAction(
-                BuildLocationErrorMessage(GeolocationUnavailableErrorCode, null),
-                GeolocationUnavailableErrorCode,
-                GeolocationPermissionStatus.Unavailable));
+            DispatchLocationError(GeolocationUnavailableErrorCode, null);
             return;
         }
 
-        _dotNetRef = DotNetObjectReference.Create(this);
-        _watchId = await module.InvokeAsync<double>(
-            "watchPosition", _dotNetRef, options);
+        if (permissionStatus == GeolocationPermissionStatus.Denied)
+        {
+            _logger.LogInformation(
+                "Permissions API reported geolocation denied; starting watchPosition anyway to avoid stale permission state.");
+        }
 
-        _dispatcher.Dispatch(new SetGpsWatchingAction(true));
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            _watchId = await module.InvokeAsync<double>(
+                "watchPosition", _dotNetRef, options);
+
+            _dispatcher.Dispatch(new SetGpsWatchingAction(true));
+        }
+        catch (JSException ex)
+        {
+            var errorCode = InferErrorCode(ex.Message);
+            DispatchLocationError(errorCode, ex.Message);
+            _logger.LogWarning(ex, "StartWatchAsync: JS error msg={Msg}", ex.Message);
+        }
     }
 
     /// <summary>
@@ -155,6 +161,7 @@ public class GeolocationService : IGeolocationService
                 _lastAcceptedPosition = geoPos;
                 _emaLat = geoPos.Latitude;
                 _emaLng = geoPos.Longitude;
+                CancelLocationSearchMonitor();
 
                 _dispatcher.Dispatch(new UpdatePositionAction(geoPos.Latitude, geoPos.Longitude, accuracy));
                 PositionChanged?.Invoke(geoPos);
@@ -198,12 +205,13 @@ public class GeolocationService : IGeolocationService
                 smoothedPos.Latitude, smoothedPos.Longitude,
                 alpha, displacement);
 
+            CancelLocationSearchMonitor();
             _dispatcher.Dispatch(new UpdatePositionAction(smoothedPos.Latitude, smoothedPos.Longitude, accuracy));
             PositionChanged?.Invoke(smoothedPos);
         }
         catch (Exception ex)
         {
-            _dispatcher.Dispatch(new LocationErrorAction(ex.Message));
+            _dispatcher.Dispatch(new LocationErrorAction(ex.Message, ErrorAtUtc: DateTime.UtcNow));
         }
     }
 
@@ -215,16 +223,15 @@ public class GeolocationService : IGeolocationService
     {
         _logger.LogWarning("GetCurrentPositionAsync: starting via JS interop");
 
+        BeginLocationSearch(DateTime.UtcNow);
+
         var module = await GetGeoModuleAsync();
         var permissionStatus = await ReadPermissionStatusAsync(module);
         _dispatcher.Dispatch(new SetLocationPermissionAction(permissionStatus));
 
-        if (permissionStatus == GeolocationPermissionStatus.Denied)
+        if (permissionStatus == GeolocationPermissionStatus.Unavailable)
         {
-            _dispatcher.Dispatch(new LocationErrorAction(
-                BuildLocationErrorMessage(PermissionDeniedErrorCode, null),
-                PermissionDeniedErrorCode,
-                GeolocationPermissionStatus.Denied));
+            DispatchLocationError(GeolocationUnavailableErrorCode, null);
             return null;
         }
 
@@ -238,6 +245,7 @@ public class GeolocationService : IGeolocationService
                 "GetCurrentPositionAsync: success lat={Lat}, lng={Lng}",
                 pos.Coords.Latitude, pos.Coords.Longitude);
 
+            CancelLocationSearchMonitor();
             return new GeoPosition
             {
                 Latitude = pos.Coords.Latitude,
@@ -253,7 +261,8 @@ public class GeolocationService : IGeolocationService
             _dispatcher.Dispatch(new LocationErrorAction(
                 BuildLocationErrorMessage(errorCode, ex.Message),
                 errorCode,
-                permissionStatusFromError));
+                permissionStatusFromError,
+                DateTime.UtcNow));
 
             _logger.LogWarning(
                 ex,
@@ -271,10 +280,7 @@ public class GeolocationService : IGeolocationService
     [JSInvokable]
     public void OnErrorFromJs(int code, string message)
     {
-        _dispatcher.Dispatch(new LocationErrorAction(
-            BuildLocationErrorMessage(code, message),
-            code,
-            PermissionStatusFromErrorCode(code)));
+        DispatchLocationError(code, message);
     }
 
     /// <summary>
@@ -282,6 +288,8 @@ public class GeolocationService : IGeolocationService
     /// </summary>
     public void StopWatch()
     {
+        CancelLocationSearchMonitor();
+
         if (_watchId.HasValue)
         {
             _geoModule?.InvokeVoidAsync("clearWatch", _watchId.Value);
@@ -291,6 +299,49 @@ public class GeolocationService : IGeolocationService
         _lastAcceptedPosition = null;
         _dotNetRef?.Dispose();
         _dotNetRef = null;
+    }
+
+    private void BeginLocationSearch(DateTime startedAtUtc)
+    {
+        CancelLocationSearchMonitor();
+        _dispatcher.Dispatch(new StartLocationSearchAction(startedAtUtc));
+
+        var monitorCts = new CancellationTokenSource();
+        _searchMonitorCts = monitorCts;
+        _ = ExpireLocationSearchAsync(monitorCts.Token);
+    }
+
+    private async Task ExpireLocationSearchAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(LocationSearchPolicy.PendingErrorGracePeriod, cancellationToken);
+            _dispatcher.Dispatch(new LocationSearchExpiredAction(DateTime.UtcNow));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void CancelLocationSearchMonitor()
+    {
+        if (_searchMonitorCts is null)
+        {
+            return;
+        }
+
+        _searchMonitorCts.Cancel();
+        _searchMonitorCts.Dispose();
+        _searchMonitorCts = null;
+    }
+
+    private void DispatchLocationError(int code, string? browserMessage)
+    {
+        _dispatcher.Dispatch(new LocationErrorAction(
+            BuildLocationErrorMessage(code, browserMessage),
+            code,
+            PermissionStatusFromErrorCode(code),
+            DateTime.UtcNow));
     }
 
     /// <summary>
