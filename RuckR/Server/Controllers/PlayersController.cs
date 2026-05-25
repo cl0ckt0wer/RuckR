@@ -16,25 +16,31 @@ namespace RuckR.Server.Controllers
     [Authorize]
     public class PlayersController : ControllerBase
     {
+        private static readonly TimeSpan NearbyOwnerPositionMaxAge = TimeSpan.FromSeconds(60);
+
         private readonly RuckRDbContext _db;
         private readonly ILogger<PlayersController> _logger;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IRateLimitService _rateLimitService;
+        private readonly ILocationTracker _locationTracker;
     /// <summary>Initializes a new instance of <see cref="PlayersController"/>.</summary>
     /// <param name="db">The database context.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="userManager">The identity user manager.</param>
     /// <param name="rateLimitService">The rate limit service.</param>
+    /// <param name="locationTracker">The live user location tracker.</param>
     public PlayersController(
             RuckRDbContext db,
             ILogger<PlayersController> logger,
             UserManager<IdentityUser> userManager,
-            IRateLimitService rateLimitService)
+            IRateLimitService rateLimitService,
+            ILocationTracker locationTracker)
         {
             _db = db;
             _logger = logger;
             _userManager = userManager;
             _rateLimitService = rateLimitService;
+            _locationTracker = locationTracker;
         }
 
         /// <summary>Get players with optional filtering by position, rarity, or name.</summary>
@@ -88,7 +94,7 @@ namespace RuckR.Server.Controllers
 
         /// <summary>
         /// GET /api/players/nearby — returns players within radius, using DistanceBucket instead of exact distance.
-        /// Does NOT expose OwnerUsername to prevent location triangulation.
+        /// Wild players are found by spawn point; owned players are found by recent owner GPS position.
         /// </summary>
         /// <summary>Get nearby players by GPS coordinate and radius.</summary>
         /// <param name="lat">The lat.</param>
@@ -125,7 +131,7 @@ namespace RuckR.Server.Controllers
 
             var point = new Point(lng, lat) { SRID = 4326 };
 
-            var nearbyQuery =
+            var spawnNearbyPlayers = await (
                 from p in _db.Players
                 where p.SpawnLocation != null && p.SpawnLocation!.Distance(point) <= effectiveRadius
                 orderby p.SpawnLocation!.Distance(point)
@@ -140,9 +146,77 @@ namespace RuckR.Server.Controllers
                     p.Rarity.ToString(),
                     GeoPosition.GetDistanceBucket(p.SpawnLocation!.Distance(point)),
                     u != null ? u.UserName! : null!
-                );
+                )).ToListAsync();
 
-            return await nearbyQuery.ToListAsync();
+            var liveOwnedPlayers = await GetLiveOwnedPlayersNearAsync(lat, lng, effectiveRadius);
+
+            var keyedResults = new Dictionary<(int PlayerId, string OwnerUsername), NearbyPlayerDto>();
+            foreach (var player in spawnNearbyPlayers)
+            {
+                keyedResults[(player.PlayerId, player.OwnerUsername ?? string.Empty)] = player;
+            }
+
+            foreach (var player in liveOwnedPlayers)
+            {
+                keyedResults[(player.PlayerId, player.OwnerUsername ?? string.Empty)] = player;
+            }
+
+            return keyedResults.Values
+                .OrderBy(p => (int)p.DistanceBucket)
+                .ThenBy(p => p.Name)
+                .ThenBy(p => p.OwnerUsername)
+                .ToList();
+        }
+
+        private async Task<IReadOnlyList<NearbyPlayerDto>> GetLiveOwnedPlayersNearAsync(
+            double lat,
+            double lng,
+            double radiusMeters)
+        {
+            var origin = new GeoPosition { Latitude = lat, Longitude = lng };
+            var nearbyOwnerDistances = _locationTracker
+                .GetRecentPositions(NearbyOwnerPositionMaxAge)
+                .Select(entry => new
+                {
+                    UserId = entry.Key,
+                    DistanceMeters = GeoPosition.HaversineDistance(origin, entry.Value.Position)
+                })
+                .Where(entry => entry.DistanceMeters <= radiusMeters)
+                .ToDictionary(entry => entry.UserId, entry => entry.DistanceMeters);
+
+            if (nearbyOwnerDistances.Count == 0)
+            {
+                return Array.Empty<NearbyPlayerDto>();
+            }
+
+            var nearbyUserIds = nearbyOwnerDistances.Keys.ToList();
+            var usernames = await _db.Users
+                .Where(u => nearbyUserIds.Contains(u.Id))
+                .Select(u => new { u.Id, u.UserName })
+                .ToDictionaryAsync(u => u.Id, u => u.UserName ?? string.Empty);
+
+            var ownedPlayers = await _db.Collections
+                .Where(c => nearbyUserIds.Contains(c.UserId))
+                .Join(_db.Players,
+                    collection => collection.PlayerId,
+                    player => player.Id,
+                    (collection, player) => new
+                    {
+                        collection.UserId,
+                        Player = player
+                    })
+                .ToListAsync();
+
+            return ownedPlayers
+                .Where(entry => usernames.ContainsKey(entry.UserId))
+                .Select(entry => new NearbyPlayerDto(
+                    entry.Player.Id,
+                    entry.Player.Name,
+                    entry.Player.Position.ToString(),
+                    entry.Player.Rarity.ToString(),
+                    GeoPosition.GetDistanceBucket(nearbyOwnerDistances[entry.UserId]),
+                    usernames[entry.UserId]))
+                .ToList();
         }
     }
 }

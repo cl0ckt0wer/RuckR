@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using NetTopologySuite.Geometries;
 using RuckR.Shared.Models;
 using RuckR.Tests.Fixtures;
 
@@ -30,6 +31,8 @@ public class PlayersApiTests : IAsyncLifetime
     /// </summary>
     public async Task InitializeAsync()
     {
+        _factory.LocationTracker.ClearAll();
+
         var username = $"playerapi_{Guid.NewGuid():N}";
         _userId = await _factory.CreateTestUserAsync(username, "TestPass123!");
         _client = _factory.CreateAuthenticatedClient(_userId, username);
@@ -40,6 +43,7 @@ public class PlayersApiTests : IAsyncLifetime
     /// </summary>
     public async Task DisposeAsync()
     {
+        _factory.LocationTracker.ClearAll();
         _client?.Dispose();
     }
 
@@ -138,6 +142,104 @@ public class PlayersApiTests : IAsyncLifetime
             Assert.True((int)players[i - 1].DistanceBucket <= (int)players[i].DistanceBucket,
                 $"Players not sorted by distance bucket at index {i}");
         }
+    }
+
+    /// <summary>
+    /// Verifies get Players Nearby Includes Owned Players For Nearby Tracked Users.
+    /// </summary>
+    [Fact]
+    public async Task GetPlayersNearby_IncludesOwnedPlayersForNearbyTrackedUsers()
+    {
+        var otherUsername = $"nearby_owner_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        var playerId = 0;
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var player = new PlayerModel
+            {
+                Name = $"Live Owner Test {Guid.NewGuid():N}",
+                Position = PlayerPosition.FlyHalf,
+                Rarity = PlayerRarity.Common,
+                Level = 1,
+                Speed = 50,
+                Strength = 50,
+                Agility = 50,
+                Kicking = 50,
+                SpawnLocation = new Point(-74.0060, 40.7128) { SRID = 4326 }
+            };
+            db.Players.Add(player);
+            await db.SaveChangesAsync();
+
+            db.Collections.Add(new CollectionModel
+            {
+                UserId = otherUserId,
+                PlayerId = player.Id,
+                CapturedAt = DateTime.UtcNow,
+                IsFavorite = false
+            });
+            await db.SaveChangesAsync();
+            playerId = player.Id;
+        });
+
+        _factory.LocationTracker.SetPosition(otherUserId, 51.50741, -0.12779);
+
+        var response = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=-0.1278&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var players = await response.Content.ReadFromJsonAsync<List<NearbyPlayerDto>>();
+        Assert.NotNull(players);
+
+        var liveOwnedPlayer = Assert.Single(players, p =>
+            p.PlayerId == playerId
+            && p.OwnerUsername == otherUsername);
+        Assert.Equal(DistanceBucket.Within50m, liveOwnedPlayer.DistanceBucket);
+    }
+
+    /// <summary>
+    /// Verifies get Players Nearby Excludes Owned Players For Stale Tracked Users.
+    /// </summary>
+    [Fact]
+    public async Task GetPlayersNearby_ExcludesOwnedPlayersForStaleTrackedUsers()
+    {
+        var otherUsername = $"stale_owner_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        var playerId = 0;
+
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            var player = new PlayerModel
+            {
+                Name = $"Stale Owner Test {Guid.NewGuid():N}",
+                Position = PlayerPosition.Centre,
+                Rarity = PlayerRarity.Common,
+                Level = 1,
+                Speed = 50,
+                Strength = 50,
+                Agility = 50,
+                Kicking = 50,
+                SpawnLocation = new Point(-74.0060, 40.7128) { SRID = 4326 }
+            };
+            db.Players.Add(player);
+            await db.SaveChangesAsync();
+
+            db.Collections.Add(new CollectionModel
+            {
+                UserId = otherUserId,
+                PlayerId = player.Id,
+                CapturedAt = DateTime.UtcNow,
+                IsFavorite = false
+            });
+            await db.SaveChangesAsync();
+            playerId = player.Id;
+        });
+
+        _factory.LocationTracker.SetPosition(otherUserId, 51.50741, -0.12779, DateTime.UtcNow.AddMinutes(-5));
+
+        var response = await _client.GetAsync("/api/players/nearby?lat=51.5074&lng=-0.1278&radius=1000");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var players = await response.Content.ReadFromJsonAsync<List<NearbyPlayerDto>>();
+        Assert.NotNull(players);
+        Assert.DoesNotContain(players, p => p.PlayerId == playerId && p.OwnerUsername == otherUsername);
     }
 
     /// <summary>
