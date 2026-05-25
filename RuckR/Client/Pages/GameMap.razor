@@ -188,13 +188,28 @@
                 <div>
                     <div class="gps-readiness__title">@GpsNoticeTitle</div>
                     <p>@GpsNoticeBody</p>
+                    @if (GpsPermissionHelp is not null)
+                    {
+                        <p class="gps-readiness__help" data-testid="gps-permission-help">@GpsPermissionHelp</p>
+                    }
                 </div>
-                <button class="btn btn-sm btn-outline-light"
-                        type="button"
-                        data-testid="gps-retry-btn"
-                        @onclick="EnableGpsAsync">
-                    Retry GPS
-                </button>
+                <div class="gps-readiness__actions">
+                    <button class="btn btn-sm btn-outline-light"
+                            type="button"
+                            data-testid="gps-retry-btn"
+                            @onclick="EnableGpsAsync">
+                        @GpsRetryButtonText
+                    </button>
+                    @if (GpsStatus.Kind == GpsStatusKind.Blocked)
+                    {
+                        <button class="btn btn-sm btn-link gps-readiness__dismiss"
+                                type="button"
+                                data-testid="gps-dismiss-btn"
+                                @onclick="DismissGpsNotice">
+                            Keep browsing
+                        </button>
+                    }
+                </div>
             </div>
         }
 
@@ -471,7 +486,7 @@
 <style>
      .onboarding-banner {
          position: fixed;
-         top: 0.75rem;
+         top: 4.25rem;
          left: 50%;
          z-index: 1500;
          display: flex;
@@ -524,9 +539,26 @@
          line-height: 1.35;
          color: rgba(248,250,252,0.86);
      }
+     .gps-readiness__help {
+         margin-top: 0.35rem !important;
+         color: #fde68a !important;
+      }
+     .gps-readiness__actions {
+         display: flex;
+         flex-direction: column;
+         align-items: stretch;
+         gap: 0.25rem;
+      }
      .gps-readiness .btn {
          white-space: nowrap;
      }
+     .gps-readiness__dismiss {
+         color: rgba(248,250,252,0.78);
+         text-decoration: none;
+      }
+     .gps-readiness__dismiss:hover {
+         color: #fff;
+      }
      .encounter-radar {
          position: absolute;
          top: 8.75rem;
@@ -2165,15 +2197,20 @@
     }
 
     private bool ShouldShowGpsNotice =>
-        ShouldShowGpsNoticeForState(_hasApiKey, _gpsNoticeDismissed, _lastKnownPosition);
+        ShouldShowGpsNoticeForState(
+            _hasApiKey,
+            _gpsNoticeDismissed,
+            _lastKnownPosition,
+            LocationState.Value.ErrorMessage);
 
     public static bool ShouldShowGpsNoticeForState(
         bool hasApiKey,
         bool gpsNoticeDismissed,
-        GeoPosition? lastKnownPosition) =>
+        GeoPosition? lastKnownPosition,
+        string? errorMessage = null) =>
         hasApiKey
         && !gpsNoticeDismissed
-        && lastKnownPosition is null;
+        && (lastKnownPosition is null || IsLocationPermissionDenied(errorMessage));
 
     public static bool ShouldShowMapUnavailableFallback(string? apiKey) =>
         string.IsNullOrWhiteSpace(apiKey);
@@ -2246,29 +2283,56 @@
     {
         return status.Kind switch
         {
-            GpsStatusKind.Blocked => "Enable location permission to unlock distance checks.",
+            GpsStatusKind.Blocked => "Allow location permission in browser site settings, then retry GPS.",
             GpsStatusKind.Searching => "Waiting for GPS before checking range.",
             GpsStatusKind.Weak => $"Improve GPS accuracy to {Math.Round(maxActionAccuracyMeters)}m or better for recruiting and capture.",
             _ => null
         };
     }
 
-    private const string GpsNoticeTitle = "GPS needed";
+    private string GpsNoticeTitle => BuildGpsNoticeTitle(GpsStatus);
 
-    private const string GpsNoticeBody =
-        "The map is visible, but encounters, distance checks, and recruiting unlock after location access starts.";
+    private string GpsNoticeBody => BuildGpsNoticeBody(GpsStatus);
+
+    private string? GpsPermissionHelp => GpsStatus.Kind == GpsStatusKind.Blocked
+        ? "After changing the permission, tap Check again. You may need to reload if your browser keeps the old decision."
+        : null;
+
+    private string GpsRetryButtonText => GpsStatus.Kind == GpsStatusKind.Blocked
+        ? "Check again"
+        : "Retry GPS";
+
+    public static string BuildGpsNoticeTitle(GpsStatusView status) => status.Kind switch
+    {
+        GpsStatusKind.Blocked => "Location permission is off",
+        GpsStatusKind.Searching => "GPS needed",
+        _ => "GPS needed"
+    };
+
+    public static string BuildGpsNoticeBody(GpsStatusView status) => status.Kind switch
+    {
+        GpsStatusKind.Blocked =>
+            "The map still works, but recruiting, capture, and distance checks need browser location permission.",
+        GpsStatusKind.Searching =>
+            "The map is visible, but encounters, distance checks, and recruiting unlock after location access starts.",
+        _ =>
+            "The map is visible, but encounters, distance checks, and recruiting unlock after location access starts."
+    };
 
     private async Task EnableGpsAsync()
     {
+        var permissionWasBlocked = GpsStatus.Kind == GpsStatusKind.Blocked;
         _gpsRetryAttempts++;
-        if (ShouldDismissGpsNoticeAfterRetry(_gpsRetryAttempts))
+        if (!permissionWasBlocked && ShouldDismissGpsNoticeAfterRetry(_gpsRetryAttempts))
         {
             _gpsNoticeDismissed = true;
         }
 
         try
         {
-            _statusMessage = "Waiting for GPS...";
+            _statusMessage = permissionWasBlocked
+                ? "Checking location permission..."
+                : "Waiting for GPS...";
             await GeolocationService.StartWatchAsync();
         }
         catch
@@ -2279,8 +2343,19 @@
         await InvokeAsync(StateHasChanged);
     }
 
+    private void DismissGpsNotice()
+    {
+        _gpsNoticeDismissed = true;
+    }
+
     public static bool ShouldDismissGpsNoticeAfterRetry(int retryAttempts) =>
         retryAttempts >= MaxGpsNoticeRetryAttempts;
+
+    public static bool IsLocationPermissionDenied(string? errorMessage) =>
+        !string.IsNullOrWhiteSpace(errorMessage)
+        && (errorMessage.Contains("permission", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("denied", StringComparison.OrdinalIgnoreCase)
+            || errorMessage.Contains("site settings", StringComparison.OrdinalIgnoreCase));
 
     private static string EncounterRarityBadgeClass(string rarity) => rarity switch
     {

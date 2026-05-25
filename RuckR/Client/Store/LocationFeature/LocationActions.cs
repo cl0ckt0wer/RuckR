@@ -18,4 +18,15 @@ public record SetGpsWatchingAction(bool IsWatching);
 /// Carries a location error message.
 /// </summary>
 /// <param name="ErrorMessage">Error text.</param>
-public record LocationErrorAction(string ErrorMessage);
+/// <param name="ErrorCode">Browser geolocation error code, when available.</param>
+/// <param name="PermissionStatus">Permission state implied by the error.</param>
+public record LocationErrorAction(
+    string ErrorMessage,
+    int? ErrorCode = null,
+    GeolocationPermissionStatus PermissionStatus = GeolocationPermissionStatus.Unknown);
+
+/// <summary>
+/// Updates the browser location permission state.
+/// </summary>
+/// <param name="PermissionStatus">Current browser permission state.</param>
+public record SetLocationPermissionAction(GeolocationPermissionStatus PermissionStatus);

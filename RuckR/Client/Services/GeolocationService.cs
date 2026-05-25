@@ -26,6 +26,10 @@ public class GeolocationService : IGeolocationService
     private const double MinDisplacementMeters = 20.0;
     private const double MaxAccuracyMeters = 200.0;
     private const double NullIslandThreshold = 0.05;
+    private const int GeolocationUnavailableErrorCode = 0;
+    private const int PermissionDeniedErrorCode = 1;
+    private const int PositionUnavailableErrorCode = 2;
+    private const int TimeoutErrorCode = 3;
 
     /// <summary>
     /// Raised when a filtered/normalized geolocation update is accepted.
@@ -81,6 +85,28 @@ public class GeolocationService : IGeolocationService
         var options = new PositionOptions(false, 15000, 5000);
 
         var module = await GetGeoModuleAsync();
+        var permissionStatus = await ReadPermissionStatusAsync(module);
+        _dispatcher.Dispatch(new SetLocationPermissionAction(permissionStatus));
+        StopWatch();
+
+        if (permissionStatus == GeolocationPermissionStatus.Denied)
+        {
+            _dispatcher.Dispatch(new LocationErrorAction(
+                BuildLocationErrorMessage(PermissionDeniedErrorCode, null),
+                PermissionDeniedErrorCode,
+                GeolocationPermissionStatus.Denied));
+            return;
+        }
+
+        if (permissionStatus == GeolocationPermissionStatus.Unavailable)
+        {
+            _dispatcher.Dispatch(new LocationErrorAction(
+                BuildLocationErrorMessage(GeolocationUnavailableErrorCode, null),
+                GeolocationUnavailableErrorCode,
+                GeolocationPermissionStatus.Unavailable));
+            return;
+        }
+
         _dotNetRef = DotNetObjectReference.Create(this);
         _watchId = await module.InvokeAsync<double>(
             "watchPosition", _dotNetRef, options);
@@ -190,6 +216,18 @@ public class GeolocationService : IGeolocationService
         _logger.LogWarning("GetCurrentPositionAsync: starting via JS interop");
 
         var module = await GetGeoModuleAsync();
+        var permissionStatus = await ReadPermissionStatusAsync(module);
+        _dispatcher.Dispatch(new SetLocationPermissionAction(permissionStatus));
+
+        if (permissionStatus == GeolocationPermissionStatus.Denied)
+        {
+            _dispatcher.Dispatch(new LocationErrorAction(
+                BuildLocationErrorMessage(PermissionDeniedErrorCode, null),
+                PermissionDeniedErrorCode,
+                GeolocationPermissionStatus.Denied));
+            return null;
+        }
+
         try
         {
             var options = new PositionOptions(false, 8000, 300000);
@@ -210,6 +248,13 @@ public class GeolocationService : IGeolocationService
         }
         catch (JSException ex)
         {
+            var errorCode = InferErrorCode(ex.Message);
+            var permissionStatusFromError = PermissionStatusFromErrorCode(errorCode);
+            _dispatcher.Dispatch(new LocationErrorAction(
+                BuildLocationErrorMessage(errorCode, ex.Message),
+                errorCode,
+                permissionStatusFromError));
+
             _logger.LogWarning(
                 ex,
                 "GetCurrentPositionAsync: JS error msg={Msg}",
@@ -226,7 +271,10 @@ public class GeolocationService : IGeolocationService
     [JSInvokable]
     public void OnErrorFromJs(int code, string message)
     {
-        _dispatcher.Dispatch(new LocationErrorAction($"Geolocation error {code}: {message}"));
+        _dispatcher.Dispatch(new LocationErrorAction(
+            BuildLocationErrorMessage(code, message),
+            code,
+            PermissionStatusFromErrorCode(code)));
     }
 
     /// <summary>
@@ -241,6 +289,93 @@ public class GeolocationService : IGeolocationService
         }
 
         _lastAcceptedPosition = null;
+        _dotNetRef?.Dispose();
+        _dotNetRef = null;
+    }
+
+    /// <summary>
+    /// Converts the browser Permissions API string into client state.
+    /// </summary>
+    /// <param name="permissionState">Permission API state text.</param>
+    /// <returns>Normalized permission status.</returns>
+    public static GeolocationPermissionStatus NormalizePermissionState(string? permissionState) =>
+        permissionState?.Trim().ToLowerInvariant() switch
+        {
+            "granted" => GeolocationPermissionStatus.Granted,
+            "prompt" => GeolocationPermissionStatus.Prompt,
+            "denied" => GeolocationPermissionStatus.Denied,
+            "unavailable" => GeolocationPermissionStatus.Unavailable,
+            _ => GeolocationPermissionStatus.Unknown
+        };
+
+    /// <summary>
+    /// Maps browser geolocation error codes to permission state.
+    /// </summary>
+    /// <param name="code">Browser geolocation error code.</param>
+    /// <returns>Permission state implied by the error.</returns>
+    public static GeolocationPermissionStatus PermissionStatusFromErrorCode(int code) => code switch
+    {
+        PermissionDeniedErrorCode => GeolocationPermissionStatus.Denied,
+        GeolocationUnavailableErrorCode => GeolocationPermissionStatus.Unavailable,
+        _ => GeolocationPermissionStatus.Unknown
+    };
+
+    /// <summary>
+    /// Builds player-facing geolocation error text from browser error codes.
+    /// </summary>
+    /// <param name="code">Browser geolocation error code.</param>
+    /// <param name="browserMessage">Original browser message.</param>
+    /// <returns>Actionable error text.</returns>
+    public static string BuildLocationErrorMessage(int code, string? browserMessage) => code switch
+    {
+        PermissionDeniedErrorCode =>
+            "Location permission is off. Use your browser site settings to allow Location for this site, then retry GPS.",
+        PositionUnavailableErrorCode =>
+            "Location is unavailable on this device. Check device location services, then retry GPS.",
+        TimeoutErrorCode =>
+            "Location request timed out. Move somewhere with a clearer signal, then retry GPS.",
+        GeolocationUnavailableErrorCode =>
+            "This browser does not support location. Use a browser with geolocation to recruit and capture players.",
+        _ when !string.IsNullOrWhiteSpace(browserMessage) =>
+            $"Location is unavailable: {browserMessage}",
+        _ =>
+            "Location is unavailable. Enable location access and retry GPS."
+    };
+
+    private static int InferErrorCode(string message)
+    {
+        if (message.Contains("permission", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("denied", StringComparison.OrdinalIgnoreCase))
+        {
+            return PermissionDeniedErrorCode;
+        }
+
+        if (message.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            return TimeoutErrorCode;
+        }
+
+        if (message.Contains("unsupported", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not support", StringComparison.OrdinalIgnoreCase))
+        {
+            return GeolocationUnavailableErrorCode;
+        }
+
+        return PositionUnavailableErrorCode;
+    }
+
+    private static async Task<GeolocationPermissionStatus> ReadPermissionStatusAsync(IJSObjectReference module)
+    {
+        try
+        {
+            var permissionState = await module.InvokeAsync<string>("getPermissionState");
+            return NormalizePermissionState(permissionState);
+        }
+        catch
+        {
+            return GeolocationPermissionStatus.Unknown;
+        }
     }
 
     /// <summary>

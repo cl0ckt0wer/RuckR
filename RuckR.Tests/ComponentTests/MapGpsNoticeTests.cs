@@ -44,6 +44,24 @@ public class MapGpsNoticeTests
     }
 
     /// <summary>
+    /// Verifies permission denial still surfaces even if an old location exists.
+    /// </summary>
+    [Fact]
+    public void ShouldShowGpsNoticeForState_ShowsPermissionDenialWithStaleLocation()
+    {
+        Assert.True(MapPage.ShouldShowGpsNoticeForState(
+            hasApiKey: true,
+            gpsNoticeDismissed: false,
+            lastKnownPosition: new GeoPosition
+            {
+                Latitude = 51.5074,
+                Longitude = -0.1278,
+                Accuracy = 18
+            },
+            errorMessage: "Location permission is off."));
+    }
+
+    /// <summary>
     /// Verifies should Show Map Unavailable Fallback Only When Map Key Is Missing.
     /// </summary>
     [Theory]
@@ -151,6 +169,21 @@ public class MapGpsNoticeTests
         Assert.Equal(MapPage.GpsStatusKind.Blocked, status.Kind);
         Assert.Equal("GPS blocked", status.Label);
         Assert.Contains("location permission", MapPage.BuildGpsActionHint(status, 50), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Location permission is off", MapPage.BuildGpsNoticeTitle(status));
+        Assert.Contains("browser location permission", MapPage.BuildGpsNoticeBody(status), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies location permission helper recognizes browser denial text.
+    /// </summary>
+    [Theory]
+    [InlineData("Location permission is off.", true)]
+    [InlineData("User denied Geolocation.", true)]
+    [InlineData("Location request timed out.", false)]
+    [InlineData(null, false)]
+    public void IsLocationPermissionDenied_ClassifiesPermissionErrors(string? message, bool expected)
+    {
+        Assert.Equal(expected, MapPage.IsLocationPermissionDenied(message));
     }
 
     /// <summary>

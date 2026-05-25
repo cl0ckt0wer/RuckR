@@ -29,10 +29,16 @@
         <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="gps-disabled-state">
             <MudStack AlignItems="AlignItems.Center" Spacing="2">
                 <MudIcon Icon="@Icons.Material.Filled.MyLocation" Size="Size.Large" Color="Color.Warning" />
-                <MudText Typo="Typo.h5">Enable GPS to find nearby players</MudText>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">RuckR needs your location to list nearby wild and owned players.</MudText>
+                <MudText Typo="Typo.h5">@GpsDisabledTitle</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">@GpsDisabledBody</MudText>
+                @if (IsLocationPermissionDenied)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" data-testid="gps-permission-help">
+                        Allow Location for this site in your browser settings, then check again.
+                    </MudAlert>
+                }
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.GpsFixed" OnClick="EnableGpsAsync" data-testid="gps-enable-btn">
-                    Enable GPS
+                    @(IsLocationPermissionDenied ? "Check Again" : "Enable GPS")
                 </MudButton>
             </MudStack>
         </MudPaper>
@@ -141,6 +147,18 @@
     private int _selectedRadiusKm = 10;
     private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
 
+    private bool IsLocationPermissionDenied =>
+        LocationState.Value.PermissionStatus == GeolocationPermissionStatus.Denied
+        || GameMap.IsLocationPermissionDenied(LocationState.Value.ErrorMessage);
+
+    private string GpsDisabledTitle => IsLocationPermissionDenied
+        ? "Location permission is off"
+        : "Enable GPS to find nearby players";
+
+    private string GpsDisabledBody => IsLocationPermissionDenied
+        ? "Nearby scouting still needs your browser to allow Location for this site."
+        : "RuckR needs your location to list nearby wild and owned players.";
+
     private IEnumerable<NearbyPlayerDto> _sortedPlayers =>
         _nearbyPlayers
             .OrderBy(p => (int)p.DistanceBucket)
@@ -219,6 +237,14 @@
         {
             _gpsDisabled = true;
             _isLoading = false;
+        }
+        finally
+        {
+            if (!LocationState.Value.UserLatitude.HasValue || !LocationState.Value.UserLongitude.HasValue)
+            {
+                _gpsDisabled = true;
+                _isLoading = false;
+            }
         }
     }
 

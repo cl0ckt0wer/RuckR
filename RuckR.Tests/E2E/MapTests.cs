@@ -96,6 +96,56 @@ public class MapTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies browser geolocation denial shows an actionable recovery state.
+    /// </summary>
+    [Fact]
+    public async Task MapPage_WhenGeoPermissionDenied_ShowsRecoveryMessage()
+    {
+        var context = await _playwright.NewContextAsync();
+        try
+        {
+            await context.AddInitScriptAsync(
+                @"Object.defineProperty(navigator, 'permissions', {
+                    configurable: true,
+                    value: {
+                        query: async () => ({ state: 'denied' })
+                    }
+                });
+                Object.defineProperty(navigator, 'geolocation', {
+                    configurable: true,
+                    value: {
+                        getCurrentPosition: (success, error) => error({ code: 1, message: 'User denied Geolocation' }),
+                        watchPosition: (success, error) => {
+                            setTimeout(() => error({ code: 1, message: 'User denied Geolocation' }), 0);
+                            return 7;
+                        },
+                        clearWatch: () => {}
+                    }
+                });");
+
+            var page = await context.NewPageAsync();
+            var mapPage = new MapPage(page, _baseUrl);
+            await mapPage.GoToAsync("?basemap=empty&mapDiagnostics=false");
+            Assert.True(await mapPage.WaitForMapLoadedAsync());
+
+            await page.GetByTestId("gps-readiness").WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 10_000
+            });
+
+            Assert.Contains("Location permission is off", await page.GetByTestId("gps-readiness").InnerTextAsync(), StringComparison.OrdinalIgnoreCase);
+            Assert.True(await page.GetByTestId("gps-permission-help").IsVisibleAsync());
+            Assert.Contains("Check again", await page.GetByTestId("gps-retry-btn").InnerTextAsync(), StringComparison.OrdinalIgnoreCase);
+            Assert.True(await page.GetByTestId("gps-dismiss-btn").IsVisibleAsync());
+        }
+        finally
+        {
+            await context.CloseAsync();
+        }
+    }
+
+    /// <summary>
     /// Verifies an authenticated map session surfaces a deterministic nearby rare sighting.
     /// </summary>
     [Fact]

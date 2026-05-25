@@ -3,6 +3,27 @@ using Fluxor;
 namespace RuckR.Client.Store.LocationFeature;
 
 /// <summary>
+/// Browser location permission state as understood by the client.
+/// </summary>
+public enum GeolocationPermissionStatus
+{
+    /// <summary>The browser did not expose a permission state.</summary>
+    Unknown,
+
+    /// <summary>The user has granted location access.</summary>
+    Granted,
+
+    /// <summary>The browser may still prompt the user for location access.</summary>
+    Prompt,
+
+    /// <summary>The user or browser policy denied location access.</summary>
+    Denied,
+
+    /// <summary>The browser or device does not expose geolocation.</summary>
+    Unavailable
+}
+
+/// <summary>
 /// Location feature state (watch status and latest user coordinates).
 /// </summary>
 [FeatureState]
@@ -32,6 +53,16 @@ public record LocationState
     /// Last error message from location resolution.
     /// </summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Last browser geolocation error code, when available.
+    /// </summary>
+    public int? LastErrorCode { get; init; }
+
+    /// <summary>
+    /// Current browser location permission state.
+    /// </summary>
+    public GeolocationPermissionStatus PermissionStatus { get; init; } = GeolocationPermissionStatus.Unknown;
 
     /// <summary>
     /// Creates an empty location state.

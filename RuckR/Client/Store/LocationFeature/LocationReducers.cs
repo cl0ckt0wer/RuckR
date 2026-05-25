@@ -21,7 +21,9 @@ public static class LocationReducers
             UserLatitude = action.Latitude,
             UserLongitude = action.Longitude,
             AccuracyMeters = action.Accuracy,
-            ErrorMessage = null
+            ErrorMessage = null,
+            LastErrorCode = null,
+            PermissionStatus = GeolocationPermissionStatus.Granted
         };
     }
 
@@ -46,6 +48,28 @@ public static class LocationReducers
     [ReducerMethod]
     public static LocationState ReduceLocationError(LocationState state, LocationErrorAction action)
     {
-        return state with { ErrorMessage = action.ErrorMessage, IsWatching = false };
+        var permissionStatus = action.PermissionStatus == GeolocationPermissionStatus.Unknown
+            ? state.PermissionStatus
+            : action.PermissionStatus;
+
+        return state with
+        {
+            ErrorMessage = action.ErrorMessage,
+            LastErrorCode = action.ErrorCode,
+            IsWatching = false,
+            PermissionStatus = permissionStatus
+        };
+    }
+
+    /// <summary>
+    /// Updates the browser permission state.
+    /// </summary>
+    /// <param name="state">Current location state.</param>
+    /// <param name="action">Permission action.</param>
+    /// <returns>Updated location state.</returns>
+    [ReducerMethod]
+    public static LocationState ReduceSetLocationPermission(LocationState state, SetLocationPermissionAction action)
+    {
+        return state with { PermissionStatus = action.PermissionStatus };
     }
 }
