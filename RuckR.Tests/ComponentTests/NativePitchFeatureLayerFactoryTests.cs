@@ -21,6 +21,10 @@ public class NativePitchFeatureLayerFactoryTests
             field.Name == NativePitchFeatureLayerFactory.ObjectIdField && field.Type == FieldType.Oid);
         Assert.Contains(NativePitchFeatureLayerFactory.Fields, field =>
             field.Name == NativePitchFeatureLayerFactory.PitchTypeField && field.Type == FieldType.String);
+        Assert.Contains(NativePitchFeatureLayerFactory.Fields, field =>
+            field.Name == "source" && field.Type == FieldType.String);
+        Assert.Contains(NativePitchFeatureLayerFactory.Fields, field =>
+            field.Name == "sourceConfidence" && field.Type == FieldType.Integer);
         Assert.Contains("*", NativePitchFeatureLayerFactory.OutFields);
     }
 
@@ -35,6 +39,8 @@ public class NativePitchFeatureLayerFactoryTests
             Id = 42,
             Name = "Test Stadium",
             Type = PitchType.Stadium,
+            Source = "ArcGISPlaces",
+            SourceConfidence = 92,
             Latitude = 51.5074,
             Longitude = -0.1278
         };
@@ -48,6 +54,8 @@ public class NativePitchFeatureLayerFactoryTests
         AssertGraphicAttribute(feature.Attributes, "_ruckrId", 42);
         AssertGraphicAttribute(feature.Attributes, NativePitchFeatureLayerFactory.ObjectIdField, 42);
         AssertGraphicAttribute(feature.Attributes, NativePitchFeatureLayerFactory.PitchTypeField, "Stadium");
+        AssertGraphicAttribute(feature.Attributes, "source", "ArcGISPlaces");
+        AssertGraphicAttribute(feature.Attributes, "sourceConfidence", 92);
     }
 
     /// <summary>

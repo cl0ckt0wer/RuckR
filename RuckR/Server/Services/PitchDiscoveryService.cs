@@ -8,110 +8,158 @@ namespace RuckR.Server.Services
     /// <summary>Defines the server-side class PitchDiscoveryService.</summary>
     public class PitchDiscoveryService : IPitchDiscoveryService
     {
-        private const double MetersPerMile = 1609.344;
-        private const double StadiumRadiusMeters = 30 * MetersPerMile;
-        private const double StandardRadiusMeters = 10 * MetersPerMile;
-        private const double TrainingRadiusMeters = 2 * MetersPerMile;
+        private const int AutoPromoteConfidenceThreshold = 74;
+        private const double CandidateDuplicateDistanceMeters = 100.0;
 
         private readonly RuckRDbContext _db;
+        private readonly IRealWorldParkService _parkService;
+        private readonly ILogger<PitchDiscoveryService> _logger;
         private readonly GeometryFactory _geometryFactory =
             NetTopologySuite.NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
         /// <summary>Initializes a new instance of PitchDiscoveryService.</summary>
         /// <param name="db">The db.</param>
-        public PitchDiscoveryService(RuckRDbContext db)
+        /// <param name="parkService">The ArcGIS Places-backed pitch candidate source.</param>
+        /// <param name="logger">Logger used for diagnostics.</param>
+        public PitchDiscoveryService(
+            RuckRDbContext db,
+            IRealWorldParkService parkService,
+            ILogger<PitchDiscoveryService> logger)
         {
             _db = db;
+            _parkService = parkService;
+            _logger = logger;
         }
-        /// <summary>E ns ur eN ea rb yP it ch es As yn c.</summary>
+        /// <summary>Ensures nearby Places-backed pitches are persisted and returns active pitches in range.</summary>
         /// <param name="userId">The userid.</param>
         /// <param name="userName">The username.</param>
         /// <param name="latitude">The latitude.</param>
         /// <param name="longitude">The longitude.</param>
+        /// <param name="radiusMeters">The search radius.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>The operation result.</returns>
         public async Task<IReadOnlyList<PitchModel>> EnsureNearbyPitchesAsync(
-            string userId,
-            string userName,
+            string? userId,
+            string? userName,
             double latitude,
-            double longitude)
+            double longitude,
+            double radiusMeters = 5000,
+            CancellationToken cancellationToken = default)
         {
             var userPoint = _geometryFactory.CreatePoint(new Coordinate(longitude, latitude));
+            var effectiveRadius = Math.Clamp(radiusMeters, 1.0, 50_000.0);
+            var candidateRadius = Math.Min(effectiveRadius, 10_000.0);
+
+            var candidates = await _parkService.FindNearbyPitchCandidatePlacesAsync(
+                latitude,
+                longitude,
+                candidateRadius,
+                cancellationToken);
+
+            foreach (var candidate in candidates.Where(IsAutoPromotableCandidate))
+            {
+                await UpsertCandidatePitchAsync(candidate, cancellationToken);
+            }
+
+            await _db.SaveChangesAsync(cancellationToken);
+
             var nearbyPitches = await _db.Pitches
-                .Where(p => p.Location.IsWithinDistance(userPoint, StadiumRadiusMeters))
-                .ToListAsync();
+                .Where(p => p.Location.IsWithinDistance(userPoint, effectiveRadius))
+                .Where(p => !(p.Location.Y == 0 && p.Location.X == 0)
+                          && !(p.Location.Y == -1 && p.Location.X == -1))
+                .ToListAsync(cancellationToken);
 
-            PitchModel? createdPitch = null;
-
-            if (!nearbyPitches.Any(p => p.Type == PitchType.Stadium))
+            foreach (var pitch in nearbyPitches)
             {
-                createdPitch = CreatePitch(userId, userName, PitchType.Stadium, userPoint);
-            }
-            else if (!await HasAnyPitchTypeWithinDistanceAsync(
-                userPoint,
-                StandardRadiusMeters,
-                PitchType.Stadium,
-                PitchType.Standard))
-            {
-                createdPitch = CreatePitch(userId, userName, PitchType.Standard, userPoint);
-            }
-            else if (!await HasAnyPitchTypeWithinDistanceAsync(
-                userPoint,
-                TrainingRadiusMeters,
-                PitchType.Stadium,
-                PitchType.Standard,
-                PitchType.Training))
-            {
-                createdPitch = CreatePitch(userId, userName, PitchType.Training, userPoint);
-            }
-
-            if (createdPitch is not null)
-            {
-                _db.Pitches.Add(createdPitch);
-                await _db.SaveChangesAsync();
-                nearbyPitches.Add(createdPitch);
+                pitch.Latitude = pitch.Location.Y;
+                pitch.Longitude = pitch.Location.X;
             }
 
             return nearbyPitches
-                .GroupBy(p => p.Type)
-                .Select(group => group.OrderBy(p => p.Location.Distance(userPoint)).First())
-                .OrderBy(p => p.Type)
+                .OrderBy(p => p.Location.Distance(userPoint))
+                .ThenBy(p => p.Name)
                 .ToList();
         }
 
-        private static PitchModel CreatePitch(
-            string userId,
-            string userName,
-            PitchType type,
-            Point location)
+        private async Task UpsertCandidatePitchAsync(
+            PitchCandidatePlaceDto candidate,
+            CancellationToken cancellationToken)
         {
-            var ownerName = string.IsNullOrWhiteSpace(userName) ? "Player" : userName;
+            var placeId = candidate.PlaceId.Trim();
+            if (string.IsNullOrWhiteSpace(placeId))
+                return;
 
-            return new PitchModel
+            if (await _db.Pitches.AnyAsync(p => p.ExternalPlaceId == placeId, cancellationToken))
+                return;
+
+            var pitchName = candidate.Name.Trim();
+            if (string.IsNullOrWhiteSpace(pitchName))
+                return;
+
+            var location = _geometryFactory.CreatePoint(new Coordinate(candidate.Longitude, candidate.Latitude));
+            if (HasPendingDuplicate(placeId, pitchName, location))
+                return;
+
+            if (await _db.Pitches.AnyAsync(p => p.Name == pitchName, cancellationToken))
+                return;
+
+            var nearbyDuplicateExists = await _db.Pitches.AnyAsync(
+                p => p.Location.IsWithinDistance(location, CandidateDuplicateDistanceMeters),
+                cancellationToken);
+            if (nearbyDuplicateExists)
+                return;
+
+            if (!Enum.TryParse<PitchType>(candidate.RecommendedPitchType, ignoreCase: true, out var pitchType))
             {
-                Name = $"{ownerName}'s {FormatPitchType(type)}",
+                _logger.LogDebug(
+                    "Skipping Places candidate {PlaceId}; invalid pitch type {PitchType}.",
+                    placeId,
+                    candidate.RecommendedPitchType);
+                return;
+            }
+
+            _db.Pitches.Add(new PitchModel
+            {
+                Name = pitchName,
                 Location = location,
-                CreatorUserId = userId,
-                Type = type,
+                CreatorUserId = null,
+                Type = pitchType,
+                Source = "ArcGISPlaces",
+                ExternalPlaceId = placeId,
+                SourceCategory = candidate.CategoryLabel.Trim(),
+                SourceMatchReason = candidate.MatchReason.Trim(),
+                SourceConfidence = candidate.Confidence,
                 CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        private bool HasPendingDuplicate(string placeId, string pitchName, Point location)
+        {
+            var candidatePosition = new GeoPosition
+            {
+                Latitude = location.Y,
+                Longitude = location.X
             };
+
+            return _db.ChangeTracker
+                .Entries<PitchModel>()
+                .Where(entry => entry.State == EntityState.Added)
+                .Select(entry => entry.Entity)
+                .Any(pitch =>
+                    string.Equals(pitch.ExternalPlaceId, placeId, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pitch.Name, pitchName, StringComparison.OrdinalIgnoreCase)
+                    || GeoPosition.HaversineDistance(
+                        candidatePosition,
+                        new GeoPosition
+                        {
+                            Latitude = pitch.Location.Y,
+                            Longitude = pitch.Location.X
+                        }) <= CandidateDuplicateDistanceMeters);
         }
 
-        private static string FormatPitchType(PitchType type) => type switch
-        {
-            PitchType.Training => "Practice Pitch",
-            PitchType.Standard => "Standard Pitch",
-            PitchType.Stadium => "Stadium",
-            _ => "Pitch"
-        };
-
-        private Task<bool> HasAnyPitchTypeWithinDistanceAsync(
-            Point userPoint,
-            double distanceMeters,
-            params PitchType[] pitchTypes)
-        {
-            return _db.Pitches.AnyAsync(p =>
-                pitchTypes.Contains(p.Type)
-                && p.Location.IsWithinDistance(userPoint, distanceMeters));
-        }
+        private static bool IsAutoPromotableCandidate(PitchCandidatePlaceDto candidate) =>
+            candidate.Confidence >= AutoPromoteConfidenceThreshold
+            && !string.IsNullOrWhiteSpace(candidate.PlaceId)
+            && !string.IsNullOrWhiteSpace(candidate.Name);
     }
 }
 

@@ -253,47 +253,73 @@
 
 @if (_selectedPitch is not null)
 {
-    <div class="map-overlay pitch-card pitch-card--@PitchTypeCssClass(_selectedPitch.Type)" data-testid="pitch-overlay">
-        <div class="d-flex justify-content-between align-items-start mb-2">
-            <div>
-                <div class="pitch-card__eyebrow">@PitchTypeDisplayName(_selectedPitch.Type)</div>
-                <h5 class="mb-0" data-testid="pitch-name">@_selectedPitch.Name</h5>
-            </div>
-            <button type="button" class="btn-close" data-testid="pitch-close" @onclick="ClearSelection" aria-label="Close"></button>
-        </div>
-        <div class="pitch-card__meta mb-2">
-            <span class="pitch-card__pill">@PitchTypeDescription(_selectedPitch.Type)</span>
-            <span class="pitch-card__distance">@PitchDistanceText(_selectedPitch)</span>
-        </div>
-        <div class="capture-panel" data-testid="capture-panel">
-            <div class="capture-panel__row">
-                <span>Available players</span>
-                @if (_isLoadingEligibility)
+    <MudPaper Elevation="4" Class="@($"map-overlay pitch-card pitch-card--{PitchTypeCssClass(_selectedPitch.Type)}")" data-testid="pitch-overlay">
+        <MudStack Spacing="2">
+            <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                <div>
+                    <MudText Typo="Typo.overline" Class="pitch-card__eyebrow">Pitch Hub</MudText>
+                    <MudText Typo="Typo.h6" data-testid="pitch-name">@_selectedPitch.Name</MudText>
+                </div>
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Inherit" data-testid="pitch-close" OnClick="ClearSelection" aria-label="Close" />
+            </MudStack>
+
+            <MudStack Row="true" Class="pitch-card__meta">
+                <MudChip T="string" Color="@PitchTypeChipColor(_selectedPitch.Type)" Size="Size.Small" Variant="Variant.Filled">@PitchTypeDisplayName(_selectedPitch.Type)</MudChip>
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@PitchHubDistanceText</MudChip>
+            </MudStack>
+
+            <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="pitch-source">@PitchHubSourceText</MudText>
+
+            <div class="capture-panel" data-testid="pitch-hub-panel">
+                <div class="capture-panel__row">
+                    <span>Active recruits</span>
+                    @if (_isLoadingPitchHub)
+                    {
+                        <span class="spinner-border spinner-border-sm text-light" role="status"></span>
+                    }
+                    else
+                    {
+                        <strong data-testid="active-recruit-count">@(_pitchHub?.ActiveRecruitCount ?? 0)</strong>
+                    }
+                </div>
+                <div class="capture-panel__row">
+                    <span>Nearby users</span>
+                    <strong data-testid="challengeable-user-count">@(_pitchHub?.ChallengeableUserCount ?? 0)</strong>
+                </div>
+                <div class="capture-panel__row">
+                    <span>Hub range</span>
+                    <strong>@PitchHubRangeText</strong>
+                </div>
+                <p class="capture-panel__status" data-testid="capture-status">@PitchHubStatusText</p>
+                @if (GpsActionHint is not null && _pitchHub?.Reason is "GPS_REQUIRED" or "GPS_INACCURATE")
                 {
-                    <span class="spinner-border spinner-border-sm text-light" role="status"></span>
+                    <p class="capture-panel__gps" data-testid="capture-gps-hint">@GpsActionHint</p>
                 }
-                else
-                {
-                    <strong data-testid="available-player-count">@_nearbyPlayerCount</strong>
-                }
+                <MudStack Row="true" Spacing="1" Class="pitch-hub-actions">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.Groups"
+                               data-testid="capture-players-btn"
+                               Disabled="@(!CanRecruitAtSelectedPitch)"
+                               OnClick="OpenPitchRecruitBoard">
+                        Recruit here
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               Size="Size.Small"
+                               FullWidth="true"
+                               StartIcon="@Icons.Material.Filled.SportsKabaddi"
+                               data-testid="challenge-users-btn"
+                               Disabled="@(!CanChallengeFromSelectedPitch)"
+                               OnClick="NavigateToPitchChallenges">
+                        Challenge users
+                    </MudButton>
+                </MudStack>
             </div>
-            <div class="capture-panel__row">
-                <span>Capture range</span>
-                <strong>@CaptureDistanceText</strong>
-            </div>
-            <p class="capture-panel__status" data-testid="capture-status">@CaptureStatusText</p>
-            @if (GpsActionHint is not null)
-            {
-                <p class="capture-panel__gps" data-testid="capture-gps-hint">@GpsActionHint</p>
-            }
-            <button class="btn btn-sm btn-primary w-100"
-                    data-testid="capture-players-btn"
-                    disabled="@(!CanCaptureSelectedPitch)"
-                    @onclick="NavigateToCapture">
-                Capture Players
-            </button>
-        </div>
-    </div>
+        </MudStack>
+    </MudPaper>
 }
 
 @if (_selectedEncounter is not null && _showRecruitBoard)
@@ -840,6 +866,12 @@
          background: rgba(15,23,42,0.42);
          color: rgba(226,232,240,0.86);
      }
+     .pitch-hub-actions {
+         flex-wrap: wrap;
+      }
+     .pitch-hub-actions > * {
+         flex: 1 1 9rem;
+      }
      .capture-panel {
          display: grid;
          gap: 0.45rem;
@@ -1062,10 +1094,9 @@
     private IJSObjectReference? _mapDiagnosticsModule;
     private PitchModel? _selectedPitch;
     private int _lastSelectedPitchId = -1;
-    private CaptureEligibilityDto? _captureEligibility;
-    private bool _isLoadingEligibility;
-    private int _eligibilityRequestPitchId = -1;
-    private int _nearbyPlayerCount;
+    private PitchHubDto? _pitchHub;
+    private bool _isLoadingPitchHub;
+    private int _pitchHubRequestPitchId = -1;
     private PlayerEncounterDto? _selectedEncounter;
     private PitchCandidatePlaceDto? _selectedCandidatePlace;
     private string _candidatePitchName = string.Empty;
@@ -1451,7 +1482,7 @@
             UpdateRecruitEligibility();
             if (_selectedPitch is not null)
             {
-                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+                _ = RefreshPitchHubAsync(_selectedPitch.Id);
             }
             await InvokeAsync(StateHasChanged);
         }
@@ -1474,11 +1505,10 @@
         {
             _lastSelectedPitchId = state.SelectedPitchId.Value;
             _selectedPitch = state.VisiblePitches.FirstOrDefault(p => p.Id == state.SelectedPitchId.Value);
-            _captureEligibility = null;
-            _nearbyPlayerCount = 0;
+            _pitchHub = null;
             if (_selectedPitch is not null)
             {
-                _ = RefreshCaptureEligibilityAsync(_selectedPitch.Id);
+                _ = RefreshPitchHubAsync(_selectedPitch.Id);
             }
             _ = InvokeAsync(StateHasChanged);
         }
@@ -1486,8 +1516,7 @@
         {
             _lastSelectedPitchId = -1;
             _selectedPitch = null;
-            _captureEligibility = null;
-            _nearbyPlayerCount = 0;
+            _pitchHub = null;
             _ = InvokeAsync(StateHasChanged);
         }
 
@@ -2015,7 +2044,11 @@
         Dispatcher.Dispatch(new ClearSelectionAction());
     }
 
-    private bool CanCaptureSelectedPitch => _isAuthenticated && _captureEligibility?.CanCapture == true;
+    private bool CanUseSelectedPitchHub => _isAuthenticated && _pitchHub?.CanInteract == true;
+
+    private bool CanRecruitAtSelectedPitch => CanUseSelectedPitchHub && (_pitchHub?.ActiveRecruitCount ?? 0) > 0;
+
+    private bool CanChallengeFromSelectedPitch => CanUseSelectedPitchHub && (_pitchHub?.ChallengeableUserCount ?? 0) > 0;
 
     private GpsStatusView GpsStatus => BuildGpsStatus(
         _hasApiKey,
@@ -2028,14 +2061,34 @@
 
     private string? GpsActionHint => BuildGpsActionHint(GpsStatus, MaxRecruitAccuracyMeters);
 
-    private string CaptureDistanceText =>
-        _captureEligibility is not null
-            ? FormatDistanceBucket(_captureEligibility.DistanceBucket)
+    private string PitchHubDistanceText =>
+        _pitchHub is not null && _pitchHub.DistanceMeters >= 0
+            ? FormatDistance(_pitchHub.DistanceMeters)
             : _selectedPitch is not null
                 ? PitchDistanceText(_selectedPitch)
                 : "Unknown";
 
-    private string CaptureStatusText
+    private string PitchHubRangeText => FormatDistance(CaptureDistanceMeters);
+
+    private string PitchHubSourceText
+    {
+        get
+        {
+            if (_pitchHub is null)
+            {
+                return _selectedPitch?.Source == "ArcGISPlaces"
+                    ? "ArcGIS Places"
+                    : "Manual pitch";
+            }
+
+            var source = _pitchHub.Source == "ArcGISPlaces" ? "ArcGIS Places" : _pitchHub.Source;
+            return _pitchHub.SourceConfidence.HasValue
+                ? $"{source} confidence {_pitchHub.SourceConfidence.Value}%"
+                : source;
+        }
+    }
+
+    private string PitchHubStatusText
     {
         get
         {
@@ -2046,74 +2099,88 @@
 
             if (!_isAuthenticated)
             {
-                return "Log in to capture players from this pitch.";
+                return "Log in to use this pitch hub.";
             }
 
-            if (_isLoadingEligibility)
+            if (_isLoadingPitchHub)
             {
-                return "Checking server-side capture eligibility...";
+                return "Checking pitch hub...";
             }
 
-            if (_captureEligibility is null)
+            if (_pitchHub is null)
             {
-                return "Unable to verify capture eligibility right now.";
+                return "Unable to load this pitch hub right now.";
             }
 
-            return _captureEligibility.Reason switch
+            return _pitchHub.Reason switch
             {
-                "ELIGIBLE" => "In range. You can capture players from this pitch.",
-                "GPS_REQUIRED" => "Enable GPS to capture players from this pitch.",
+                "ELIGIBLE" when _pitchHub.ActiveRecruitCount > 0 && _pitchHub.ChallengeableUserCount > 0 => "Pitch hub ready. Recruit or challenge nearby users.",
+                "ELIGIBLE" when _pitchHub.ActiveRecruitCount > 0 => "Pitch hub ready. Recruits are active here.",
+                "ELIGIBLE" when _pitchHub.ChallengeableUserCount > 0 => "Pitch hub ready. Nearby users can be challenged.",
+                "ELIGIBLE" => "Pitch hub ready. No local activity is active yet.",
+                "GPS_REQUIRED" => "Enable GPS to use this pitch hub.",
                 "GPS_INACCURATE" => $"Improve GPS accuracy to {MaxRecruitAccuracyMeters:0}m or better.",
-                "TOO_FAR" => $"Move closer. Capture unlocks within {FormatDistance(CaptureDistanceMeters)}.",
-                "NO_PLAYERS" => "No uncaptured recruits are available at this pitch right now.",
-                _ => "Capture is currently unavailable."
+                "TOO_FAR" => $"Move closer. Pitch hubs unlock within {FormatDistance(CaptureDistanceMeters)}.",
+                _ => "Pitch hub is currently unavailable."
             };
         }
     }
 
-    private async Task RefreshCaptureEligibilityAsync(int pitchId)
+    private async Task RefreshPitchHubAsync(int pitchId)
     {
-        if (!_isAuthenticated || (_isLoadingEligibility && _eligibilityRequestPitchId == pitchId))
+        if (!_isAuthenticated || (_isLoadingPitchHub && _pitchHubRequestPitchId == pitchId))
         {
             return;
         }
 
-        _eligibilityRequestPitchId = pitchId;
-        _isLoadingEligibility = true;
+        _pitchHubRequestPitchId = pitchId;
+        _isLoadingPitchHub = true;
         await InvokeAsync(StateHasChanged);
 
         try
         {
-            var eligibility = await ApiClient.GetCaptureEligibilityAsync(pitchId);
+            var hub = await ApiClient.GetPitchHubAsync(pitchId, _lastKnownPosition);
             if (_selectedPitch?.Id != pitchId)
             {
                 return;
             }
 
-            _captureEligibility = eligibility;
-            _nearbyPlayerCount = eligibility?.AvailablePlayerCount ?? 0;
+            _pitchHub = hub;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to check capture eligibility for pitch {PitchId}", pitchId);
-            _captureEligibility = null;
-            _nearbyPlayerCount = 0;
+            Logger.LogError(ex, "Failed to load pitch hub {PitchId}", pitchId);
+            _pitchHub = null;
         }
         finally
         {
-            if (_eligibilityRequestPitchId == pitchId)
+            if (_pitchHubRequestPitchId == pitchId)
             {
-                _isLoadingEligibility = false;
-                _eligibilityRequestPitchId = -1;
+                _isLoadingPitchHub = false;
+                _pitchHubRequestPitchId = -1;
             }
 
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    private void NavigateToCapture()
+    private void OpenPitchRecruitBoard()
     {
-        if (!CanCaptureSelectedPitch || _selectedPitch is null)
+        if (!CanRecruitAtSelectedPitch)
+        {
+            return;
+        }
+
+        _selectedPitch = null;
+        _lastSelectedPitchId = -1;
+        _pitchHub = null;
+        Dispatcher.Dispatch(new ClearSelectionAction());
+        _showRecruitBoard = true;
+    }
+
+    private void NavigateToPitchChallenges()
+    {
+        if (!CanChallengeFromSelectedPitch || _selectedPitch is null)
         {
             return;
         }
@@ -3048,6 +3115,14 @@
         PitchType.Standard => "standard",
         PitchType.Training => "training",
         _ => "standard"
+    };
+
+    private static Color PitchTypeChipColor(PitchType type) => type switch
+    {
+        PitchType.Stadium => Color.Warning,
+        PitchType.Standard => Color.Primary,
+        PitchType.Training => Color.Success,
+        _ => Color.Secondary
     };
 
     private static string PitchTypeBadgeClass(PitchType type) => type switch

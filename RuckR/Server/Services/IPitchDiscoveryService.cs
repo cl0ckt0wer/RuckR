@@ -10,12 +10,16 @@ namespace RuckR.Server.Services
         /// <param name="userName">Current username for attribution and diagnostics.</param>
         /// <param name="latitude">Current user latitude in decimal degrees.</param>
         /// <param name="longitude">Current user longitude in decimal degrees.</param>
+        /// <param name="radiusMeters">Search radius in meters.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         /// <returns>Nearby pitch list after discovery and persistence updates.</returns>
         Task<IReadOnlyList<PitchModel>> EnsureNearbyPitchesAsync(
-            string userId,
-            string userName,
+            string? userId,
+            string? userName,
             double latitude,
-            double longitude);
+            double longitude,
+            double radiusMeters = 5000,
+            CancellationToken cancellationToken = default);
     }
 }
 

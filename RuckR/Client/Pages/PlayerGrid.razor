@@ -49,14 +49,14 @@
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
                 <div>
                     <MudText Typo="Typo.overline">Challenge Targets</MudText>
-                    <MudText Typo="Typo.h4">Closest Users</MudText>
+                    <MudText Typo="Typo.h4">@(PitchId.HasValue ? "Pitch Hub Users" : "Closest Users")</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
                         @_nearbyUsers.Count challengeable users within @_selectedRadiusKm km.
                     </MudText>
                 </div>
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                     <MudSelect T="int" Label="Radius" @bind-Value="_selectedRadiusKm" @bind-Value:after="OnRadiusChangedAsync" Variant="Variant.Outlined" Dense="true" Class="radius-select" data-testid="radius-selector">
-                        @foreach (var radius in _radiusOptions)
+                        @foreach (var radius in RadiusOptions)
                         {
                             <MudSelectItem T="int" Value="@radius">@radius km</MudSelectItem>
                         }
@@ -125,6 +125,10 @@
     private List<NearbyUserDto> _nearbyUsers = new();
     private int _selectedRadiusKm = 10;
     private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
+    private static readonly int[] _pitchRadiusOptions = [1, 5];
+
+    [SupplyParameterFromQuery]
+    public int? PitchId { get; set; }
 
     private bool IsLocationSearchPending =>
         GameMap.ShouldMonitorLocationSearch(
@@ -157,6 +161,8 @@
             .ThenBy(user => user.Username)
             .ToList();
 
+    private IEnumerable<int> RadiusOptions => PitchId.HasValue ? _pitchRadiusOptions : _radiusOptions;
+
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -170,6 +176,10 @@
         }
 
         _requiresAuth = false;
+        if (PitchId.HasValue && _selectedRadiusKm > 5)
+        {
+            _selectedRadiusKm = 5;
+        }
 
         if (!LocationState.Value.UserLatitude.HasValue || !LocationState.Value.UserLongitude.HasValue)
         {
@@ -198,7 +208,12 @@
             }
 
             _gpsDisabled = false;
-            _nearbyUsers = await ApiClient.GetNearbyUsersAsync(lat.Value, lng.Value, _selectedRadiusKm * 1000);
+            _nearbyUsers = await ApiClient.GetNearbyUsersAsync(
+                lat.Value,
+                lng.Value,
+                _selectedRadiusKm * 1000,
+                PitchId,
+                LocationState.Value.AccuracyMeters);
         }
         catch (HttpRequestException ex)
         {

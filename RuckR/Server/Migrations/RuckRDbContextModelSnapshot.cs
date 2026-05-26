@@ -351,7 +351,6 @@ namespace RuckR.Server.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("CreatorUserId")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("ExternalPlaceId")

@@ -28,7 +28,9 @@ public static class NativePitchFeatureLayerFactory
         new(type: FieldType.Oid, name: ObjectIdField, alias: "Pitch ID", nullable: false),
         new(type: FieldType.String, name: "name", alias: "Name", length: 200),
         new(type: FieldType.String, name: PitchTypeField, alias: "Pitch type", length: 32),
-        new(type: FieldType.String, name: "pitchRole", alias: "Role", length: 80)
+        new(type: FieldType.String, name: "pitchRole", alias: "Role", length: 80),
+        new(type: FieldType.String, name: "source", alias: "Source", length: 50),
+        new(type: FieldType.Integer, name: "sourceConfidence", alias: "Source confidence")
     ];
 
     /// <summary>Create a pitch feature for the client-side native GeoBlazor FeatureLayer.</summary>
@@ -49,7 +51,9 @@ public static class NativePitchFeatureLayerFactory
                 [ObjectIdField] = pitch.Id,
                 ["name"] = pitch.Name,
                 [PitchTypeField] = pitchTypeDisplayName,
-                ["pitchRole"] = pitchTypeDescription
+                ["pitchRole"] = pitchTypeDescription,
+                ["source"] = pitch.Source,
+                ["sourceConfidence"] = pitch.SourceConfidence
             }));
 
     /// <summary>Create the ArcGIS unique-value renderer for pitch categories.</summary>

@@ -84,14 +84,27 @@ public class ApiClientService
     /// <param name="lat">Latitude.</param>
     /// <param name="lng">Longitude.</param>
     /// <param name="radius">Search radius in meters.</param>
+    /// <param name="pitchId">Optional pitch hub used to scope challenge targets.</param>
+    /// <param name="accuracy">Optional GPS accuracy in meters.</param>
     /// <returns>List of nearby users with recruit counts.</returns>
-    public async Task<List<NearbyUserDto>> GetNearbyUsersAsync(double lat, double lng, double radius = 10_000)
+    public async Task<List<NearbyUserDto>> GetNearbyUsersAsync(
+        double lat,
+        double lng,
+        double radius = 10_000,
+        int? pitchId = null,
+        double? accuracy = null)
     {
         try
         {
-            _logger.LogDebug("Fetching nearby users at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            _logger.LogDebug(
+                "Fetching nearby users at ({Lat}, {Lng}) radius {Radius} pitch {PitchId}",
+                lat,
+                lng,
+                radius,
+                pitchId);
+            var query = BuildQueryString(new { lat, lng, radius, pitchId, accuracy });
             return await _http.GetFromJsonAsync<List<NearbyUserDto>>(
-                $"api/users/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+                $"api/users/nearby{query}") ?? new();
         }
         catch (Exception ex)
         {
@@ -165,6 +178,31 @@ public class ApiClientService
     public async Task<PitchModel?> GetPitchAsync(int id)
     {
         return await _http.GetFromJsonAsync<PitchModel>($"api/pitches/{id}");
+    }
+
+    /// <summary>
+    /// Gets player-facing hub state for a pitch.
+    /// </summary>
+    /// <param name="id">Pitch identifier.</param>
+    /// <param name="position">Optional current GPS position.</param>
+    /// <returns>Pitch hub details, or null when unavailable.</returns>
+    public async Task<PitchHubDto?> GetPitchHubAsync(int id, GeoPosition? position = null)
+    {
+        try
+        {
+            var query = BuildQueryString(new
+            {
+                lat = position?.Latitude,
+                lng = position?.Longitude,
+                accuracy = position?.Accuracy
+            });
+            return await _http.GetFromJsonAsync<PitchHubDto>($"api/pitches/{id}/hub{query}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch pitch hub for pitch {PitchId}", id);
+            return null;
+        }
     }
 
     /// <summary>

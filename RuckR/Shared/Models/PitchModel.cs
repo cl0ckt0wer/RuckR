@@ -42,9 +42,8 @@ namespace RuckR.Shared.Models
         [JsonPropertyName("longitude")]
         public double Longitude { get; set; }
 
-        /// <summary>Creator user identifier.</summary>
-        [Required]
-        public string CreatorUserId { get; set; } = string.Empty;
+        /// <summary>Creator user identifier for manually-created pitches; null for system-created place imports.</summary>
+        public string? CreatorUserId { get; set; }
 
         /// <summary>Pitch type category.</summary>
         public PitchType Type { get; set; }

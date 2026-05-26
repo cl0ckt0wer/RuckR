@@ -101,6 +101,40 @@ public class UsersApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetNearbyUsers_WithPitchId_ReturnsUsersNearSamePitch()
+    {
+        var nearUsername = $"pitchnear_{Guid.NewGuid():N}";
+        var farUsername = $"pitchfar_{Guid.NewGuid():N}";
+        var nearUserId = await _factory.CreateTestUserAsync(nearUsername, "TestPass123!");
+        var farUserId = await _factory.CreateTestUserAsync(farUsername, "TestPass123!");
+        await _factory.SeedCollectionAsync(nearUserId, _playerId, _pitchId);
+        await _factory.SeedCollectionAsync(farUserId, _playerId, _pitchId);
+
+        _factory.LocationTracker.SetPosition(_userId, 51.5074, -0.1278, 20);
+        _factory.LocationTracker.SetPosition(nearUserId, 51.50741, -0.12779, 20);
+        _factory.LocationTracker.SetPosition(farUserId, 51.6000, -0.1278, 20);
+
+        var response = await _client.GetAsync($"/api/users/nearby?lat=51.5074&lng=-0.1278&accuracy=20&radius=5000&pitchId={_pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var users = await response.Content.ReadFromJsonAsync<List<NearbyUserDto>>();
+        Assert.NotNull(users);
+        var user = Assert.Single(users);
+        Assert.Equal(nearUserId, user.UserId);
+        Assert.DoesNotContain(users, candidate => candidate.UserId == farUserId);
+    }
+
+    [Fact]
+    public async Task GetNearbyUsers_WithPitchId_RejectsCallerOutsidePitchRange()
+    {
+        var response = await _client.GetAsync($"/api/users/nearby?lat=52.5074&lng=-0.1278&accuracy=20&radius=5000&pitchId={_pitchId}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("TOO_FAR", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task GetNearbyUsers_InvalidCoordinates_Returns400()
     {
         var response = await _client.GetAsync("/api/users/nearby?lat=999&lng=-0.1278&radius=1000");

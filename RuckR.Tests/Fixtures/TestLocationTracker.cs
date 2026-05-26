@@ -15,12 +15,13 @@ public class TestLocationTracker : ILocationTracker
     /// <summary>
     /// Sets a GPS position for a user that will be returned by TryGetPosition.
     /// </summary>
-    public void SetPosition(string userId, double latitude, double longitude)
+    public void SetPosition(string userId, double latitude, double longitude, double? accuracy = null)
     {
         var position = new GeoPosition
         {
             Latitude = latitude,
             Longitude = longitude,
+            Accuracy = accuracy,
             Timestamp = DateTime.UtcNow
         };
         _positions[userId] = (position, DateTime.UtcNow);

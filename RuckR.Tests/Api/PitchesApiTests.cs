@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetTopologySuite.Geometries;
 using RuckR.Server.Services;
@@ -32,6 +33,8 @@ public class PitchesApiTests : IAsyncLifetime
     /// </summary>
     public async Task InitializeAsync()
     {
+        _factory.ParkService.UseDefaultPark();
+        _factory.ParkService.UseNoPitchCandidates();
         var username = $"pitchapi_{Guid.NewGuid():N}";
         _userId = await _factory.CreateTestUserAsync(username, "TestPass123!");
         _client = _factory.CreateAuthenticatedClient(_userId, username);
@@ -298,97 +301,156 @@ public class PitchesApiTests : IAsyncLifetime
         Assert.Equal((HttpStatusCode)429, sixthResponse.StatusCode);
     }
 
-    /// <summary>
-    /// Verifies ensure Nearby Pitches No Stadium Within Thirty Miles Creates Stadium.
-    /// </summary>
     [Fact]
-    public async Task EnsureNearbyPitches_NoStadiumWithinThirtyMiles_CreatesStadium()
+    public async Task GetNearbyPitches_ApprovedPlacesCandidate_AutoCreatesPitch()
     {
-        using var scope = _factory.Services.CreateScope();
-        var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
+        var placeId = $"places-pitch-{Guid.NewGuid():N}";
+        var candidate = Candidate(placeId, "Approved Rugby Ground", -12.3456, 98.7654, 98, "Standard", "Rugby signal");
+        _factory.ParkService.UsePitchCandidates(candidate);
 
-        var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
-            _userId,
-            "PitchFounder",
-            -12.3456,
-            98.7654);
+        var response = await _client.GetAsync("/api/pitches/nearby?lat=-12.3456&lng=98.7654&radius=5000");
 
-        var stadium = Assert.Single(pitches, p => p.Type == PitchType.Stadium);
-        Assert.Equal("PitchFounder's Stadium", stadium.Name);
-        Assert.Equal(_userId, stadium.CreatorUserId);
-    }
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var pitches = await response.Content.ReadFromJsonAsync<List<PitchModel>>();
+        Assert.NotNull(pitches);
+        var pitch = Assert.Single(pitches, p => p.ExternalPlaceId == placeId);
+        Assert.Equal("ArcGISPlaces", pitch.Source);
+        Assert.Null(pitch.CreatorUserId);
+        Assert.Equal(PitchType.Standard, pitch.Type);
 
-    /// <summary>
-    /// Verifies ensure Nearby Pitches Stadium Within Thirty Miles But Not Ten Creates Standard Pitch.
-    /// </summary>
-    [Fact]
-    public async Task EnsureNearbyPitches_StadiumWithinThirtyMilesButNotTen_CreatesStandardPitch()
-    {
         await _factory.ExecuteInDbAsync(async db =>
         {
-            db.Pitches.Add(new PitchModel
-            {
-                Name = $"ExistingStadium_{Guid.NewGuid():N}",
-                Location = CreatePoint(0.30, 10),
-                CreatorUserId = _userId,
-                Type = PitchType.Stadium,
-                CreatedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
+            var stored = await db.Pitches.SingleAsync(p => p.ExternalPlaceId == placeId);
+            Assert.Equal("Approved Rugby Ground", stored.Name);
+            Assert.Equal("Rugby signal", stored.SourceMatchReason);
+            Assert.Equal(98, stored.SourceConfidence);
+            Assert.Null(stored.CreatorUserId);
         });
+    }
 
+    [Fact]
+    public async Task GetNearbyPitches_DuplicatePlacesCandidate_IsIdempotent()
+    {
+        var placeId = $"places-pitch-{Guid.NewGuid():N}";
+        _factory.ParkService.UsePitchCandidates(
+            Candidate(placeId, "Idempotent Rugby Ground", -13.3456, 99.7654, 98, "Standard", "Rugby signal"));
+
+        var first = await _client.GetAsync("/api/pitches/nearby?lat=-13.3456&lng=99.7654&radius=5000");
+        var second = await _client.GetAsync("/api/pitches/nearby?lat=-13.3456&lng=99.7654&radius=5000");
+
+        first.EnsureSuccessStatusCode();
+        second.EnsureSuccessStatusCode();
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            Assert.Equal(1, await db.Pitches.CountAsync(p => p.ExternalPlaceId == placeId));
+        });
+    }
+
+    [Fact]
+    public async Task GetNearbyPitches_NearDuplicatePlacesCandidate_ReusesExistingPitch()
+    {
+        var firstPlaceId = $"places-pitch-{Guid.NewGuid():N}";
+        var secondPlaceId = $"places-pitch-{Guid.NewGuid():N}";
+        _factory.ParkService.UsePitchCandidates(
+            Candidate(firstPlaceId, "Near Duplicate Rugby Ground", -14.3456, 100.7654, 98, "Standard", "Rugby signal"),
+            Candidate(secondPlaceId, "Near Duplicate Rugby Ground Two", -14.34565, 100.76545, 98, "Standard", "Rugby signal"));
+
+        var response = await _client.GetAsync("/api/pitches/nearby?lat=-14.3456&lng=100.7654&radius=5000");
+
+        response.EnsureSuccessStatusCode();
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            Assert.Equal(1, await db.Pitches.CountAsync(p =>
+                p.ExternalPlaceId == firstPlaceId || p.ExternalPlaceId == secondPlaceId));
+        });
+    }
+
+    [Fact]
+    public async Task GetNearbyPitches_LowConfidenceCandidate_RemainsReviewOnly()
+    {
+        var placeId = $"places-pitch-{Guid.NewGuid():N}";
+        _factory.ParkService.UsePitchCandidates(
+            Candidate(placeId, "Review Park", -15.3456, 101.7654, 58, "Training", "Park or recreation area"));
+
+        var response = await _client.GetAsync("/api/pitches/nearby?lat=-15.3456&lng=101.7654&radius=5000");
+
+        response.EnsureSuccessStatusCode();
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            Assert.False(await db.Pitches.AnyAsync(p => p.ExternalPlaceId == placeId));
+        });
+    }
+
+    [Fact]
+    public async Task EnsureNearbyPitches_NoPlacesCandidates_DoesNotCreateSyntheticUserPitch()
+    {
+        _factory.ParkService.UseNoPitchCandidates();
         using var scope = _factory.Services.CreateScope();
         var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
 
         var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
             _userId,
             "PitchFounder",
+            -16.3456,
+            102.7654);
+
+        Assert.DoesNotContain(pitches, p => p.Name.Contains("PitchFounder", StringComparison.OrdinalIgnoreCase));
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            Assert.False(await db.Pitches.AnyAsync(p =>
+                p.CreatorUserId == _userId
+                && p.Name.Contains("PitchFounder")));
+        });
+    }
+
+    [Theory]
+    [InlineData(null, null, null, "GPS_REQUIRED")]
+    [InlineData(51.5074, -0.1278, 150.0, "GPS_INACCURATE")]
+    [InlineData(52.5074, -0.1278, 20.0, "TOO_FAR")]
+    [InlineData(51.5074, -0.1278, 20.0, "ELIGIBLE")]
+    public async Task GetPitchHub_ReturnsGpsAndRangeReason(
+        double? lat,
+        double? lng,
+        double? accuracy,
+        string expectedReason)
+    {
+        int pitchId = 0;
+        await _factory.ExecuteInDbAsync(db =>
+        {
+            pitchId = db.Pitches.OrderBy(p => p.Id).First().Id;
+            return Task.CompletedTask;
+        });
+
+        var query = lat.HasValue
+            ? $"?lat={lat.Value}&lng={lng!.Value}&accuracy={accuracy!.Value}"
+            : string.Empty;
+        var response = await _client.GetAsync($"/api/pitches/{pitchId}/hub{query}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var hub = await response.Content.ReadFromJsonAsync<PitchHubDto>();
+        Assert.NotNull(hub);
+        Assert.Equal(expectedReason, hub.Reason);
+        Assert.Equal(expectedReason == "ELIGIBLE", hub.CanInteract);
+    }
+
+    private static PitchCandidatePlaceDto Candidate(
+        string placeId,
+        string name,
+        double latitude,
+        double longitude,
+        int confidence,
+        string pitchType,
+        string matchReason) =>
+        new(
+            placeId,
+            name,
+            latitude,
+            longitude,
             0,
-            10);
-
-        var standard = Assert.Single(pitches, p => p.Type == PitchType.Standard);
-        Assert.Equal("PitchFounder's Standard Pitch", standard.Name);
-    }
-
-    /// <summary>
-    /// Verifies ensure Nearby Pitches No Pitch Within Two Miles Creates Practice Pitch.
-    /// </summary>
-    [Fact]
-    public async Task EnsureNearbyPitches_NoPitchWithinTwoMiles_CreatesPracticePitch()
-    {
-        await _factory.ExecuteInDbAsync(async db =>
-        {
-            db.Pitches.Add(new PitchModel
-            {
-                Name = $"ExistingStadium_{Guid.NewGuid():N}",
-                Location = CreatePoint(20.20, 20),
-                CreatorUserId = _userId,
-                Type = PitchType.Stadium,
-                CreatedAt = DateTime.UtcNow
-            });
-            db.Pitches.Add(new PitchModel
-            {
-                Name = $"ExistingStandard_{Guid.NewGuid():N}",
-                Location = CreatePoint(20.05, 20),
-                CreatorUserId = _userId,
-                Type = PitchType.Standard,
-                CreatedAt = DateTime.UtcNow
-            });
-            await db.SaveChangesAsync();
-        });
-
-        using var scope = _factory.Services.CreateScope();
-        var pitchDiscovery = scope.ServiceProvider.GetRequiredService<IPitchDiscoveryService>();
-
-        var pitches = await pitchDiscovery.EnsureNearbyPitchesAsync(
-            _userId,
-            "PitchFounder",
-            20,
-            20);
-
-        var practice = Assert.Single(pitches, p => p.Type == PitchType.Training);
-        Assert.Equal("PitchFounder's Practice Pitch", practice.Name);
-    }
+            pitchType == "Training" ? "Park" : "Rugby Pitch",
+            pitchType,
+            matchReason,
+            confidence);
 
     private static Point CreatePoint(double latitude, double longitude)
         => new(longitude, latitude) { SRID = 4326 };

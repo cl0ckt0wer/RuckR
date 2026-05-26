@@ -52,7 +52,7 @@ namespace RuckR.Server.Data
                 entity.Property(p => p.Location)
                     .HasColumnType("geography");
                 entity.Property(p => p.Name).IsRequired().HasMaxLength(200);
-                entity.Property(p => p.CreatorUserId).IsRequired();
+                entity.Property(p => p.CreatorUserId).IsRequired(false);
                 entity.Property(p => p.Source).IsRequired().HasMaxLength(50).HasDefaultValue("Manual");
                 entity.Property(p => p.ExternalPlaceId).HasMaxLength(128);
                 entity.Property(p => p.SourceCategory).HasMaxLength(200);

@@ -105,6 +105,24 @@ namespace RuckR.Shared.Models
         int Confidence);
 
     /// <summary>
+    /// Player-facing hub state for an interactable pitch.
+    /// </summary>
+    public sealed record PitchHubDto(
+        int PitchId,
+        string Name,
+        string Type,
+        double Latitude,
+        double Longitude,
+        string Source,
+        int? SourceConfidence,
+        double DistanceMeters,
+        string DistanceBucket,
+        bool CanInteract,
+        string Reason,
+        int ActiveRecruitCount,
+        int ChallengeableUserCount);
+
+    /// <summary>
     /// Request payload used to create a pitch from a discovered candidate.
     /// </summary>
     /// <param name="Name">Pitch display name.</param>

@@ -519,6 +519,7 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
 {
     private readonly object _syncRoot = new();
     private IReadOnlyList<RealWorldPark>? _parks;
+    private IReadOnlyList<PitchCandidatePlaceDto> _pitchCandidates = Array.Empty<PitchCandidatePlaceDto>();
 
     /// <summary>
     /// Verifies use Default Park.
@@ -551,6 +552,28 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         lock (_syncRoot)
         {
             _parks = parks;
+        }
+    }
+
+    /// <summary>
+    /// Configures pitch candidate places returned by the test service.
+    /// </summary>
+    public void UsePitchCandidates(params PitchCandidatePlaceDto[] candidates)
+    {
+        lock (_syncRoot)
+        {
+            _pitchCandidates = candidates;
+        }
+    }
+
+    /// <summary>
+    /// Clears pitch candidate places returned by the test service.
+    /// </summary>
+    public void UseNoPitchCandidates()
+    {
+        lock (_syncRoot)
+        {
+            _pitchCandidates = Array.Empty<PitchCandidatePlaceDto>();
         }
     }
 
@@ -592,8 +615,10 @@ public sealed class TestRealWorldParkService : IRealWorldParkService
         double radiusMeters,
         CancellationToken cancellationToken = default)
     {
-        IReadOnlyList<PitchCandidatePlaceDto> candidates = Array.Empty<PitchCandidatePlaceDto>();
-        return Task.FromResult(candidates);
+        lock (_syncRoot)
+        {
+            return Task.FromResult(_pitchCandidates);
+        }
     }
 }
 
