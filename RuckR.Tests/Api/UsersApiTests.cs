@@ -75,6 +75,32 @@ public class UsersApiTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetNearbyUsers_RecordsCallerLocationSoDiscoveryIsSymmetric()
+    {
+        var otherUsername = $"nearby_{Guid.NewGuid():N}";
+        var otherUserId = await _factory.CreateTestUserAsync(otherUsername, "TestPass123!");
+        using var otherClient = _factory.CreateAuthenticatedClient(otherUserId, otherUsername);
+
+        await _factory.SeedCollectionAsync(_userId, _playerId, _pitchId);
+        await _factory.SeedCollectionAsync(otherUserId, _playerId, _pitchId);
+        _factory.LocationTracker.SetPosition(otherUserId, 51.50741, -0.12779);
+
+        var firstResponse = await _client.GetAsync("/api/users/nearby?lat=51.5074&lng=-0.1278&radius=1000");
+        firstResponse.EnsureSuccessStatusCode();
+        var firstUsers = await firstResponse.Content.ReadFromJsonAsync<List<NearbyUserDto>>();
+        Assert.NotNull(firstUsers);
+        Assert.Contains(firstUsers, user => user.UserId == otherUserId);
+
+        var secondResponse = await otherClient.GetAsync("/api/users/nearby?lat=51.50741&lng=-0.12779&radius=1000");
+        secondResponse.EnsureSuccessStatusCode();
+        var secondUsers = await secondResponse.Content.ReadFromJsonAsync<List<NearbyUserDto>>();
+
+        Assert.NotNull(secondUsers);
+        var reciprocalUser = Assert.Single(secondUsers, user => user.UserId == _userId);
+        Assert.Equal(DistanceBucket.Within50m, reciprocalUser.DistanceBucket);
+    }
+
+    [Fact]
     public async Task GetNearbyUsers_InvalidCoordinates_Returns400()
     {
         var response = await _client.GetAsync("/api/users/nearby?lat=999&lng=-0.1278&radius=1000");

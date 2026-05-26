@@ -61,6 +61,7 @@ namespace RuckR.Server.Controllers
                 Longitude = lng,
                 Timestamp = DateTime.UtcNow
             };
+            _locationTracker.UpdatePosition(userId, origin);
 
             var now = DateTime.UtcNow;
             var nearbyPositions = _locationTracker
