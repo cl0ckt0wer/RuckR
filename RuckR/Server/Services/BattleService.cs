@@ -6,7 +6,7 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
 
-/// <summary>Business service for challenge limits, battle state transitions, and RPSLS resolution.</summary>
+/// <summary>Business service for challenge limits, battle state transitions, and hidden rugby play resolution.</summary>
 public class BattleService : IBattleService
 {
     /// <inheritdoc />

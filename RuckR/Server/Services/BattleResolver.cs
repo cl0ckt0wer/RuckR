@@ -2,25 +2,11 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
-    /// <summary>Resolves one-round rock/paper/scissors/lizard/spock battles.</summary>
+    /// <summary>Resolves one-round hidden rugby move battles.</summary>
     public class BattleResolver : IBattleResolver
     {
         private const double MoveWinBonus = 25.0;
         private const double MoveLossPenalty = -25.0;
-
-        private static readonly Dictionary<(BattleMove Winner, BattleMove Loser), string> WinningMoveMethods = new()
-        {
-            { (BattleMove.Scissors, BattleMove.Paper), "Scissors cuts Paper" },
-            { (BattleMove.Paper, BattleMove.Rock), "Paper covers Rock" },
-            { (BattleMove.Rock, BattleMove.Lizard), "Rock crushes Lizard" },
-            { (BattleMove.Lizard, BattleMove.Spock), "Lizard poisons Spock" },
-            { (BattleMove.Spock, BattleMove.Scissors), "Spock smashes Scissors" },
-            { (BattleMove.Scissors, BattleMove.Lizard), "Scissors decapitates Lizard" },
-            { (BattleMove.Lizard, BattleMove.Paper), "Lizard eats Paper" },
-            { (BattleMove.Paper, BattleMove.Spock), "Paper disproves Spock" },
-            { (BattleMove.Spock, BattleMove.Rock), "Spock vaporizes Rock" },
-            { (BattleMove.Rock, BattleMove.Scissors), "Rock crushes Scissors" }
-        };
 
         private static readonly Dictionary<PlayerRarity, double> RarityBonuses = new()
         {
@@ -94,7 +80,7 @@ namespace RuckR.Server.Services
             if (attacker == defender)
                 return 0.0;
 
-            return WinningMoveMethods.ContainsKey((attacker, defender))
+            return BattleMoveDisplay.Beats(attacker, defender)
                 ? MoveWinBonus
                 : MoveLossPenalty;
         }
@@ -130,13 +116,7 @@ namespace RuckR.Server.Services
 
         private static string DetermineMethod(BattleMove winnerMove, BattleMove loserMove)
         {
-            if (winnerMove == loserMove)
-                return "Same move, recruit power wins";
-
-            if (WinningMoveMethods.TryGetValue((winnerMove, loserMove), out var method))
-                return method;
-
-            return "Recruit power overcomes move disadvantage";
+            return BattleMoveDisplay.ResolutionMethod(winnerMove, loserMove);
         }
     }
 }

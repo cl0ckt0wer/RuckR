@@ -35,7 +35,7 @@
                     <MudText Typo="Typo.overline">Arena</MudText>
                     <MudText Typo="Typo.h4">Battle Arena</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Challenge nearby users, accept matches, then choose a recruit and hidden move.
+                        Challenge nearby users, accept matches, then choose a recruit and hidden rugby play.
                     </MudText>
                 </div>
                 <MudStack Row="true" Spacing="1">
@@ -210,11 +210,11 @@
                     }
                 </MudSelect>
 
-                <MudSelect T="BattleMove?" Label="Hidden move" @bind-Value="_selectedMove" Variant="Variant.Outlined" Dense="true" data-testid="selection-move-select">
-                    <MudSelectItem T="BattleMove?" Value="@((BattleMove?)null)">Select a move</MudSelectItem>
+                <MudSelect T="BattleMove?" Label="Hidden rugby play" @bind-Value="_selectedMove" Variant="Variant.Outlined" Dense="true" data-testid="selection-move-select">
+                    <MudSelectItem T="BattleMove?" Value="@((BattleMove?)null)">Select a play</MudSelectItem>
                     @foreach (var move in Enum.GetValues<BattleMove>())
                     {
-                        <MudSelectItem T="BattleMove?" Value="@move">@move</MudSelectItem>
+                        <MudSelectItem T="BattleMove?" Value="@move">@BattleMoveDisplay.Name(move)</MudSelectItem>
                     }
                 </MudSelect>
 
@@ -663,7 +663,7 @@
             else if (challenge.Status == BattleStatus.Accepted && !CurrentUserSubmitted(challenge))
             {
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SportsKabaddi" Size="Size.Small" OnClick="() => OpenSelectionModal(challenge)" data-testid="pick-selection-btn">
-                    Pick Recruit and Move
+                    Pick Recruit and Play
                 </MudButton>
             }
             else if (challenge.Status == BattleStatus.Accepted)
@@ -719,7 +719,7 @@
         if (player is null || move is null)
             return "Not submitted";
 
-        return $"{player.Name} with {move}";
+        return $"{player.Name} with {BattleMoveDisplay.Name(move.Value)}";
     }
 
     private string OpponentSubmissionDisplay(BattleSummaryDto battle)
@@ -755,9 +755,7 @@
 
     private static string MoveScoreDisplay(BattleMove? move, double? score)
     {
-        if (move is null && score is null) return string.Empty;
-        if (score is null) return move?.ToString() ?? string.Empty;
-        return $"{move}: {score:0.##}";
+        return BattleMoveDisplay.Score(move, score, string.Empty);
     }
 
     private static Color StatusColor(BattleStatus status) => status switch

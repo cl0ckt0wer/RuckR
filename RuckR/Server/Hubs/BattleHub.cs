@@ -145,10 +145,10 @@ namespace RuckR.Server.Hubs
                 throw new HubException(ex.Message);
             }
         }
-        /// <summary>Submit a recruit and hidden RPSLS move for an accepted battle.</summary>
+        /// <summary>Submit a recruit and hidden rugby play for an accepted battle.</summary>
         /// <param name="battleId">The battle identifier.</param>
         /// <param name="playerId">The selected recruit/player-card identifier.</param>
-        /// <param name="move">The hidden RPSLS move.</param>
+        /// <param name="move">The hidden rugby play.</param>
         /// <returns>The operation result.</returns>
         public async Task SubmitBattleSelection(int battleId, int playerId, BattleMove move)
         {

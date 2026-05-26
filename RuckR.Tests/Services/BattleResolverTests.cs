@@ -6,16 +6,27 @@ namespace RuckR.Tests.Services;
 public class BattleResolverTests
 {
     [Theory]
-    [InlineData(BattleMove.Scissors, BattleMove.Paper, "Scissors cuts Paper")]
-    [InlineData(BattleMove.Paper, BattleMove.Rock, "Paper covers Rock")]
-    [InlineData(BattleMove.Rock, BattleMove.Lizard, "Rock crushes Lizard")]
-    [InlineData(BattleMove.Lizard, BattleMove.Spock, "Lizard poisons Spock")]
-    [InlineData(BattleMove.Spock, BattleMove.Scissors, "Spock smashes Scissors")]
-    [InlineData(BattleMove.Scissors, BattleMove.Lizard, "Scissors decapitates Lizard")]
-    [InlineData(BattleMove.Lizard, BattleMove.Paper, "Lizard eats Paper")]
-    [InlineData(BattleMove.Paper, BattleMove.Spock, "Paper disproves Spock")]
-    [InlineData(BattleMove.Spock, BattleMove.Rock, "Spock vaporizes Rock")]
-    [InlineData(BattleMove.Rock, BattleMove.Scissors, "Rock crushes Scissors")]
+    [InlineData(BattleMove.Rock, "Crash Ball")]
+    [InlineData(BattleMove.Paper, "Cut-Out Pass")]
+    [InlineData(BattleMove.Scissors, "Grubber Kick")]
+    [InlineData(BattleMove.Lizard, "Sidestep")]
+    [InlineData(BattleMove.Spock, "Scrum Drive")]
+    public void BattleMoveDisplay_UsesRugbyMoveNames(BattleMove move, string expected)
+    {
+        Assert.Equal(expected, BattleMoveDisplay.Name(move));
+    }
+
+    [Theory]
+    [InlineData(BattleMove.Scissors, BattleMove.Paper, "Grubber Kick splits Cut-Out Pass")]
+    [InlineData(BattleMove.Paper, BattleMove.Rock, "Cut-Out Pass finds space around Crash Ball")]
+    [InlineData(BattleMove.Rock, BattleMove.Lizard, "Crash Ball flattens Sidestep")]
+    [InlineData(BattleMove.Lizard, BattleMove.Spock, "Sidestep slips Scrum Drive")]
+    [InlineData(BattleMove.Spock, BattleMove.Scissors, "Scrum Drive swallows Grubber Kick")]
+    [InlineData(BattleMove.Scissors, BattleMove.Lizard, "Grubber Kick catches Sidestep")]
+    [InlineData(BattleMove.Lizard, BattleMove.Paper, "Sidestep breaks Cut-Out Pass")]
+    [InlineData(BattleMove.Paper, BattleMove.Spock, "Cut-Out Pass stretches Scrum Drive")]
+    [InlineData(BattleMove.Spock, BattleMove.Rock, "Scrum Drive rolls over Crash Ball")]
+    [InlineData(BattleMove.Rock, BattleMove.Scissors, "Crash Ball charges down Grubber Kick")]
     public void Resolve_CanonicalMoveWinnerReceivesBonus(BattleMove winnerMove, BattleMove loserMove, string method)
     {
         var resolver = new BattleResolver();

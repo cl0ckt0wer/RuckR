@@ -108,7 +108,7 @@
                                             <MudText Typo="Typo.subtitle2">Your side</MudText>
                                             <MudText Typo="Typo.body2">Role: @(isUserChallenger ? "Challenger" : "Opponent")</MudText>
                                             <MudText Typo="Typo.body2">Recruit: @userPlayerDisplay</MudText>
-                                            <MudText Typo="Typo.body2">Move: @(isUserChallenger ? battle.ChallengerMove : battle.OpponentMove)</MudText>
+                                            <MudText Typo="Typo.body2">Play: @MoveDisplay(isUserChallenger ? battle.ChallengerMove : battle.OpponentMove)</MudText>
                                             @if ((isUserChallenger ? battle.ChallengerScore : battle.OpponentScore) is { } userScore)
                                             {
                                                 <MudText Typo="Typo.body2">Score: @userScore.ToString("0.##")</MudText>
@@ -118,7 +118,7 @@
                                             <MudText Typo="Typo.subtitle2">Opponent</MudText>
                                             <MudText Typo="Typo.body2">User: @opponentDisplay</MudText>
                                             <MudText Typo="Typo.body2">Recruit: @opponentPlayerDisplay</MudText>
-                                            <MudText Typo="Typo.body2">Move: @(isUserChallenger ? battle.OpponentMove : battle.ChallengerMove)</MudText>
+                                            <MudText Typo="Typo.body2">Play: @MoveDisplay(isUserChallenger ? battle.OpponentMove : battle.ChallengerMove)</MudText>
                                             @if ((isUserChallenger ? battle.OpponentScore : battle.ChallengerScore) is { } opponentScore)
                                             {
                                                 <MudText Typo="Typo.body2">Score: @opponentScore.ToString("0.##")</MudText>
@@ -251,9 +251,12 @@
     private static string MoveScoreDisplay(BattleMove? move, double? score)
     {
         if (move is null && score is null) return "selection";
-        if (score is null) return move?.ToString() ?? "selection";
-        return $"{move} ({score:0.##})";
+        if (score is null) return BattleMoveDisplay.Score(move, score);
+        return $"{BattleMoveDisplay.Score(move, null)} ({score:0.##})";
     }
+
+    private static string MoveDisplay(BattleMove? move) =>
+        move.HasValue ? BattleMoveDisplay.Name(move.Value) : "Not submitted";
 
     private static string HistoryCardClass(bool expanded) => expanded
         ? "game-panel history-card history-card--expanded"

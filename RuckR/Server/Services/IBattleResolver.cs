@@ -12,8 +12,8 @@ namespace RuckR.Server.Services
         /// <param name="opponentUserId">Stable user id of the opponent.</param>
         /// <param name="challengerUsername">Display username of the challenger.</param>
         /// <param name="opponentUsername">Display username of the opponent.</param>
-        /// <param name="challengerMove">Hidden move selected by the challenger.</param>
-        /// <param name="opponentMove">Hidden move selected by the opponent.</param>
+        /// <param name="challengerMove">Hidden rugby play selected by the challenger.</param>
+        /// <param name="opponentMove">Hidden rugby play selected by the opponent.</param>
         /// <param name="battleId">Battle identifier used for deterministic final tiebreaks.</param>
         /// <returns>Computed battle result payload.</returns>
         BattleResult Resolve(

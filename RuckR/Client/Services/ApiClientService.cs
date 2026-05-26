@@ -376,11 +376,11 @@ public class ApiClientService
     }
 
     /// <summary>
-    /// Submits a recruit and hidden RPSLS move for an accepted battle.
+    /// Submits a recruit and hidden rugby play for an accepted battle.
     /// </summary>
     /// <param name="battleId">Battle identifier.</param>
     /// <param name="playerId">Owned recruit/player-card identifier.</param>
-    /// <param name="move">Hidden RPSLS move.</param>
+    /// <param name="move">Hidden rugby play.</param>
     /// <returns>Updated battle summary.</returns>
     public async Task<BattleSummaryDto?> SubmitBattleSelectionAsync(int battleId, int playerId, BattleMove move)
     {

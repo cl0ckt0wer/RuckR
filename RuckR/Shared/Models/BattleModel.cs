@@ -29,10 +29,10 @@ namespace RuckR.Shared.Models
         /// <summary>Current lifecycle state of the battle.</summary>
         public BattleStatus Status { get; set; } = BattleStatus.Pending;
 
-        /// <summary>Hidden move selected by the challenger.</summary>
+        /// <summary>Hidden rugby play selected by the challenger.</summary>
         public BattleMove? ChallengerMove { get; set; }
 
-        /// <summary>Hidden move selected by the opponent.</summary>
+        /// <summary>Hidden rugby play selected by the opponent.</summary>
         public BattleMove? OpponentMove { get; set; }
 
         /// <summary>Timestamp when the opponent accepted the challenge.</summary>

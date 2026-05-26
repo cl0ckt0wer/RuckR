@@ -213,7 +213,7 @@ namespace RuckR.Client.Services
         /// </summary>
         /// <param name="battleId">Battle identifier.</param>
         /// <param name="playerId">Owned recruit/player-card id.</param>
-        /// <param name="move">Hidden RPSLS move.</param>
+        /// <param name="move">Hidden rugby play.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
         public async Task SubmitBattleSelectionAsync(int battleId, int playerId, BattleMove move)
         {

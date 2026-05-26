@@ -89,7 +89,7 @@ namespace RuckR.Server.Controllers
             }
         }
 
-        /// <summary>Submit the current user's hidden recruit and RPSLS move for an accepted battle.</summary>
+        /// <summary>Submit the current user's hidden recruit and rugby play for an accepted battle.</summary>
         [HttpPost("{id}/selection")]
         public async Task<ActionResult<BattleSummaryDto>> SubmitSelection(int id, [FromBody] BattleSelectionRequest request)
         {

@@ -20,7 +20,7 @@ namespace RuckR.Server.Services
         /// <summary>Accepts a pending challenge without resolving it.</summary>
         Task<BattleSummaryDto> AcceptChallengeAsync(int battleId, string opponentUserId);
 
-        /// <summary>Submits the current user's recruit and hidden RPSLS move.</summary>
+        /// <summary>Submits the current user's recruit and hidden rugby play.</summary>
         Task<BattleSummaryDto> SubmitSelectionAsync(int battleId, string userId, int playerId, BattleMove move);
 
         /// <summary>Declines a pending challenge.</summary>

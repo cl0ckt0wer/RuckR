@@ -18,10 +18,10 @@ namespace RuckR.Shared.Models
     public sealed record AcceptChallengeRequest;
 
     /// <summary>
-    /// Request payload used to submit a recruit and hidden move for an accepted battle.
+    /// Request payload used to submit a recruit and hidden rugby play for an accepted battle.
     /// </summary>
     /// <param name="PlayerId">Owned recruit/player-card id selected for the battle.</param>
-    /// <param name="Move">Hidden move selected by the current user.</param>
+    /// <param name="Move">Hidden rugby play selected by the current user.</param>
     public sealed record BattleSelectionRequest(int PlayerId, BattleMove Move);
 
     /// <summary>
@@ -143,6 +143,14 @@ namespace RuckR.Shared.Models
     /// <param name="LoserPlayerName">Losing recruit name.</param>
     /// <param name="Method">How the battle concluded.</param>
     /// <param name="CreatedAt">Result creation timestamp.</param>
+    /// <param name="WinnerMove">Winning hidden rugby play.</param>
+    /// <param name="LoserMove">Losing hidden rugby play.</param>
+    /// <param name="WinnerScore">Winning score after recruit and play bonuses.</param>
+    /// <param name="LoserScore">Losing score after recruit and play bonuses.</param>
+    /// <param name="ChallengerMove">Challenger hidden rugby play.</param>
+    /// <param name="OpponentMove">Opponent hidden rugby play.</param>
+    /// <param name="ChallengerScore">Challenger score after recruit and play bonuses.</param>
+    /// <param name="OpponentScore">Opponent score after recruit and play bonuses.</param>
     public sealed record BattleResult(
         string WinnerUsername,
         string LoserUsername,

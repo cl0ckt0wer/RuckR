@@ -48,7 +48,7 @@ public class BattleReducersTests
                 "bob",
                 "A recruit",
                 "B recruit",
-                "Rock crushes Scissors",
+                "Crash Ball charges down Grubber Kick",
                 DateTime.UtcNow,
                 BattleMove.Rock,
                 BattleMove.Scissors,

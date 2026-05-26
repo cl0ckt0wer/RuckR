@@ -101,19 +101,19 @@ namespace RuckR.Shared.Models
     }
 
     /// <summary>
-    /// Hidden move choices used by rock/paper/scissors/lizard/spock battles.
+    /// Hidden rugby move choices. Enum names preserve the original RPSLS storage values.
     /// </summary>
     public enum BattleMove
     {
-        /// <summary>Rock crushes lizard and scissors.</summary>
+        /// <summary>Displayed as Crash Ball.</summary>
         Rock,
-        /// <summary>Paper covers rock and disproves Spock.</summary>
+        /// <summary>Displayed as Cut-Out Pass.</summary>
         Paper,
-        /// <summary>Scissors cuts paper and decapitates lizard.</summary>
+        /// <summary>Displayed as Grubber Kick.</summary>
         Scissors,
-        /// <summary>Lizard eats paper and poisons Spock.</summary>
+        /// <summary>Displayed as Sidestep.</summary>
         Lizard,
-        /// <summary>Spock smashes scissors and vaporizes rock.</summary>
+        /// <summary>Displayed as Scrum Drive.</summary>
         Spock
     }
 }
