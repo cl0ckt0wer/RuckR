@@ -154,6 +154,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         builder.Services.AddScoped<IBattleResolver, BattleResolver>();
         builder.Services.AddScoped<IBattleService, BattleService>();
+        builder.Services.AddScoped<IBattleRealtimeNotifier, BattleRealtimeNotifier>();
         builder.Services.AddScoped<IProfileService, ProfileService>();
         builder.Services.AddScoped<IRateLimitService, RateLimitService>();
         builder.Services.AddScoped<IPitchDiscoveryService, PitchDiscoveryService>();

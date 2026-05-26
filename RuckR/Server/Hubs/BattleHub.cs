@@ -20,24 +20,28 @@ namespace RuckR.Server.Hubs
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILocationTracker _locationTracker;
         private readonly IBattleService _battleService;
+        private readonly IBattleRealtimeNotifier _battleRealtimeNotifier;
         private readonly IPitchDiscoveryService _pitchDiscoveryService;
     /// <summary>Initializes a new instance of <see cref="BattleHub"/>.</summary>
     /// <param name="db">The database context.</param>
     /// <param name="userManager">The identity user manager.</param>
     /// <param name="locationTracker">The location tracker service.</param>
     /// <param name="battleService">The battle service.</param>
+    /// <param name="battleRealtimeNotifier">The battle realtime notifier.</param>
     /// <param name="pitchDiscoveryService">The pitch discovery service.</param>
         public BattleHub(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
             ILocationTracker locationTracker,
             IBattleService battleService,
+            IBattleRealtimeNotifier battleRealtimeNotifier,
             IPitchDiscoveryService pitchDiscoveryService)
         {
             _db = db;
             _userManager = userManager;
             _locationTracker = locationTracker;
             _battleService = battleService;
+            _battleRealtimeNotifier = battleRealtimeNotifier;
             _pitchDiscoveryService = pitchDiscoveryService;
         }
         /// <summary>Track a new SignalR connection.</summary>
@@ -114,12 +118,8 @@ namespace RuckR.Server.Hubs
             {
                 var summary = await _battleService.CreateChallengeAsync(userId, opponentUsername, idempotencyKey);
 
-                await Clients.User(summary.OpponentId).SendAsync(
-                    "ReceiveChallenge",
-                    new ChallengeNotification(summary.ChallengerUsername, summary.Id));
-                await Clients.User(summary.OpponentId).SendAsync("BattleUpdated", summary);
+                await _battleRealtimeNotifier.NotifyChallengeCreatedAsync(summary.Id);
                 await Clients.Caller.SendAsync("ChallengeSent", summary.Id);
-                await Clients.Caller.SendAsync("BattleUpdated", summary);
             }
             catch (BattleOperationException ex)
             {
@@ -138,8 +138,7 @@ namespace RuckR.Server.Hubs
             try
             {
                 var summary = await _battleService.AcceptChallengeAsync(battleId, userId);
-                await Clients.User(summary.ChallengerId).SendAsync("BattleUpdated", summary);
-                await Clients.Caller.SendAsync("BattleUpdated", summary);
+                await _battleRealtimeNotifier.NotifyBattleChangedAsync(summary.Id);
             }
             catch (BattleOperationException ex)
             {
@@ -160,16 +159,7 @@ namespace RuckR.Server.Hubs
             try
             {
                 var summary = await _battleService.SubmitSelectionAsync(battleId, userId, playerId, move);
-                var battle = await _db.Battles.AsNoTracking().FirstAsync(b => b.Id == battleId);
-                var challengerSummary = await _battleService.ToSummaryAsync(battle, summary.ChallengerId, summary.Result);
-                var opponentSummary = await _battleService.ToSummaryAsync(battle, summary.OpponentId, summary.Result);
-                await Clients.User(summary.ChallengerId).SendAsync("BattleUpdated", challengerSummary);
-                await Clients.User(summary.OpponentId).SendAsync("BattleUpdated", opponentSummary);
-                if (summary.Result is not null)
-                {
-                    await Clients.User(summary.ChallengerId).SendAsync("BattleResolved", summary.Result);
-                    await Clients.User(summary.OpponentId).SendAsync("BattleResolved", summary.Result);
-                }
+                await _battleRealtimeNotifier.NotifyBattleChangedAsync(summary.Id, summary.Result);
             }
             catch (BattleOperationException ex)
             {
@@ -187,10 +177,8 @@ namespace RuckR.Server.Hubs
 
             try
             {
-                var battle = await _db.Battles.AsNoTracking().FirstOrDefaultAsync(b => b.Id == battleId);
                 await _battleService.DeclineChallengeAsync(battleId, userId);
-                if (battle is not null)
-                    await Clients.User(battle.ChallengerId).SendAsync("ChallengeDeclined", battle.Id);
+                await _battleRealtimeNotifier.NotifyChallengeDeclinedAsync(battleId);
             }
             catch (BattleOperationException ex)
             {

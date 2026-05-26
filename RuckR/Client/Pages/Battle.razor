@@ -368,6 +368,15 @@
         SignalRClient.BattleResolved += OnBattleResolved;
         SignalRClient.BattleUpdated += OnBattleUpdated;
         SignalRClient.ChallengeReceived += OnChallengeReceived;
+
+        try
+        {
+            await SignalRClient.StartAsync();
+        }
+        catch
+        {
+            _errorMessage = "Live battle updates are disconnected. Actions still work, but updates may require refresh.";
+        }
     }
 
     private async Task LoadCollectionAsync()

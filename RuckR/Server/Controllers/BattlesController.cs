@@ -18,16 +18,19 @@ namespace RuckR.Server.Controllers
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IBattleService _battleService;
+        private readonly IBattleRealtimeNotifier _battleRealtimeNotifier;
 
         /// <summary>Initializes a new instance of <see cref="BattlesController"/>.</summary>
         public BattlesController(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
-            IBattleService battleService)
+            IBattleService battleService,
+            IBattleRealtimeNotifier battleRealtimeNotifier)
         {
             _db = db;
             _userManager = userManager;
             _battleService = battleService;
+            _battleRealtimeNotifier = battleRealtimeNotifier;
         }
 
         /// <summary>Send a battle challenge to another user.</summary>
@@ -56,6 +59,8 @@ namespace RuckR.Server.Controllers
                     request.OpponentUsername,
                     key);
 
+                await _battleRealtimeNotifier.NotifyChallengeCreatedAsync(summary.Id);
+
                 return CreatedAtAction(nameof(GetPending), new { id = summary.Id }, summary);
             }
             catch (BattleOperationException ex)
@@ -74,7 +79,9 @@ namespace RuckR.Server.Controllers
 
             try
             {
-                return Ok(await _battleService.AcceptChallengeAsync(id, userId));
+                var summary = await _battleService.AcceptChallengeAsync(id, userId);
+                await _battleRealtimeNotifier.NotifyBattleChangedAsync(summary.Id);
+                return Ok(summary);
             }
             catch (BattleOperationException ex)
             {
@@ -92,7 +99,9 @@ namespace RuckR.Server.Controllers
 
             try
             {
-                return Ok(await _battleService.SubmitSelectionAsync(id, userId, request.PlayerId, request.Move));
+                var summary = await _battleService.SubmitSelectionAsync(id, userId, request.PlayerId, request.Move);
+                await _battleRealtimeNotifier.NotifyBattleChangedAsync(summary.Id, summary.Result);
+                return Ok(summary);
             }
             catch (BattleOperationException ex)
             {
@@ -111,6 +120,7 @@ namespace RuckR.Server.Controllers
             try
             {
                 await _battleService.DeclineChallengeAsync(id, userId);
+                await _battleRealtimeNotifier.NotifyChallengeDeclinedAsync(id);
                 return Ok();
             }
             catch (BattleOperationException ex)
