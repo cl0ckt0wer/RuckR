@@ -19,33 +19,25 @@ namespace RuckR.Server.Hubs
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly ILocationTracker _locationTracker;
-        private readonly IBattleResolver _battleResolver;
         private readonly IBattleService _battleService;
-        private readonly IRateLimitService _rateLimitService;
         private readonly IPitchDiscoveryService _pitchDiscoveryService;
     /// <summary>Initializes a new instance of <see cref="BattleHub"/>.</summary>
     /// <param name="db">The database context.</param>
     /// <param name="userManager">The identity user manager.</param>
     /// <param name="locationTracker">The location tracker service.</param>
-    /// <param name="battleResolver">The battle resolver service.</param>
     /// <param name="battleService">The battle service.</param>
-    /// <param name="rateLimitService">The rate limit service.</param>
     /// <param name="pitchDiscoveryService">The pitch discovery service.</param>
         public BattleHub(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
             ILocationTracker locationTracker,
-            IBattleResolver battleResolver,
             IBattleService battleService,
-            IRateLimitService rateLimitService,
             IPitchDiscoveryService pitchDiscoveryService)
         {
             _db = db;
             _userManager = userManager;
             _locationTracker = locationTracker;
-            _battleResolver = battleResolver;
             _battleService = battleService;
-            _rateLimitService = rateLimitService;
             _pitchDiscoveryService = pitchDiscoveryService;
         }
         /// <summary>Track a new SignalR connection.</summary>
@@ -110,102 +102,9 @@ namespace RuckR.Server.Hubs
         }
         /// <summary>Send a challenge to an opponent.</summary>
         /// <param name="opponentUsername">The opponent's username.</param>
-        /// <param name="playerId">The selected recruit/player-card identifier.</param>
         /// <param name="idempotencyKey">Optional idempotency key.</param>
         /// <returns>The operation result.</returns>
-        public async Task SendChallenge(string opponentUsername, int playerId, string? idempotencyKey = null)
-        {
-            var userId = GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
-                throw new HubException("User identity not found.");
-
-            // 1. Cannot challenge self
-            var opponent = await _userManager.FindByNameAsync(opponentUsername);
-            if (opponent is null)
-                throw new HubException($"User '{opponentUsername}' not found.");
-
-            if (opponent.Id == userId)
-                throw new HubException("Cannot challenge yourself.");
-
-            // 2. Selected recruit exists and is in current user's collection
-            var player = await _db.Players.FindAsync(playerId);
-            if (player is null)
-                throw new HubException($"Recruit with id {playerId} not found.");
-
-            var playerInCollection = await _db.Collections
-                .AnyAsync(c => c.UserId == userId && c.PlayerId == playerId);
-            if (!playerInCollection)
-                throw new HubException("Selected recruit is not in your collection.");
-
-            // 3. Check pending challenge count (shared limit from IBattleService)
-            var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
-
-            // 0. Idempotency check: prevent duplicate challenges from retries
-            if (!string.IsNullOrWhiteSpace(idempotencyKey))
-            {
-                var existing = await _db.Battles
-                    .AnyAsync(b => b.IdempotencyKey == idempotencyKey
-                        && b.ChallengerId == userId
-                        && b.CreatedAt > expiryCutoff);
-                if (existing)
-                {
-                    // Return the existing battle instead of creating a duplicate
-                    var existingBattle = await _db.Battles
-                        .FirstAsync(b => b.IdempotencyKey == idempotencyKey
-                            && b.ChallengerId == userId
-                            && b.CreatedAt > expiryCutoff);
-                    await Clients.Caller.SendAsync("ChallengeSent", existingBattle.Id);
-                    return;
-                }
-            }
-
-            var pendingCount = await _db.Battles
-                .CountAsync(b => b.ChallengerId == userId
-                    && b.Status == BattleStatus.Pending
-                    && b.CreatedAt > expiryCutoff);
-
-            if (pendingCount >= _battleService.MaxPendingChallenges)
-                throw new HubException("You have too many pending challenges. Wait for them to expire or be resolved.");
-
-            // 4. Rate limit (shared with REST API via IRateLimitService)
-            var allowed = await _rateLimitService.IsAllowedAsync(userId, "challenge", _battleService.MaxChallengesPerHour, TimeSpan.FromHours(1));
-            if (!allowed)
-                throw new HubException($"Rate limit exceeded. You can send up to {_battleService.MaxChallengesPerHour} challenges per hour.");
-
-            var battle = new BattleModel
-            {
-                ChallengerId = userId,
-                OpponentId = opponent.Id,
-                ChallengerPlayerId = playerId,
-                Status = BattleStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                IdempotencyKey = idempotencyKey
-            };
-
-            _db.Battles.Add(battle);
-            await _db.SaveChangesAsync();
-
-            // 5. Notify the opponent with a ChallengeNotification DTO
-            var challengerUser = await _userManager.FindByIdAsync(userId);
-            var challengerUsername = challengerUser?.UserName ?? "Unknown";
-
-            var notification = new ChallengeNotification(
-                ChallengerUsername: challengerUsername,
-                PlayerName: player.Name,
-                PlayerPosition: player.Position.ToString(),
-                PlayerRarity: player.Rarity.ToString(),
-                ChallengeId: battle.Id);
-
-            await Clients.User(opponent.Id).SendAsync("ReceiveChallenge", notification);
-
-            // 6. Confirm success to the caller
-            await Clients.Caller.SendAsync("ChallengeSent", battle.Id);
-        }
-        /// <summary>Accept a challenge and resolve it with the selected recruit.</summary>
-        /// <param name="battleId">The battle identifier.</param>
-        /// <param name="playerId">The selected recruit/player-card identifier.</param>
-        /// <returns>The operation result.</returns>
-        public async Task AcceptChallenge(int battleId, int playerId)
+        public async Task SendChallenge(string opponentUsername, string? idempotencyKey = null)
         {
             var userId = GetCurrentUserId();
             if (string.IsNullOrWhiteSpace(userId))
@@ -213,12 +112,64 @@ namespace RuckR.Server.Hubs
 
             try
             {
-                var summary = await _battleService.AcceptAndResolveChallengeAsync(battleId, userId, playerId);
-                if (summary.Result is null)
-                    throw new HubException("Battle resolved without a result payload.");
+                var summary = await _battleService.CreateChallengeAsync(userId, opponentUsername, idempotencyKey);
 
-                await Clients.User(summary.ChallengerId).SendAsync("BattleResolved", summary.Result);
-                await Clients.Caller.SendAsync("BattleResolved", summary.Result);
+                await Clients.User(summary.OpponentId).SendAsync(
+                    "ReceiveChallenge",
+                    new ChallengeNotification(summary.ChallengerUsername, summary.Id));
+                await Clients.User(summary.OpponentId).SendAsync("BattleUpdated", summary);
+                await Clients.Caller.SendAsync("ChallengeSent", summary.Id);
+                await Clients.Caller.SendAsync("BattleUpdated", summary);
+            }
+            catch (BattleOperationException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+        }
+        /// <summary>Accept a challenge without resolving it.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <returns>The operation result.</returns>
+        public async Task AcceptChallenge(int battleId)
+        {
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                throw new HubException("User identity not found.");
+
+            try
+            {
+                var summary = await _battleService.AcceptChallengeAsync(battleId, userId);
+                await Clients.User(summary.ChallengerId).SendAsync("BattleUpdated", summary);
+                await Clients.Caller.SendAsync("BattleUpdated", summary);
+            }
+            catch (BattleOperationException ex)
+            {
+                throw new HubException(ex.Message);
+            }
+        }
+        /// <summary>Submit a recruit and hidden RPSLS move for an accepted battle.</summary>
+        /// <param name="battleId">The battle identifier.</param>
+        /// <param name="playerId">The selected recruit/player-card identifier.</param>
+        /// <param name="move">The hidden RPSLS move.</param>
+        /// <returns>The operation result.</returns>
+        public async Task SubmitBattleSelection(int battleId, int playerId, BattleMove move)
+        {
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                throw new HubException("User identity not found.");
+
+            try
+            {
+                var summary = await _battleService.SubmitSelectionAsync(battleId, userId, playerId, move);
+                var battle = await _db.Battles.AsNoTracking().FirstAsync(b => b.Id == battleId);
+                var challengerSummary = await _battleService.ToSummaryAsync(battle, summary.ChallengerId, summary.Result);
+                var opponentSummary = await _battleService.ToSummaryAsync(battle, summary.OpponentId, summary.Result);
+                await Clients.User(summary.ChallengerId).SendAsync("BattleUpdated", challengerSummary);
+                await Clients.User(summary.OpponentId).SendAsync("BattleUpdated", opponentSummary);
+                if (summary.Result is not null)
+                {
+                    await Clients.User(summary.ChallengerId).SendAsync("BattleResolved", summary.Result);
+                    await Clients.User(summary.OpponentId).SendAsync("BattleResolved", summary.Result);
+                }
             }
             catch (BattleOperationException ex)
             {
@@ -234,31 +185,17 @@ namespace RuckR.Server.Hubs
             if (string.IsNullOrWhiteSpace(userId))
                 throw new HubException("User identity not found.");
 
-            var battle = await _db.Battles.FindAsync(battleId);
-            if (battle is null)
-                throw new HubException($"Battle with id {battleId} not found.");
-
-            if (battle.OpponentId != userId)
-                throw new HubException("Only the opponent can decline this challenge.");
-
-            if (battle.Status != BattleStatus.Pending)
-                throw new HubException("Challenge is no longer pending.");
-
-            // Lazy-expiry check before declining
-            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
+            try
             {
-                battle.Status = BattleStatus.Expired;
-                battle.ResolvedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
-                throw new HubException("Challenge has expired.");
+                var battle = await _db.Battles.AsNoTracking().FirstOrDefaultAsync(b => b.Id == battleId);
+                await _battleService.DeclineChallengeAsync(battleId, userId);
+                if (battle is not null)
+                    await Clients.User(battle.ChallengerId).SendAsync("ChallengeDeclined", battle.Id);
             }
-
-            battle.Status = BattleStatus.Declined;
-            battle.ResolvedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-
-            // Notify the challenger
-            await Clients.User(battle.ChallengerId).SendAsync("ChallengeDeclined", battle.Id);
+            catch (BattleOperationException ex)
+            {
+                throw new HubException(ex.Message);
+            }
         }
         /// <summary>Join the live group for a battle.</summary>
         /// <param name="battleId">The battle identifier.</param>

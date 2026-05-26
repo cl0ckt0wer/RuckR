@@ -2,161 +2,141 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
 {
-    /// <summary>Defines the server-side class BattleResolver.</summary>
+    /// <summary>Resolves one-round rock/paper/scissors/lizard/spock battles.</summary>
     public class BattleResolver : IBattleResolver
     {
-        private static readonly Dictionary<(PlayerPosition, PlayerPosition), double> PositionMultipliers = new()
+        private const double MoveWinBonus = 25.0;
+        private const double MoveLossPenalty = -25.0;
+
+        private static readonly Dictionary<(BattleMove Winner, BattleMove Loser), string> WinningMoveMethods = new()
         {
-            // (attacker, defender) -> attacker's multiplier
-            { (PlayerPosition.Prop, PlayerPosition.Wing), 1.2 },
-            { (PlayerPosition.Wing, PlayerPosition.Prop), 0.85 },
-            { (PlayerPosition.FlyHalf, PlayerPosition.ScrumHalf), 1.15 },
-            { (PlayerPosition.Lock, PlayerPosition.Hooker), 1.1 },
-            { (PlayerPosition.Flanker, PlayerPosition.FlyHalf), 1.1 },
+            { (BattleMove.Scissors, BattleMove.Paper), "Scissors cuts Paper" },
+            { (BattleMove.Paper, BattleMove.Rock), "Paper covers Rock" },
+            { (BattleMove.Rock, BattleMove.Lizard), "Rock crushes Lizard" },
+            { (BattleMove.Lizard, BattleMove.Spock), "Lizard poisons Spock" },
+            { (BattleMove.Spock, BattleMove.Scissors), "Spock smashes Scissors" },
+            { (BattleMove.Scissors, BattleMove.Lizard), "Scissors decapitates Lizard" },
+            { (BattleMove.Lizard, BattleMove.Paper), "Lizard eats Paper" },
+            { (BattleMove.Paper, BattleMove.Spock), "Paper disproves Spock" },
+            { (BattleMove.Spock, BattleMove.Rock), "Spock vaporizes Rock" },
+            { (BattleMove.Rock, BattleMove.Scissors), "Rock crushes Scissors" }
         };
 
-        private static readonly Dictionary<PlayerRarity, double> RarityMultipliers = new()
+        private static readonly Dictionary<PlayerRarity, double> RarityBonuses = new()
         {
-            { PlayerRarity.Common, 1.0 },
-            { PlayerRarity.Uncommon, 1.2 },
-            { PlayerRarity.Rare, 1.5 },
-            { PlayerRarity.Epic, 2.0 },
-            { PlayerRarity.Legendary, 3.0 },
+            { PlayerRarity.Common, 0.0 },
+            { PlayerRarity.Uncommon, 5.0 },
+            { PlayerRarity.Rare, 10.0 },
+            { PlayerRarity.Epic, 15.0 },
+            { PlayerRarity.Legendary, 20.0 }
         };
-        /// <summary>R es ol ve.</summary>
-        /// <param name="challengerPlayer">The challengerplayer.</param>
-        /// <param name="opponentPlayer">The opponentplayer.</param>
-        /// <param name="challengerUsername">The challengerusername.</param>
-        /// <param name="opponentUsername">The opponentusername.</param>
-        /// <param name="seed">The seed.</param>
-        /// <returns>The operation result.</returns>
+
+        /// <inheritdoc />
         public BattleResult Resolve(
             PlayerModel challengerPlayer,
             PlayerModel opponentPlayer,
+            string challengerUserId,
+            string opponentUserId,
             string challengerUsername,
             string opponentUsername,
-            int? seed = null)
+            BattleMove challengerMove,
+            BattleMove opponentMove,
+            int battleId)
         {
-            var random = seed.HasValue ? new Random(seed.Value) : Random.Shared;
+            var challengerMoveBonus = GetMoveBonus(challengerMove, opponentMove);
+            var opponentMoveBonus = GetMoveBonus(opponentMove, challengerMove);
+            var challengerScore = GetRecruitPower(challengerPlayer) + challengerMoveBonus;
+            var opponentScore = GetRecruitPower(opponentPlayer) + opponentMoveBonus;
 
-            // Base stat sums
-            double challengerBase = (challengerPlayer.Speed + challengerPlayer.Strength + challengerPlayer.Agility + challengerPlayer.Kicking) / 4.0;
-            double opponentBase = (opponentPlayer.Speed + opponentPlayer.Strength + opponentPlayer.Agility + opponentPlayer.Kicking) / 4.0;
+            var challengerWins = DetermineChallengerWins(
+                challengerPlayer,
+                opponentPlayer,
+                challengerScore,
+                opponentScore,
+                challengerUserId,
+                opponentUserId,
+                battleId);
 
-            // Position multipliers
-            double challengerPosMult = GetPositionMultiplier(challengerPlayer.Position, opponentPlayer.Position);
-            double opponentPosMult = GetPositionMultiplier(opponentPlayer.Position, challengerPlayer.Position);
-
-            // Rarity multipliers
-            double challengerRarityMult = RarityMultipliers[challengerPlayer.Rarity];
-            double opponentRarityMult = RarityMultipliers[opponentPlayer.Rarity];
-
-            // Random factors
-            double challengerRandom = 0.85 + (random.NextDouble() * 0.3);
-            double opponentRandom = 0.85 + (random.NextDouble() * 0.3);
-
-            // Final scores
-            double challengerScore = challengerBase * challengerPosMult * challengerRarityMult * challengerRandom;
-            double opponentScore = opponentBase * opponentPosMult * opponentRarityMult * opponentRandom;
-
-            PlayerModel winner;
-            PlayerModel loser;
-            string winnerUsername;
-            string loserUsername;
-
-            if (challengerScore > opponentScore)
-            {
-                winner = challengerPlayer;
-                loser = opponentPlayer;
-                winnerUsername = challengerUsername;
-                loserUsername = opponentUsername;
-            }
-            else if (opponentScore > challengerScore)
-            {
-                winner = opponentPlayer;
-                loser = challengerPlayer;
-                winnerUsername = opponentUsername;
-                loserUsername = challengerUsername;
-            }
-            else
-            {
-                // Tiebreaker: random
-                if (random.Next(2) == 0)
-                {
-                    winner = challengerPlayer;
-                    loser = opponentPlayer;
-                    winnerUsername = challengerUsername;
-                    loserUsername = opponentUsername;
-                }
-                else
-                {
-                    winner = opponentPlayer;
-                    loser = challengerPlayer;
-                    winnerUsername = opponentUsername;
-                    loserUsername = challengerUsername;
-                }
-            }
-
-            string method = DetermineMethod(winner, loser);
+            var winner = challengerWins ? challengerPlayer : opponentPlayer;
+            var loser = challengerWins ? opponentPlayer : challengerPlayer;
+            var winnerUsername = challengerWins ? challengerUsername : opponentUsername;
+            var loserUsername = challengerWins ? opponentUsername : challengerUsername;
+            var winnerMove = challengerWins ? challengerMove : opponentMove;
+            var loserMove = challengerWins ? opponentMove : challengerMove;
+            var winnerScore = challengerWins ? challengerScore : opponentScore;
+            var loserScore = challengerWins ? opponentScore : challengerScore;
 
             return new BattleResult(
                 WinnerUsername: winnerUsername,
                 LoserUsername: loserUsername,
                 WinnerPlayerName: winner.Name,
                 LoserPlayerName: loser.Name,
-                Method: method,
-                CreatedAt: DateTime.UtcNow);
+                Method: DetermineMethod(winnerMove, loserMove),
+                CreatedAt: DateTime.UtcNow,
+                WinnerMove: winnerMove,
+                LoserMove: loserMove,
+                WinnerScore: Math.Round(winnerScore, 2),
+                LoserScore: Math.Round(loserScore, 2),
+                ChallengerMove: challengerMove,
+                OpponentMove: opponentMove,
+                ChallengerScore: Math.Round(challengerScore, 2),
+                OpponentScore: Math.Round(opponentScore, 2));
         }
 
-        private static double GetPositionMultiplier(PlayerPosition attacker, PlayerPosition defender)
+        private static double GetRecruitPower(PlayerModel player)
         {
-            if (PositionMultipliers.TryGetValue((attacker, defender), out double multiplier))
-            {
-                return multiplier;
-            }
-
-            return 1.0;
+            var statAverage = (player.Speed + player.Strength + player.Agility + player.Kicking) / 4.0;
+            return statAverage + (player.Level * 2.0) + RarityBonuses[player.Rarity];
         }
 
-        private static string DetermineMethod(PlayerModel winner, PlayerModel loser)
+        private static double GetMoveBonus(BattleMove attacker, BattleMove defender)
         {
-            int speedDiff = winner.Speed - loser.Speed;
-            int strengthDiff = winner.Strength - loser.Strength;
-            int kickingDiff = winner.Kicking - loser.Kicking;
-            int agilityDiff = winner.Agility - loser.Agility;
+            if (attacker == defender)
+                return 0.0;
 
-            if (speedDiff > 15)
-            {
-                return "Speed Advantage";
-            }
+            return WinningMoveMethods.ContainsKey((attacker, defender))
+                ? MoveWinBonus
+                : MoveLossPenalty;
+        }
 
-            if (strengthDiff > 15 && (winner.Position == PlayerPosition.Prop || winner.Position == PlayerPosition.Lock))
-            {
-                return "Power Overwhelming";
-            }
+        private static bool DetermineChallengerWins(
+            PlayerModel challengerPlayer,
+            PlayerModel opponentPlayer,
+            double challengerScore,
+            double opponentScore,
+            string challengerUserId,
+            string opponentUserId,
+            int battleId)
+        {
+            if (challengerScore > opponentScore)
+                return true;
+            if (opponentScore > challengerScore)
+                return false;
 
-            if (strengthDiff > 15)
-            {
-                return "Strength Dominance";
-            }
+            if (challengerPlayer.Rarity != opponentPlayer.Rarity)
+                return challengerPlayer.Rarity > opponentPlayer.Rarity;
+            if (challengerPlayer.Level != opponentPlayer.Level)
+                return challengerPlayer.Level > opponentPlayer.Level;
 
-            if (kickingDiff > 15)
-            {
-                return "Kicking Mastery";
-            }
+            var challengerStatTotal = challengerPlayer.Speed + challengerPlayer.Strength + challengerPlayer.Agility + challengerPlayer.Kicking;
+            var opponentStatTotal = opponentPlayer.Speed + opponentPlayer.Strength + opponentPlayer.Agility + opponentPlayer.Kicking;
+            if (challengerStatTotal != opponentStatTotal)
+                return challengerStatTotal > opponentStatTotal;
 
-            if (agilityDiff > 15)
-            {
-                return "Agility Outplay";
-            }
+            var challengerTieKey = $"{battleId}:{challengerUserId}";
+            var opponentTieKey = $"{battleId}:{opponentUserId}";
+            return StringComparer.Ordinal.Compare(challengerTieKey, opponentTieKey) <= 0;
+        }
 
-            if ((int)winner.Rarity > (int)loser.Rarity)
-            {
-                return "Rarity Advantage";
-            }
+        private static string DetermineMethod(BattleMove winnerMove, BattleMove loserMove)
+        {
+            if (winnerMove == loserMove)
+                return "Same move, recruit power wins";
 
-            return "Close Contest";
+            if (WinningMoveMethods.TryGetValue((winnerMove, loserMove), out var method))
+                return method;
+
+            return "Recruit power overcomes move disadvantage";
         }
     }
 }
-

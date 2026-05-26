@@ -76,6 +76,34 @@ public static class BattleReducers
         };
 
     /// <summary>
+    /// Upserts live battle updates into active or historical collections.
+    /// </summary>
+    /// <param name="state">Current battle state.</param>
+    /// <param name="action">Action carrying the updated battle.</param>
+    /// <returns>Updated battle state.</returns>
+    [ReducerMethod]
+    public static BattleState ReduceBattleUpdated(BattleState state, BattleUpdatedAction action)
+    {
+        var active = state.ActiveChallenges.Where(b => b.Id != action.Battle.Id).ToList();
+        var history = state.BattleHistory.Where(b => b.Id != action.Battle.Id).ToList();
+
+        if (action.Battle.Status is BattleStatus.Pending or BattleStatus.Accepted)
+        {
+            active.Insert(0, action.Battle);
+        }
+        else
+        {
+            history.Insert(0, action.Battle);
+        }
+
+        return state with
+        {
+            ActiveChallenges = active,
+            BattleHistory = history
+        };
+    }
+
+    /// <summary>
     /// Replaces battle lists and clears pending loading state.
     /// </summary>
     /// <param name="state">Current battle state.</param>

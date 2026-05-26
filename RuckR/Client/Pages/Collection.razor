@@ -114,7 +114,7 @@
                                     <MudButton Variant="Variant.Filled"
                                                Color="Color.Primary"
                                                StartIcon="@Icons.Material.Filled.Bolt"
-                                               OnClick="() => ChallengePlayer(item)"
+                                               OnClick="ChallengeUser"
                                                data-testid="collection-challenge-btn">
                                         Challenge
                                     </MudButton>
@@ -237,9 +237,9 @@
         }
     }
 
-    private void ChallengePlayer(CollectionModel item)
+    private void ChallengeUser()
     {
-        Navigation.NavigateTo($"/battle?player={item.PlayerId}");
+        Navigation.NavigateTo("/players/nearby");
     }
 
     private RenderFragment RenderCompactStats(PlayerModel player) => @<MudGrid Spacing="1">

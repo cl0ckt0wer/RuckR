@@ -7,18 +7,22 @@ namespace RuckR.Shared.Models
     /// Request payload used to challenge another user.
     /// </summary>
     /// <param name="OpponentUsername">Username of the challenged user.</param>
-    /// <param name="SelectedPlayerId">Recruit/player-card id to use in the battle.</param>
     /// <param name="IdempotencyKey">Optional idempotency key for retriable requests.</param>
     public sealed record ChallengeRequest(
         string OpponentUsername,
-        int SelectedPlayerId,
         [MaxLength(36)] string? IdempotencyKey = null);
 
     /// <summary>
     /// Request payload used to accept a battle challenge.
     /// </summary>
-    /// <param name="SelectedPlayerId">Recruit/player-card id selected by the opponent.</param>
-    public sealed record AcceptChallengeRequest(int SelectedPlayerId);
+    public sealed record AcceptChallengeRequest;
+
+    /// <summary>
+    /// Request payload used to submit a recruit and hidden move for an accepted battle.
+    /// </summary>
+    /// <param name="PlayerId">Owned recruit/player-card id selected for the battle.</param>
+    /// <param name="Move">Hidden move selected by the current user.</param>
+    public sealed record BattleSelectionRequest(int PlayerId, BattleMove Move);
 
     /// <summary>
     /// Recruit/player-card details embedded in battle summaries.
@@ -44,8 +48,8 @@ namespace RuckR.Shared.Models
         string ChallengerUsername,
         string OpponentId,
         string OpponentUsername,
-        int ChallengerPlayerId,
-        int OpponentPlayerId,
+        int? ChallengerPlayerId,
+        int? OpponentPlayerId,
         BattlePlayerSummaryDto? ChallengerPlayer,
         BattlePlayerSummaryDto? OpponentPlayer,
         string? WinnerId,
@@ -53,7 +57,16 @@ namespace RuckR.Shared.Models
         BattleResult? Result,
         DateTime CreatedAt,
         DateTime? ResolvedAt,
-        [MaxLength(36)] string? IdempotencyKey = null);
+        [MaxLength(36)] string? IdempotencyKey = null,
+        DateTime? AcceptedAt = null,
+        bool ChallengerSubmitted = false,
+        bool OpponentSubmitted = false,
+        BattleMove? ChallengerMove = null,
+        BattleMove? OpponentMove = null,
+        DateTime? ChallengerSubmittedAt = null,
+        DateTime? OpponentSubmittedAt = null,
+        double? ChallengerScore = null,
+        double? OpponentScore = null);
 
     /// <summary>
     /// Request payload used to create a pitch manually.
@@ -116,15 +129,9 @@ namespace RuckR.Shared.Models
     /// Notification payload for a battle challenge.
     /// </summary>
     /// <param name="ChallengerUsername">Name of challenger.</param>
-    /// <param name="PlayerName">Selected recruit name.</param>
-    /// <param name="PlayerPosition">Selected recruit position.</param>
-    /// <param name="PlayerRarity">Selected recruit rarity.</param>
     /// <param name="ChallengeId">Challenge identifier.</param>
     public sealed record ChallengeNotification(
         string ChallengerUsername,
-        string PlayerName,
-        string PlayerPosition,
-        string PlayerRarity,
         int ChallengeId);
 
     /// <summary>
@@ -142,7 +149,25 @@ namespace RuckR.Shared.Models
         string WinnerPlayerName,
         string LoserPlayerName,
         string Method,
-        DateTime CreatedAt);
+        DateTime CreatedAt,
+        BattleMove? WinnerMove = null,
+        BattleMove? LoserMove = null,
+        double? WinnerScore = null,
+        double? LoserScore = null,
+        BattleMove? ChallengerMove = null,
+        BattleMove? OpponentMove = null,
+        double? ChallengerScore = null,
+        double? OpponentScore = null);
+
+    /// <summary>
+    /// Nearby user listing item used by battle challenge target discovery.
+    /// </summary>
+    public sealed record NearbyUserDto(
+        string UserId,
+        string Username,
+        DistanceBucket DistanceBucket,
+        int LastSeenSecondsAgo,
+        int RecruitCount);
 
     /// <summary>
     /// Nearby recruit listing item used by discovery endpoints.

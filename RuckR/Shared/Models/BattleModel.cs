@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations;
 namespace RuckR.Shared.Models
 {
     /// <summary>
-    /// Represents a head-to-head challenge between two players for a battle.
+    /// Represents a head-to-head challenge between two users for a battle.
     /// </summary>
     public class BattleModel
     {
@@ -20,16 +20,39 @@ namespace RuckR.Shared.Models
         [Required]
         public required string OpponentId { get; set; }
 
-        /// <summary>Player id selected by the challenger.</summary>
-        [Required]
-        public int ChallengerPlayerId { get; set; }
+        /// <summary>Recruit/player-card id selected by the challenger after the challenge is accepted.</summary>
+        public int? ChallengerPlayerId { get; set; }
 
-        /// <summary>Player id selected by the opponent.</summary>
-        [Required]
-        public int OpponentPlayerId { get; set; }
+        /// <summary>Recruit/player-card id selected by the opponent after the challenge is accepted.</summary>
+        public int? OpponentPlayerId { get; set; }
 
         /// <summary>Current lifecycle state of the battle.</summary>
         public BattleStatus Status { get; set; } = BattleStatus.Pending;
+
+        /// <summary>Hidden move selected by the challenger.</summary>
+        public BattleMove? ChallengerMove { get; set; }
+
+        /// <summary>Hidden move selected by the opponent.</summary>
+        public BattleMove? OpponentMove { get; set; }
+
+        /// <summary>Timestamp when the opponent accepted the challenge.</summary>
+        public DateTime? AcceptedAt { get; set; }
+
+        /// <summary>Timestamp when the challenger submitted recruit and move.</summary>
+        public DateTime? ChallengerSubmittedAt { get; set; }
+
+        /// <summary>Timestamp when the opponent submitted recruit and move.</summary>
+        public DateTime? OpponentSubmittedAt { get; set; }
+
+        /// <summary>Final challenger score when the battle has resolved.</summary>
+        public double? ChallengerScore { get; set; }
+
+        /// <summary>Final opponent score when the battle has resolved.</summary>
+        public double? OpponentScore { get; set; }
+
+        /// <summary>Human-readable resolution method once completed.</summary>
+        [MaxLength(200)]
+        public string? ResolutionMethod { get; set; }
 
         /// <summary>Winner user identifier when the battle has been resolved.</summary>
         [MaxLength(450)]

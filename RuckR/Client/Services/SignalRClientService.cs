@@ -54,6 +54,11 @@ namespace RuckR.Client.Services
         public event Action<BattleResult>? BattleResolved;
 
         /// <summary>
+        /// Raised when a battle payload changes.
+        /// </summary>
+        public event Action<BattleSummaryDto>? BattleUpdated;
+
+        /// <summary>
         /// Raised when a pitch is discovered by SignalR gameplay events.
         /// </summary>
         public event Action<PitchModel>? PitchDiscovered;
@@ -126,6 +131,7 @@ namespace RuckR.Client.Services
 
             _hubConnection.On<ChallengeNotification>("ReceiveChallenge", HandleReceiveChallenge);
             _hubConnection.On<BattleResult>("BattleResolved", HandleBattleResolved);
+            _hubConnection.On<BattleSummaryDto>("BattleUpdated", HandleBattleUpdated);
             _hubConnection.On<PitchModel>("PitchDiscovered", HandlePitchDiscovered);
             _hubConnection.On<List<NearbyPlayerDto>>("NearbyPlayersUpdated", HandleNearbyPlayersUpdated);
             _hubConnection.On<Guid>("RecruitmentEncounterChanged", HandleRecruitmentEncounterChanged);
@@ -179,14 +185,13 @@ namespace RuckR.Client.Services
         /// Sends or queues a new battle challenge request.
         /// </summary>
         /// <param name="opponentUsername">Opponent username.</param>
-        /// <param name="playerId">Challenger collection player id.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
-        public async Task SendChallengeAsync(string opponentUsername, int playerId)
+        public async Task SendChallengeAsync(string opponentUsername)
         {
             var idempotencyKey = Guid.NewGuid().ToString("N");
             await SendOrQueueAsync(new QueuedHubAction(
                 "SendChallenge",
-                hub => hub.SendAsync("SendChallenge", opponentUsername, playerId, idempotencyKey),
+                hub => hub.SendAsync("SendChallenge", opponentUsername, idempotencyKey),
                 null));
         }
 
@@ -194,13 +199,27 @@ namespace RuckR.Client.Services
         /// Sends or queues a battle acceptance action.
         /// </summary>
         /// <param name="battleId">Battle identifier.</param>
-        /// <param name="playerId">Selected recruit/player-card id for acceptance.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
-        public async Task AcceptChallengeAsync(int battleId, int playerId)
+        public async Task AcceptChallengeAsync(int battleId)
         {
             await SendOrQueueAsync(new QueuedHubAction(
                 "AcceptChallenge",
-                hub => hub.SendAsync("AcceptChallenge", battleId, playerId),
+                hub => hub.SendAsync("AcceptChallenge", battleId),
+                null));
+        }
+
+        /// <summary>
+        /// Sends or queues a battle selection action.
+        /// </summary>
+        /// <param name="battleId">Battle identifier.</param>
+        /// <param name="playerId">Owned recruit/player-card id.</param>
+        /// <param name="move">Hidden RPSLS move.</param>
+        /// <returns>A task representing the asynchronous operation.</returns>
+        public async Task SubmitBattleSelectionAsync(int battleId, int playerId, BattleMove move)
+        {
+            await SendOrQueueAsync(new QueuedHubAction(
+                "SubmitBattleSelection",
+                hub => hub.SendAsync("SubmitBattleSelection", battleId, playerId, move),
                 null));
         }
 
@@ -233,48 +252,18 @@ namespace RuckR.Client.Services
 
         private void HandleReceiveChallenge(ChallengeNotification notification)
         {
-            var battle = new BattleSummaryDto(
-                notification.ChallengeId,
-                BattleStatus.Pending,
-                notification.ChallengerUsername,
-                notification.ChallengerUsername,
-                string.Empty,
-                string.Empty,
-                0,
-                0,
-                new BattlePlayerSummaryDto(0, notification.PlayerName, notification.PlayerPosition, notification.PlayerRarity, 0, 0, 0, 0, 0),
-                null,
-                null,
-                null,
-                null,
-                DateTime.UtcNow,
-                null);
-
-            _dispatcher.Dispatch(new ChallengeReceivedAction(battle));
             ChallengeReceived?.Invoke(notification);
         }
 
         private void HandleBattleResolved(BattleResult result)
         {
-            var battle = new BattleSummaryDto(
-                0,
-                BattleStatus.Completed,
-                result.WinnerUsername,
-                result.WinnerUsername,
-                result.LoserUsername,
-                result.LoserUsername,
-                0,
-                0,
-                null,
-                null,
-                result.WinnerUsername,
-                result.WinnerUsername,
-                result,
-                result.CreatedAt,
-                result.CreatedAt);
-
-            _dispatcher.Dispatch(new BattleCompletedAction(battle));
             BattleResolved?.Invoke(result);
+        }
+
+        private void HandleBattleUpdated(BattleSummaryDto battle)
+        {
+            _dispatcher.Dispatch(new BattleUpdatedAction(battle));
+            BattleUpdated?.Invoke(battle);
         }
 
         private void HandlePitchDiscovered(PitchModel pitch)

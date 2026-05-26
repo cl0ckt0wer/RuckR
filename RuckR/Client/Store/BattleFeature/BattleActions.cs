@@ -28,6 +28,12 @@ public record ChallengeRespondedAction(int BattleId, BattleStatus NewStatus);
 public record BattleCompletedAction(BattleSummaryDto Battle);
 
 /// <summary>
+/// Upserts a battle update received from live events or command responses.
+/// </summary>
+/// <param name="Battle">Updated battle payload.</param>
+public record BattleUpdatedAction(BattleSummaryDto Battle);
+
+/// <summary>
 /// Replaces battle collections after a fetch operation.
 /// </summary>
 /// <param name="Pending">Pending battles.</param>

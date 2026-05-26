@@ -73,6 +73,11 @@ namespace RuckR.Server.Data
             modelBuilder.Entity<BattleModel>(entity =>
             {
                 entity.Property(b => b.RowVersion).IsRowVersion();
+                entity.Property(b => b.ChallengerMove).HasConversion<string>().HasMaxLength(20);
+                entity.Property(b => b.OpponentMove).HasConversion<string>().HasMaxLength(20);
+                entity.Property(b => b.ResolutionMethod).HasMaxLength(200);
+                entity.HasIndex(b => new { b.ChallengerId, b.Status, b.CreatedAt });
+                entity.HasIndex(b => new { b.OpponentId, b.Status, b.CreatedAt });
                 entity.HasOne<IdentityUser>().WithMany().HasForeignKey(b => b.ChallengerId).OnDelete(DeleteBehavior.Restrict);
                 entity.HasOne<IdentityUser>().WithMany().HasForeignKey(b => b.OpponentId).OnDelete(DeleteBehavior.Restrict);
             });

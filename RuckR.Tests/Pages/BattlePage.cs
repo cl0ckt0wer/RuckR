@@ -16,7 +16,7 @@ public class BattlePage : BasePage
     public BattlePage(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>
-    /// Navigate to /battle with optional opponent and playerId query params.
+    /// Navigate to /battle with optional opponent query param.
     /// </summary>
     public async Task GoToAsync(string? opponent = null, int? playerId = null)
     {
@@ -24,8 +24,6 @@ public class BattlePage : BasePage
         var queryParams = new List<string>();
         if (!string.IsNullOrWhiteSpace(opponent))
             queryParams.Add($"opponent={Uri.EscapeDataString(opponent)}");
-        if (playerId.HasValue)
-            queryParams.Add($"playerId={playerId.Value}");
         if (queryParams.Count > 0)
             path += "?" + string.Join("&", queryParams);
         await NavigateToAsync(path);
@@ -58,10 +56,10 @@ public class BattlePage : BasePage
         });
     }
 
-    /// <summary>Click the "Active Challenges" tab and wait for content.</summary>
+    /// <summary>Click the incoming challenges tab and wait for content.</summary>
     public async Task SelectActiveChallengesTabAsync()
     {
-        await Page.GetByTestId("active-tab").ClickAsync();
+        await Page.GetByTestId("incoming-tab").ClickAsync();
         try
         {
             await Task.WhenAny(
@@ -75,13 +73,11 @@ public class BattlePage : BasePage
     // ── New Challenge form ─────────────────────────────────────────────
 
     /// <summary>
-    /// Select a player from the "Your Player" dropdown by zero-based index.
-    /// Index 0 selects the first actual player (skipping the placeholder option).
+    /// Selection is no longer part of challenge creation.
     /// </summary>
     public async Task SelectPlayerForChallengeAsync(int index)
     {
-        var select = Page.GetByTestId("player-select");
-        await select.SelectOptionAsync(new SelectOptionValue { Index = index + 1 });
+        await Task.CompletedTask;
     }
 
     /// <summary>Fill the opponent username input field.</summary>
@@ -112,14 +108,12 @@ public class BattlePage : BasePage
     /// </summary>
     public async Task<int> GetIncomingChallengeCountAsync()
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='incoming-challenges'] .card");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='incoming-challenges'] [data-testid='pending-card']");
         return cards.Count;
     }
 
     /// <summary>
-    /// Accept an incoming challenge by zero-based index. Clicks the Accept button
-    /// on the challenge card, then selects the first available player in the
-    /// "Pick Your Fighter" modal and confirms with "Fight!".
+    /// Accept an incoming challenge by zero-based index, then submit the first recruit and move.
     /// </summary>
     public async Task AcceptChallengeAsync(int challengeIndex)
     {
@@ -128,14 +122,16 @@ public class BattlePage : BasePage
         if (challengeIndex >= 0 && challengeIndex < count)
         {
             await acceptButtons.Nth(challengeIndex).ClickAsync();
-            await Page.WaitForSelectorAsync("[data-testid='accept-modal']", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='selection-modal']", new PageWaitForSelectorOptions
             {
                 State = WaitForSelectorState.Visible,
                 Timeout = 5000
             });
-            var modalSelect = Page.GetByTestId("accept-player-select");
+            var modalSelect = Page.GetByTestId("selection-player-select");
             await modalSelect.SelectOptionAsync(new SelectOptionValue { Index = 1 });
-            await Page.GetByTestId("accept-fight-btn").ClickAsync();
+            var moveSelect = Page.GetByTestId("selection-move-select");
+            await moveSelect.SelectOptionAsync(new SelectOptionValue { Index = 1 });
+            await Page.GetByTestId("selection-submit-btn").ClickAsync();
             await Page.WaitForTimeoutAsync(500);
         }
     }

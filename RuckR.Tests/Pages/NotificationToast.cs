@@ -18,14 +18,14 @@ public class NotificationToast : BasePage
     // ── Challenge toast ────────────────────────────────────────────────
 
     /// <summary>
-    /// Wait for a challenge toast ("⚔️ Challenge!") to appear within the timeout.
+    /// Wait for a challenge toast to appear within the timeout.
     /// Returns true if the toast appeared; false on timeout.
     /// </summary>
     public async Task<bool> WaitForChallengeToastAsync(int timeoutMs = 15000)
     {
         try
         {
-            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('⚔️ Challenge!')", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('Challenge')", new PageWaitForSelectorOptions
             {
                 Timeout = timeoutMs,
                 State = WaitForSelectorState.Visible
@@ -57,14 +57,14 @@ public class NotificationToast : BasePage
     // ── Battle result toast ────────────────────────────────────────────
 
     /// <summary>
-    /// Wait for a battle result toast ("🏆 Battle Complete!") to appear within the timeout.
+    /// Wait for a battle result toast to appear within the timeout.
     /// Returns true if the toast appeared; false on timeout.
     /// </summary>
     public async Task<bool> WaitForBattleResultToastAsync(int timeoutMs = 15000)
     {
         try
         {
-            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('🏆 Battle Complete!')", new PageWaitForSelectorOptions
+            await Page.WaitForSelectorAsync("[data-testid='toast-title']:has-text('Battle Complete')", new PageWaitForSelectorOptions
             {
                 Timeout = timeoutMs,
                 State = WaitForSelectorState.Visible

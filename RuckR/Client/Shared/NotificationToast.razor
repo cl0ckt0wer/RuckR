@@ -77,8 +77,8 @@
     {
         var toast = new ToastItem(
             Id: Guid.NewGuid(),
-            Title: "⚔️ Challenge!",
-            Message: $"{notification.ChallengerUsername} challenges you with {notification.PlayerName}!",
+            Title: "Challenge",
+            Message: $"{notification.ChallengerUsername} challenged you.",
             Type: ToastType.Challenge,
             CreatedAt: DateTime.UtcNow,
             Duration: TimeSpan.FromSeconds(10),
@@ -92,7 +92,7 @@
     {
         var toast = new ToastItem(
             Id: Guid.NewGuid(),
-            Title: "🏆 Battle Complete!",
+            Title: "Battle Complete",
             Message: $"{result.WinnerUsername} defeated {result.LoserUsername}",
             Type: ToastType.Result,
             CreatedAt: DateTime.UtcNow,
@@ -118,32 +118,14 @@
     {
         try
         {
-            var collection = await ApiClient.GetCollectionAsync();
-            var selected = collection.FirstOrDefault(c => c.Player is not null);
-            if (selected is null)
-            {
-                Navigation.NavigateTo("/battle");
-                _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
-                return;
-            }
-
-            var battle = await ApiClient.AcceptChallengeAsync(challengeId, selected.PlayerId);
+            var battle = await ApiClient.AcceptChallengeAsync(challengeId);
             if (battle is not null)
             {
-                Dispatcher.Dispatch(new BattleCompletedAction(battle));
-                if (battle.Result is not null)
-                {
-                    AddToast(new ToastItem(
-                        Id: Guid.NewGuid(),
-                        Title: "🏆 Battle Complete!",
-                        Message: $"{battle.Result.WinnerUsername} defeated {battle.Result.LoserUsername}",
-                        Type: ToastType.Result,
-                        CreatedAt: DateTime.UtcNow,
-                        Duration: TimeSpan.FromSeconds(5)));
-                }
+                Dispatcher.Dispatch(new BattleUpdatedAction(battle));
             }
 
             _activeToasts.RemoveAll(t => t.ChallengeId == challengeId);
+            Navigation.NavigateTo("/battle");
         }
         catch
         {

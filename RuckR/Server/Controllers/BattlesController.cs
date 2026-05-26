@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -8,42 +9,28 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Controllers
 {
-    /// <summary>API endpoints for creating and managing user battles with selected recruits.</summary>
+    /// <summary>API endpoints for creating and managing user battles.</summary>
     [ApiController]
     [Route("api/[controller]")]
-    /// <summary>Defines the server-side class BattlesController.</summary>
     [Authorize]
     public class BattlesController : ControllerBase
     {
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;
         private readonly IBattleService _battleService;
-        private readonly IRateLimitService _rateLimitService;
-    /// <summary>Initializes a new instance of <see cref="BattlesController"/>.</summary>
-    /// <param name="db">The database context.</param>
-    /// <param name="userManager">The identity user manager.</param>
-    /// <param name="battleService">The battle business service.</param>
-    /// <param name="rateLimitService">The rate limit service.</param>
-    public BattlesController(
+
+        /// <summary>Initializes a new instance of <see cref="BattlesController"/>.</summary>
+        public BattlesController(
             RuckRDbContext db,
             UserManager<IdentityUser> userManager,
-            IBattleService battleService,
-            IRateLimitService rateLimitService)
+            IBattleService battleService)
         {
             _db = db;
             _userManager = userManager;
             _battleService = battleService;
-            _rateLimitService = rateLimitService;
         }
 
-        /// <summary>
-        /// POST /battles/challenge — send a challenge to another user.
-        /// Validates: not self, opponent exists, recruit owned, ≤3 pending, rate limit, idempotency.
-        /// </summary>
         /// <summary>Send a battle challenge to another user.</summary>
-        /// <param name="request">The request.</param>
-        /// <param name="idempotencyKey">The idempotencykey.</param>
-        /// <returns>The operation result.</returns>
         [HttpPost("challenge")]
         public async Task<ActionResult<BattleSummaryDto>> Challenge(
             [FromBody] ChallengeRequest request,
@@ -53,87 +40,23 @@ namespace RuckR.Server.Controllers
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
 
-            idempotencyKey ??= request.IdempotencyKey;
-
-            // 0. Idempotency check
-            if (!string.IsNullOrWhiteSpace(idempotencyKey))
-            {
-                var existing = await _db.Battles
-                    .FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey
-                        && b.ChallengerId == userId);
-                if (existing is not null)
-                    return Ok(await _battleService.ToSummaryAsync(existing));
-            }
-
-            // 1. Cannot challenge self
-            var opponent = await _userManager.FindByNameAsync(request.OpponentUsername);
-            if (opponent is null)
-                return NotFound($"User '{request.OpponentUsername}' not found.");
-
-            if (opponent.Id == userId)
-                return BadRequest("Cannot challenge yourself.");
-
-            // 2. Selected recruit exists and is in current user's collection
-            var player = await _db.Players.FindAsync(request.SelectedPlayerId);
-            if (player is null)
-                return NotFound($"Recruit with id {request.SelectedPlayerId} not found.");
-
-            var playerInCollection = await _db.Collections
-                .AnyAsync(c => c.UserId == userId && c.PlayerId == request.SelectedPlayerId);
-            if (!playerInCollection)
-                return BadRequest("Selected recruit is not in your collection.");
-
-            // 3. Current user has ≤3 pending challenges (Status=Pending and not expired)
-            var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
-            var pendingCount = await _db.Battles
-                .CountAsync(b => b.ChallengerId == userId
-                    && b.Status == BattleStatus.Pending
-                    && b.CreatedAt > expiryCutoff);
-
-            if (pendingCount >= _battleService.MaxPendingChallenges)
-                return BadRequest($"You already have {_battleService.MaxPendingChallenges} or more pending challenges. Wait for them to expire or be resolved.");
-
-            // 4. Rate limit
-            var allowed = await _rateLimitService.IsAllowedAsync(userId, "challenge", _battleService.MaxChallengesPerHour, TimeSpan.FromHours(1));
-            if (!allowed)
-                return StatusCode(429, $"Rate limit exceeded. You can send up to {_battleService.MaxChallengesPerHour} challenges per hour.");
-
-            var battle = new BattleModel
-            {
-                ChallengerId = userId,
-                OpponentId = opponent.Id,
-                ChallengerPlayerId = request.SelectedPlayerId,
-                Status = BattleStatus.Pending,
-                CreatedAt = DateTime.UtcNow,
-                IdempotencyKey = idempotencyKey
-            };
-
-            _db.Battles.Add(battle);
-            await _db.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetPending), new { id = battle.Id }, await _battleService.ToSummaryAsync(battle));
-        }
-
-        /// <summary>
-        /// POST /battles/{id}/accept — accept a pending challenge.
-        /// Validates: battle exists, pending, current user is opponent, recruit owned.
-        /// Lazy-expiry: challenges older than 24h are expired on access.
-        /// Optimistic concurrency: DbUpdateConcurrencyException → 409 Conflict.
-        /// </summary>
-        /// <summary>Accept a pending battle challenge.</summary>
-        /// <param name="id">The id.</param>
-        /// <param name="request">The request.</param>
-        /// <returns>The operation result.</returns>
-        [HttpPost("{id}/accept")]
-        public async Task<ActionResult<BattleSummaryDto>> Accept(int id, [FromBody] AcceptChallengeRequest request)
-        {
-            var userId = GetCurrentUserId();
-            if (string.IsNullOrWhiteSpace(userId))
-                return Unauthorized("User identity not found.");
-
             try
             {
-                return Ok(await _battleService.AcceptAndResolveChallengeAsync(id, userId, request.SelectedPlayerId));
+                var key = idempotencyKey ?? request.IdempotencyKey;
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    var existing = await _db.Battles
+                        .FirstOrDefaultAsync(b => b.IdempotencyKey == key && b.ChallengerId == userId);
+                    if (existing is not null)
+                        return Ok(await _battleService.ToSummaryAsync(existing, userId));
+                }
+
+                var summary = await _battleService.CreateChallengeAsync(
+                    userId,
+                    request.OpponentUsername,
+                    key);
+
+                return CreatedAtAction(nameof(GetPending), new { id = summary.Id }, summary);
             }
             catch (BattleOperationException ex)
             {
@@ -141,14 +64,43 @@ namespace RuckR.Server.Controllers
             }
         }
 
-        /// <summary>
-        /// POST /battles/{id}/decline — decline a pending challenge.
-        /// Validates: battle exists, pending, current user is opponent.
-        /// Lazy-expiry: challenges older than 24h are expired on access.
-        /// </summary>
+        /// <summary>Accept a pending battle challenge without resolving it.</summary>
+        [HttpPost("{id}/accept")]
+        public async Task<ActionResult<BattleSummaryDto>> Accept(int id, [FromBody] AcceptChallengeRequest? request = null)
+        {
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized("User identity not found.");
+
+            try
+            {
+                return Ok(await _battleService.AcceptChallengeAsync(id, userId));
+            }
+            catch (BattleOperationException ex)
+            {
+                return MapBattleOperationException(ex);
+            }
+        }
+
+        /// <summary>Submit the current user's hidden recruit and RPSLS move for an accepted battle.</summary>
+        [HttpPost("{id}/selection")]
+        public async Task<ActionResult<BattleSummaryDto>> SubmitSelection(int id, [FromBody] BattleSelectionRequest request)
+        {
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrWhiteSpace(userId))
+                return Unauthorized("User identity not found.");
+
+            try
+            {
+                return Ok(await _battleService.SubmitSelectionAsync(id, userId, request.PlayerId, request.Move));
+            }
+            catch (BattleOperationException ex)
+            {
+                return MapBattleOperationException(ex);
+            }
+        }
+
         /// <summary>Decline a pending battle challenge.</summary>
-        /// <param name="id">The id.</param>
-        /// <returns>The operation result.</returns>
         [HttpPost("{id}/decline")]
         public async Task<ActionResult> Decline(int id)
         {
@@ -156,40 +108,18 @@ namespace RuckR.Server.Controllers
             if (string.IsNullOrWhiteSpace(userId))
                 return Unauthorized("User identity not found.");
 
-            var battle = await _db.Battles.FindAsync(id);
-            if (battle is null)
-                return NotFound($"Battle with id {id} not found.");
-
-            // Only the opponent can decline
-            if (battle.OpponentId != userId)
-                return Forbid();
-
-            // Must be pending
-            if (battle.Status != BattleStatus.Pending)
-                return BadRequest("Challenge is no longer pending.");
-
-            // Lazy-expiry: expire challenges older than 24h
-            if (battle.CreatedAt <= DateTime.UtcNow - _battleService.ChallengeExpiryDuration)
+            try
             {
-                battle.Status = BattleStatus.Expired;
-                battle.ResolvedAt = DateTime.UtcNow;
-                await _db.SaveChangesAsync();
-                return StatusCode(410, "Challenge expired.");
+                await _battleService.DeclineChallengeAsync(id, userId);
+                return Ok();
             }
-
-            battle.Status = BattleStatus.Declined;
-            battle.ResolvedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-
-            return Ok();
+            catch (BattleOperationException ex)
+            {
+                return MapBattleOperationException(ex);
+            }
         }
 
-        /// <summary>
-        /// GET /battles/pending — pending challenges for the current user (incoming + outgoing).
-        /// Lazy-expiry: challenges older than 24h are expired on access and persisted.
-        /// </summary>
-        /// <summary>Get pending challenges for the current user.</summary>
-        /// <returns>The operation result.</returns>
+        /// <summary>Get active pending and accepted challenges for the current user.</summary>
         [HttpGet("pending")]
         public async Task<ActionResult<IReadOnlyList<BattleSummaryDto>>> GetPending()
         {
@@ -198,14 +128,12 @@ namespace RuckR.Server.Controllers
                 return Unauthorized("User identity not found.");
 
             var expiryCutoff = DateTime.UtcNow - _battleService.ChallengeExpiryDuration;
-
-            var pendingBattles = await _db.Battles
+            var activeBattles = await _db.Battles
                 .Where(b => (b.ChallengerId == userId || b.OpponentId == userId)
-                    && b.Status == BattleStatus.Pending)
+                    && (b.Status == BattleStatus.Pending || b.Status == BattleStatus.Accepted))
                 .ToListAsync();
 
-            // Lazy-expiry: expire challenges older than 24h and persist
-            var expired = pendingBattles.Where(b => b.CreatedAt <= expiryCutoff).ToList();
+            var expired = activeBattles.Where(b => b.CreatedAt <= expiryCutoff).ToList();
             foreach (var battle in expired)
             {
                 battle.Status = BattleStatus.Expired;
@@ -215,17 +143,15 @@ namespace RuckR.Server.Controllers
             if (expired.Count > 0)
                 await _db.SaveChangesAsync();
 
-            // Return only non-expired pending challenges
-            var remaining = pendingBattles.Where(b => b.CreatedAt > expiryCutoff).ToList();
-            return Ok(await _battleService.ToSummariesAsync(remaining));
+            var remaining = activeBattles
+                .Where(b => b.CreatedAt > expiryCutoff)
+                .OrderByDescending(b => b.CreatedAt)
+                .ToList();
+
+            return Ok(await _battleService.ToSummariesAsync(remaining, userId));
         }
 
-        /// <summary>
-        /// GET /battles/history — completed, declined, and expired battles for the current user.
-        /// Sorted by ResolvedAt descending (falls back to CreatedAt if not resolved).
-        /// </summary>
-        /// <summary>Get completed, declined, or expired battle history.</summary>
-        /// <returns>The operation result.</returns>
+        /// <summary>Get completed, declined, and expired battle history for the current user.</summary>
         [HttpGet("history")]
         public async Task<ActionResult<IReadOnlyList<BattleSummaryDto>>> GetHistory()
         {
@@ -235,11 +161,12 @@ namespace RuckR.Server.Controllers
 
             var history = await _db.Battles
                 .Where(b => (b.ChallengerId == userId || b.OpponentId == userId)
-                    && b.Status != BattleStatus.Pending)
+                    && b.Status != BattleStatus.Pending
+                    && b.Status != BattleStatus.Accepted)
                 .OrderByDescending(b => b.ResolvedAt ?? b.CreatedAt)
                 .ToListAsync();
 
-            return Ok(await _battleService.ToSummariesAsync(history));
+            return Ok(await _battleService.ToSummariesAsync(history, userId));
         }
 
         private string GetCurrentUserId()
@@ -251,13 +178,14 @@ namespace RuckR.Server.Controllers
         {
             return ex.StatusCode switch
             {
-                System.Net.HttpStatusCode.NotFound => NotFound(ex.Message),
-                System.Net.HttpStatusCode.Forbidden => Forbid(),
-                System.Net.HttpStatusCode.Gone => StatusCode(410, ex.Message),
-                System.Net.HttpStatusCode.Conflict => Conflict(ex.Message),
+                HttpStatusCode.Unauthorized => Unauthorized(ex.Message),
+                HttpStatusCode.NotFound => NotFound(ex.Message),
+                HttpStatusCode.Forbidden => Forbid(),
+                HttpStatusCode.Gone => StatusCode(410, ex.Message),
+                HttpStatusCode.Conflict => Conflict(ex.Message),
+                HttpStatusCode.TooManyRequests => StatusCode(429, ex.Message),
                 _ => BadRequest(ex.Message)
             };
         }
     }
 }
-

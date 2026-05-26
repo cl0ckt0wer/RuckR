@@ -5,9 +5,6 @@ using RuckR.Tests.Fixtures;
 
 namespace RuckR.Tests.Api;
 
-    /// <summary>
-    /// Provides access to :.
-    /// </summary>
 [Collection(nameof(TestCollection))]
 public class BattlesApiTests : IAsyncLifetime
 {
@@ -28,21 +25,13 @@ public class BattlesApiTests : IAsyncLifetime
     private int _playerIdB;
     private int _pitchId;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="""BattlesApiTests"""/> class.
-    /// </summary>
-    /// <param name="factory">The factory to use.</param>
     public BattlesApiTests(CustomWebApplicationFactory factory)
     {
         _factory = factory;
     }
 
-    /// <summary>
-    /// Verifies initialize Async.
-    /// </summary>
     public async Task InitializeAsync()
     {
-        // Create test users
         _usernameA = $"battle_a_{Guid.NewGuid():N}";
         _usernameB = $"battle_b_{Guid.NewGuid():N}";
         _usernameC = $"battle_c_{Guid.NewGuid():N}";
@@ -58,7 +47,6 @@ public class BattlesApiTests : IAsyncLifetime
         _clientC = _factory.CreateAuthenticatedClient(_userIdC, _usernameC);
         _clientD = _factory.CreateAuthenticatedClient(_userIdD, _usernameD);
 
-        // Get seed data: two distinct players + a pitch
         await _factory.ExecuteInDbAsync(db =>
         {
             var players = db.Players.OrderBy(p => p.Id).Take(2).ToList();
@@ -68,41 +56,26 @@ public class BattlesApiTests : IAsyncLifetime
             return Task.CompletedTask;
         });
 
-        // Seed collections: User A owns player A, User B owns player B
         await _factory.SeedCollectionAsync(_userIdA, _playerIdA, _pitchId);
         await _factory.SeedCollectionAsync(_userIdB, _playerIdB, _pitchId);
-        // Users C and D also need collections for the 4-pending test
         await _factory.SeedCollectionAsync(_userIdC, _playerIdA, _pitchId);
         await _factory.SeedCollectionAsync(_userIdD, _playerIdA, _pitchId);
     }
 
-    /// <summary>
-    /// Verifies dispose Async.
-    /// </summary>
-    public async Task DisposeAsync()
+    public Task DisposeAsync()
     {
-        _clientA?.Dispose();
-        _clientB?.Dispose();
-        _clientC?.Dispose();
-        _clientD?.Dispose();
+        _clientA.Dispose();
+        _clientB.Dispose();
+        _clientC.Dispose();
+        _clientD.Dispose();
+        return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// POST /battles/challenge creates a pending challenge (User A challenges User B).
-    /// </summary>
-    /// <summary>
-    /// Verifies challenge Creates Pending Challenge.
-    /// </summary>
     [Fact]
-    public async Task Challenge_CreatesPendingChallenge()
+    public async Task Challenge_CreatesPendingChallengeWithoutRecruitSelection()
     {
-        // Arrange
-        var request = new ChallengeRequest(_usernameB, _playerIdA);
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameB));
 
-        // Act
-        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", request);
-
-        // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var battle = await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle);
@@ -110,298 +83,258 @@ public class BattlesApiTests : IAsyncLifetime
         Assert.Equal(_userIdB, battle.OpponentId);
         Assert.Equal(_usernameA, battle.ChallengerUsername);
         Assert.Equal(_usernameB, battle.OpponentUsername);
-        Assert.Equal(_playerIdA, battle.ChallengerPlayerId);
-        Assert.NotNull(battle.ChallengerPlayer);
+        Assert.Null(battle.ChallengerPlayerId);
+        Assert.Null(battle.ChallengerPlayer);
+        Assert.Null(battle.ChallengerMove);
         Assert.Equal(BattleStatus.Pending, battle.Status);
-        Assert.True(battle.Id > 0);
     }
 
-    /// <summary>
-    /// POST /battles/challenge with self returns 400 Bad Request.
-    /// </summary>
-    /// <summary>
-    /// Verifies challenge Self Returns400.
-    /// </summary>
     [Fact]
     public async Task Challenge_Self_Returns400()
     {
-        // Arrange: try to challenge yourself
-        var request = new ChallengeRequest(_usernameA, _playerIdA);
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameA));
 
-        // Act
-        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", request);
-
-        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Cannot challenge yourself", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// POST /battles/challenge with 4th pending returns 400 (max 3 pending).
-    /// </summary>
-    /// <summary>
-    /// Verifies challenge Fourth Pending Returns400.
-    /// </summary>
     [Fact]
     public async Task Challenge_FourthPending_Returns400()
     {
-        // Arrange: create 3 pending challenges from User A
-        // Use User B, C, D as opponents
-        var r1 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
+        var r1 = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameB));
         Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
-
-        var r2 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameC, _playerIdA));
+        var r2 = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameC));
         Assert.Equal(HttpStatusCode.Created, r2.StatusCode);
-
-        var r3 = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameD, _playerIdA));
+        var r3 = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameD));
         Assert.Equal(HttpStatusCode.Created, r3.StatusCode);
 
-        // Act: 4th challenge should fail
-        // Create a fresh user E as the 4th opponent
         var usernameE = $"battle_e_{Guid.NewGuid():N}";
-        await _factory.CreateTestUserAsync(usernameE, "TestPass123!");
-        var requestE = new ChallengeRequest(usernameE, _playerIdA);
-        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", requestE);
+        var userIdE = await _factory.CreateTestUserAsync(usernameE, "TestPass123!");
+        await _factory.SeedCollectionAsync(userIdE, _playerIdB, _pitchId);
 
-        // Assert
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(usernameE));
+
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("pending challenges", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// POST /battles/{id}/accept resolves the challenge immediately.
-    /// </summary>
-    /// <summary>
-    /// Verifies accept resolves to completed.
-    /// </summary>
     [Fact]
-    public async Task Accept_ResolvesToCompleted()
+    public async Task Accept_TransitionsToAcceptedWithoutResolving()
     {
-        // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var battle = await CreateChallengeAsync();
 
-        // Act: User B accepts with their player
-        var acceptRequest = new AcceptChallengeRequest(_playerIdB);
-        var acceptResponse = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", acceptRequest);
+        var acceptResponse = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", new AcceptChallengeRequest());
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, acceptResponse.StatusCode);
         var acceptedBattle = await acceptResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(acceptedBattle);
-        Assert.Equal(BattleStatus.Completed, acceptedBattle.Status);
-        Assert.Equal(_playerIdB, acceptedBattle.OpponentPlayerId);
-        Assert.NotNull(acceptedBattle.Result);
-        Assert.Contains(acceptedBattle.WinnerId, new[] { _userIdA, _userIdB });
-        Assert.Contains(acceptedBattle.WinnerUsername, new[] { _usernameA, _usernameB });
+        Assert.Equal(BattleStatus.Accepted, acceptedBattle.Status);
+        Assert.NotNull(acceptedBattle.AcceptedAt);
+        Assert.Null(acceptedBattle.Result);
+        Assert.Null(acceptedBattle.WinnerId);
+        Assert.False(acceptedBattle.ChallengerSubmitted);
+        Assert.False(acceptedBattle.OpponentSubmitted);
     }
 
-    /// <summary>
-    /// POST /battles/{id}/decline transitions to Declined.
-    /// </summary>
-    /// <summary>
-    /// Verifies decline Transitions To Declined.
-    /// </summary>
     [Fact]
     public async Task Decline_TransitionsToDeclined()
     {
-        // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var battle = await CreateChallengeAsync();
 
-        // Act: User B declines
         var declineResponse = await _clientB.PostAsync($"/api/battles/{battle.Id}/decline", null);
 
-        // Assert
         Assert.Equal(HttpStatusCode.OK, declineResponse.StatusCode);
-
-        // Verify via history that it's declined
-        var historyResponse = await _clientB.GetAsync("/api/battles/history");
-        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
-        var history = await historyResponse.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
-        Assert.NotNull(history);
-        var declinedBattle = history!.FirstOrDefault(b => b.Id == battle.Id);
+        var history = await GetHistoryAsync(_clientB);
+        var declinedBattle = history.FirstOrDefault(b => b.Id == battle.Id);
         Assert.NotNull(declinedBattle);
         Assert.Equal(BattleStatus.Declined, declinedBattle.Status);
     }
 
-    /// <summary>
-    /// GET /battles/pending returns pending challenges for both users.
-    /// User A (challenger) sees outgoing; User B (opponent) sees incoming.
-    /// </summary>
-    /// <summary>
-    /// Verifies get Pending Returns Pending Challenges.
-    /// </summary>
     [Fact]
-    public async Task GetPending_ReturnsPendingChallenges()
+    public async Task GetPending_ReturnsPendingAndAcceptedChallenges()
     {
-        // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var pendingBattle = await CreateChallengeAsync();
+        var acceptedBattle = await CreateAcceptedBattleAsync();
 
-        // Act & Assert: User A sees outgoing pending challenge
-        var pendingA = await _clientA.GetAsync("/api/battles/pending");
-        Assert.Equal(HttpStatusCode.OK, pendingA.StatusCode);
-        var listA = await pendingA.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
-        Assert.NotNull(listA);
-        Assert.Contains(listA!, b => b.Id == battle.Id && b.ChallengerId == _userIdA);
-        Assert.Contains(listA!, b => b.Id == battle.Id && b.OpponentUsername == _usernameB);
+        var listA = await GetPendingAsync(_clientA);
+        var listB = await GetPendingAsync(_clientB);
 
-        // Act & Assert: User B sees incoming pending challenge
-        var pendingB = await _clientB.GetAsync("/api/battles/pending");
-        Assert.Equal(HttpStatusCode.OK, pendingB.StatusCode);
-        var listB = await pendingB.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
-        Assert.NotNull(listB);
-        Assert.Contains(listB!, b => b.Id == battle.Id && b.OpponentId == _userIdB);
-        Assert.Contains(listB!, b => b.Id == battle.Id && b.ChallengerUsername == _usernameA);
+        Assert.Contains(listA, b => b.Id == pendingBattle.Id && b.Status == BattleStatus.Pending);
+        Assert.Contains(listA, b => b.Id == acceptedBattle.Id && b.Status == BattleStatus.Accepted);
+        Assert.Contains(listB, b => b.Id == pendingBattle.Id && b.Status == BattleStatus.Pending);
+        Assert.Contains(listB, b => b.Id == acceptedBattle.Id && b.Status == BattleStatus.Accepted);
     }
 
-    /// <summary>
-    /// GET /battles/history returns completed (non-pending) battles.
-    /// </summary>
-    /// <summary>
-    /// Verifies get History Returns Completed Battles.
-    /// </summary>
     [Fact]
-    public async Task GetHistory_ReturnsCompletedBattles()
+    public async Task Selection_FirstSubmissionStaysHiddenFromOpponent()
     {
-        // Arrange: create a challenge, then decline it to move it to history
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var battle = await CreateAcceptedBattleAsync();
 
-        // Decline to move to history
-        await _clientB.PostAsync($"/api/battles/{battle.Id}/decline", null);
+        var submitResponse = await _clientA.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdA, BattleMove.Rock));
+        Assert.Equal(HttpStatusCode.OK, submitResponse.StatusCode);
 
-        // Act: check history for both users
-        var historyA = await _clientA.GetAsync("/api/battles/history");
-        Assert.Equal(HttpStatusCode.OK, historyA.StatusCode);
-        var listA = await historyA.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
-        Assert.NotNull(listA);
-        Assert.Contains(listA!, b => b.Id == battle.Id);
+        var challengerView = await submitResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
+        Assert.NotNull(challengerView);
+        Assert.Equal(BattleStatus.Accepted, challengerView.Status);
+        Assert.True(challengerView.ChallengerSubmitted);
+        Assert.Equal(_playerIdA, challengerView.ChallengerPlayerId);
+        Assert.Equal(BattleMove.Rock, challengerView.ChallengerMove);
+        Assert.Null(challengerView.Result);
 
-        var historyB = await _clientB.GetAsync("/api/battles/history");
-        Assert.Equal(HttpStatusCode.OK, historyB.StatusCode);
-        var listB = await historyB.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
-        Assert.NotNull(listB);
-        Assert.Contains(listB!, b => b.Id == battle.Id);
+        var opponentView = (await GetPendingAsync(_clientB)).Single(b => b.Id == battle.Id);
+        Assert.True(opponentView.ChallengerSubmitted);
+        Assert.False(opponentView.OpponentSubmitted);
+        Assert.Null(opponentView.ChallengerPlayerId);
+        Assert.Null(opponentView.ChallengerPlayer);
+        Assert.Null(opponentView.ChallengerMove);
     }
 
-    /// <summary>
-    /// Two concurrent requests to accept the same challenge should result in
-    /// one success and one conflict (race condition guard via RowVersion).
-    /// </summary>
-    /// <summary>
-    /// Verifies concurrent Accept Returns Conflict For Second.
-    /// </summary>
     [Fact]
-    public async Task ConcurrentAccept_ReturnsConflictForSecond()
+    public async Task Selection_SecondSubmissionResolvesBattle()
     {
-        // Arrange: User A challenges User B
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var battle = await CreateAcceptedBattleAsync();
+        await _clientA.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdA, BattleMove.Rock));
 
-        // Act: two independent clients for the opponent try to accept simultaneously.
-        // Depending on interleaving, the losing request can observe a concurrency
-        // conflict or the already-updated non-pending state.
-        using var clientB2 = _factory.CreateAuthenticatedClient(_userIdB, _usernameB);
-        var acceptC = _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
-            new AcceptChallengeRequest(_playerIdB));
-        var acceptD = clientB2.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
-            new AcceptChallengeRequest(_playerIdB));
+        var response = await _clientB.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdB, BattleMove.Scissors));
 
-        var results = await Task.WhenAll(acceptC, acceptD);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var completed = await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
+        Assert.NotNull(completed);
+        Assert.Equal(BattleStatus.Completed, completed.Status);
+        Assert.NotNull(completed.Result);
+        Assert.Contains(completed.WinnerId, new[] { _userIdA, _userIdB });
+        Assert.Equal(BattleMove.Rock, completed.ChallengerMove);
+        Assert.Equal(BattleMove.Scissors, completed.OpponentMove);
+        Assert.NotNull(completed.ChallengerScore);
+        Assert.NotNull(completed.OpponentScore);
 
-        // Assert: one succeeds; the other is rejected as a stale/concurrent accept.
-        var successCount = results.Count(r => r.StatusCode == HttpStatusCode.OK);
-        var rejectedCount = results.Count(r =>
-            r.StatusCode == HttpStatusCode.Conflict ||
-            r.StatusCode == HttpStatusCode.BadRequest);
-        Assert.Equal(1, successCount);
-        Assert.Equal(1, rejectedCount);
+        var historyA = await GetHistoryAsync(_clientA);
+        Assert.Contains(historyA, b => b.Id == battle.Id && b.Status == BattleStatus.Completed);
     }
 
-    /// <summary>
-    /// Idempotency key: sending the same challenge twice with the same key
-    /// should return the existing battle instead of creating a duplicate.
-    /// </summary>
-    /// <summary>
-    /// Verifies challenge With Idempotency Key Deduplicates.
-    /// </summary>
+    [Fact]
+    public async Task Selection_CannotSubmitBeforeAccept()
+    {
+        var battle = await CreateChallengeAsync();
+
+        var response = await _clientA.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdA, BattleMove.Paper));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Selection_CannotSubmitUnownedRecruit()
+    {
+        var battle = await CreateAcceptedBattleAsync();
+
+        var response = await _clientA.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdB, BattleMove.Spock));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Selection_RetrySameCompletedSelectionIsIdempotent()
+    {
+        var battle = await CreateAcceptedBattleAsync();
+        await _clientA.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdA, BattleMove.Lizard));
+        var first = await _clientB.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdB, BattleMove.Spock));
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var retry = await _clientB.PostAsJsonAsync(
+            $"/api/battles/{battle.Id}/selection",
+            new BattleSelectionRequest(_playerIdB, BattleMove.Spock));
+
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var retryBattle = await retry.Content.ReadFromJsonAsync<BattleSummaryDto>();
+        Assert.NotNull(retryBattle);
+        Assert.Equal(BattleStatus.Completed, retryBattle.Status);
+    }
+
     [Fact]
     public async Task Challenge_WithIdempotencyKey_Deduplicates()
     {
         var idempotencyKey = Guid.NewGuid().ToString("N");
 
-        // First request
         var r1 = await _clientA.PostAsJsonAsync(
             $"/api/battles/challenge?idempotencyKey={idempotencyKey}",
-            new ChallengeRequest(_usernameB, _playerIdA));
+            new ChallengeRequest(_usernameB));
         Assert.Equal(HttpStatusCode.Created, r1.StatusCode);
         var battle1 = await r1.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle1);
 
-        // Second request with same key
         var r2 = await _clientA.PostAsJsonAsync(
             $"/api/battles/challenge?idempotencyKey={idempotencyKey}",
-            new ChallengeRequest(_usernameB, _playerIdA));
+            new ChallengeRequest(_usernameB));
         Assert.Equal(HttpStatusCode.OK, r2.StatusCode);
         var battle2 = await r2.Content.ReadFromJsonAsync<BattleSummaryDto>();
         Assert.NotNull(battle2);
-
-        // Same battle returned
         Assert.Equal(battle1.Id, battle2.Id);
     }
 
-    /// <summary>
-    /// POST /battles/{id}/accept with RowVersion mismatch returns 409.
-    /// </summary>
-    /// <summary>
-    /// Verifies accept Concurrency Conflict Returns409.
-    /// </summary>
     [Fact]
-    public async Task Accept_ConcurrencyConflict_Returns409()
+    public async Task Accept_SecondAcceptReturnsBadRequestOrConflict()
     {
-        // Arrange: create and accept a challenge
-        var challengeResponse = await _clientA.PostAsJsonAsync("/api/battles/challenge",
-            new ChallengeRequest(_usernameB, _playerIdA));
-        Assert.Equal(HttpStatusCode.Created, challengeResponse.StatusCode);
-        var battle = await challengeResponse.Content.ReadFromJsonAsync<BattleSummaryDto>();
-        Assert.NotNull(battle);
+        var battle = await CreateChallengeAsync();
 
-        // First accept succeeds
-        var accept1 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
-            new AcceptChallengeRequest(_playerIdB));
+        var accept1 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", new AcceptChallengeRequest());
         Assert.Equal(HttpStatusCode.OK, accept1.StatusCode);
 
-        // Second accept should conflict or observe the already-completed state.
-        var accept2 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept",
-            new AcceptChallengeRequest(_playerIdB));
+        var accept2 = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", new AcceptChallengeRequest());
 
-        // Should be 400 because Status != Pending (not a RowVersion conflict exactly,
-        // but the same protection mechanism prevents double-accept)
-        Assert.True(accept2.StatusCode == HttpStatusCode.BadRequest ||
-                    accept2.StatusCode == HttpStatusCode.Conflict);
+        Assert.True(accept2.StatusCode == HttpStatusCode.BadRequest
+                    || accept2.StatusCode == HttpStatusCode.Conflict);
+    }
+
+    private async Task<BattleSummaryDto> CreateChallengeAsync()
+    {
+        var response = await _clientA.PostAsJsonAsync("/api/battles/challenge", new ChallengeRequest(_usernameB));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var battle = await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
+        Assert.NotNull(battle);
+        return battle;
+    }
+
+    private async Task<BattleSummaryDto> CreateAcceptedBattleAsync()
+    {
+        var battle = await CreateChallengeAsync();
+        var response = await _clientB.PostAsJsonAsync($"/api/battles/{battle.Id}/accept", new AcceptChallengeRequest());
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var accepted = await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
+        Assert.NotNull(accepted);
+        return accepted;
+    }
+
+    private static async Task<List<BattleSummaryDto>> GetPendingAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/battles/pending");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var battles = await response.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
+        Assert.NotNull(battles);
+        return battles;
+    }
+
+    private static async Task<List<BattleSummaryDto>> GetHistoryAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/battles/history");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var battles = await response.Content.ReadFromJsonAsync<List<BattleSummaryDto>>();
+        Assert.NotNull(battles);
+        return battles;
     }
 }
-
-

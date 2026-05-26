@@ -99,4 +99,21 @@ namespace RuckR.Shared.Models
         /// <summary>Challenge expired before completion.</summary>
         Expired
     }
+
+    /// <summary>
+    /// Hidden move choices used by rock/paper/scissors/lizard/spock battles.
+    /// </summary>
+    public enum BattleMove
+    {
+        /// <summary>Rock crushes lizard and scissors.</summary>
+        Rock,
+        /// <summary>Paper covers rock and disproves Spock.</summary>
+        Paper,
+        /// <summary>Scissors cuts paper and decapitates lizard.</summary>
+        Scissors,
+        /// <summary>Lizard eats paper and poisons Spock.</summary>
+        Lizard,
+        /// <summary>Spock smashes scissors and vaporizes rock.</summary>
+        Spock
+    }
 }

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using RuckR.Server.Data;
@@ -12,9 +13,11 @@ using RuckR.Server.Data;
 namespace RuckR.Server.Migrations
 {
     [DbContext(typeof(RuckRDbContext))]
-    partial class RuckRDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260526022352_UserFirstRpslsBattles")]
+    partial class UserFirstRpslsBattles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -302,7 +305,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasIndex("OpponentId", "Status", "CreatedAt");
 
-                    b.ToTable("Battles", (string)null);
+                    b.ToTable("Battles");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.CollectionModel", b =>
@@ -336,7 +339,7 @@ namespace RuckR.Server.Migrations
                     b.HasIndex("UserId", "PlayerId")
                         .IsUnique();
 
-                    b.ToTable("Collections", (string)null);
+                    b.ToTable("Collections");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.PitchModel", b =>
@@ -394,7 +397,7 @@ namespace RuckR.Server.Migrations
                         .IsUnique()
                         .HasFilter("[ExternalPlaceId] IS NOT NULL");
 
-                    b.ToTable("Pitches", (string)null);
+                    b.ToTable("Pitches");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.PlayerEncounterModel", b =>
@@ -461,7 +464,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasIndex("UserId", "PlayerId");
 
-                    b.ToTable("PlayerEncounters", (string)null);
+                    b.ToTable("PlayerEncounters");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.PlayerModel", b =>
@@ -511,7 +514,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Players", (string)null);
+                    b.ToTable("Players");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.RateLimitRecord", b =>
@@ -539,7 +542,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasIndex("UserId", "Action", "TimestampUtc");
 
-                    b.ToTable("RateLimitRecords", (string)null);
+                    b.ToTable("RateLimitRecords");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.RecruitmentParticipantModel", b =>
@@ -571,7 +574,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("RecruitmentParticipants", (string)null);
+                    b.ToTable("RecruitmentParticipants");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.UserConsent", b =>
@@ -601,7 +604,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("UserConsents", (string)null);
+                    b.ToTable("UserConsents");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.UserGameProfileModel", b =>
@@ -624,7 +627,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasKey("UserId");
 
-                    b.ToTable("UserGameProfiles", (string)null);
+                    b.ToTable("UserGameProfiles");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.UserProfileModel", b =>
@@ -654,7 +657,7 @@ namespace RuckR.Server.Migrations
 
                     b.HasKey("UserId");
 
-                    b.ToTable("UserProfiles", (string)null);
+                    b.ToTable("UserProfiles");
                 });
 
             modelBuilder.Entity("RuckR.Shared.Models.UserRecruitmentItemModel", b =>
@@ -687,7 +690,7 @@ namespace RuckR.Server.Migrations
                     b.HasIndex("UserId", "ItemKind")
                         .IsUnique();
 
-                    b.ToTable("UserRecruitmentItems", (string)null);
+                    b.ToTable("UserRecruitmentItems");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

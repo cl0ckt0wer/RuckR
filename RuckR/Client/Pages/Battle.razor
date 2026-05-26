@@ -35,7 +35,7 @@
                     <MudText Typo="Typo.overline">Arena</MudText>
                     <MudText Typo="Typo.h4">Battle Arena</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
-                        Challenge seed users or resolve incoming matches instantly.
+                        Challenge nearby users, accept matches, then choose a recruit and hidden move.
                     </MudText>
                 </div>
                 <MudStack Row="true" Spacing="1">
@@ -69,22 +69,12 @@
             }
 
             <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Rounded="true" Border="true" Class="battle-tabs" data-testid="battle-tabs">
-                <MudTabPanel Text="New Challenge" Icon="@Icons.Material.Filled.SportsMma" data-testid="challenge-tab">
+                <MudTabPanel Text="New" Icon="@Icons.Material.Filled.SportsMma" data-testid="challenge-tab">
                     <MudGrid Class="mt-3" Spacing="3">
                         <MudItem xs="12" lg="5">
                             <MudPaper Elevation="1" Class="game-panel" data-testid="challenge-card">
                                 <MudStack Spacing="2">
                                     <MudText Typo="Typo.h6">Send a challenge</MudText>
-                                    <MudSelect T="int?" Label="Your recruit" @bind-Value="_selectedPlayerId" Variant="Variant.Outlined" Dense="true" data-testid="player-select">
-                                        <MudSelectItem T="int?" Value="@((int?)null)">Select a recruit</MudSelectItem>
-                                        @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
-                                        {
-                                            <MudSelectItem T="int?" Value="@((int?)collection.Player!.Id)">
-                                                @collection.Player!.Name - @collection.Player.Position, @collection.Player.Rarity
-                                            </MudSelectItem>
-                                        }
-                                    </MudSelect>
-
                                     <MudTextField T="string"
                                                   Label="Opponent username"
                                                   @bind-Value="_opponentUsername"
@@ -104,7 +94,7 @@
                                     <MudButton Variant="Variant.Filled"
                                                Color="Color.Primary"
                                                StartIcon="@Icons.Material.Filled.Send"
-                                               Disabled="@(!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)"
+                                               Disabled="@(string.IsNullOrWhiteSpace(_opponentUsername) || _isSubmitting)"
                                                OnClick="SendChallengeAsync"
                                                data-testid="send-challenge-btn">
                                         @(_isSubmitting ? "Sending..." : "Send Challenge")
@@ -113,96 +103,104 @@
                             </MudPaper>
                         </MudItem>
                         <MudItem xs="12" lg="7">
-                            @if (SelectedCollection?.Player is { } player)
-                            {
-                                <MudPaper Elevation="1" Class="game-panel player-detail-panel">
-                                    <MudStack Spacing="2">
-                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                                            <div>
-                                                <MudText Typo="Typo.overline">Selected recruit</MudText>
-                                                <MudText Typo="Typo.h5">@player.Name</MudText>
-                                            </div>
-                                            <MudChip T="string" Color="@RarityColor(player.Rarity)" Variant="Variant.Filled">@player.Rarity</MudChip>
-                                        </MudStack>
-                                        <MudChipSet T="string">
-                                            <MudChip T="string" Variant="Variant.Outlined">@player.Position</MudChip>
-                                            <MudChip T="string" Variant="Variant.Outlined">Level @player.Level</MudChip>
-                                        </MudChipSet>
-                                        @RenderStats(player)
-                                    </MudStack>
-                                </MudPaper>
-                            }
-                            else
-                            {
-                                <MudPaper Elevation="1" Class="game-panel empty-panel">
-                                    <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                                        <MudIcon Icon="@Icons.Material.Filled.Stars" Size="Size.Large" Color="Color.Secondary" />
-                                        <MudText Typo="Typo.h6">Pick a recruit from your collection</MudText>
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                            Recruits show their stats here before you send a challenge.
-                                        </MudText>
-                                        <MudButton Href="/map" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Map">
-                                            Recruit on map
+                            <MudPaper Elevation="1" Class="game-panel collection-panel">
+                                <MudStack Spacing="2">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                        <div>
+                                            <MudText Typo="Typo.overline">Collection</MudText>
+                                            <MudText Typo="Typo.h6">@_collectedPlayers.Count battle-ready recruits</MudText>
+                                        </div>
+                                        <MudButton Href="/collection" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory2">
+                                            Collection
                                         </MudButton>
                                     </MudStack>
-                                </MudPaper>
-                            }
+                                    @if (_collectedPlayers.Count == 0)
+                                    {
+                                        <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">Recruit at least one player before battling.</MudAlert>
+                                    }
+                                    else
+                                    {
+                                        <MudGrid Spacing="2">
+                                            @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null).Take(4))
+                                            {
+                                                <MudItem xs="12" sm="6">
+                                                    <div class="mini-recruit">
+                                                        <MudText Typo="Typo.subtitle2">@collection.Player!.Name</MudText>
+                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@collection.Player!.Position, @collection.Player!.Rarity</MudText>
+                                                    </div>
+                                                </MudItem>
+                                            }
+                                        </MudGrid>
+                                    }
+                                </MudStack>
+                            </MudPaper>
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
 
-                <MudTabPanel Text="@ActiveTabLabel" Icon="@Icons.Material.Filled.Bolt" data-testid="active-tab">
-                    <MudGrid Class="mt-3" Spacing="3">
-                        <MudItem xs="12" lg="6">
-                            <MudStack Spacing="2" data-testid="incoming-challenges">
-                                <MudText Typo="Typo.h6">Incoming</MudText>
-                                @if (_incomingChallenges.Count == 0)
-                                {
-                                    <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="battle-empty">
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No incoming challenges.</MudText>
-                                    </MudPaper>
-                                }
-                                @foreach (var challenge in _incomingChallenges)
-                                {
-                                    @RenderChallengeCard(challenge, incoming: true)
-                                }
-                            </MudStack>
-                        </MudItem>
-                        <MudItem xs="12" lg="6">
-                            <MudStack Spacing="2" data-testid="outgoing-challenges">
-                                <MudText Typo="Typo.h6">Outgoing</MudText>
-                                @if (_outgoingChallenges.Count == 0)
-                                {
-                                    <MudPaper Elevation="0" Class="game-panel empty-panel">
-                                        <MudText Typo="Typo.body2" Color="Color.Secondary">No outgoing challenges.</MudText>
-                                    </MudPaper>
-                                }
-                                @foreach (var challenge in _outgoingChallenges)
-                                {
-                                    @RenderChallengeCard(challenge, incoming: false)
-                                }
-                            </MudStack>
-                        </MudItem>
-                    </MudGrid>
+                <MudTabPanel Text="@IncomingTabLabel" Icon="@Icons.Material.Filled.CallReceived" data-testid="incoming-tab">
+                    <MudStack Class="mt-3" Spacing="2" data-testid="incoming-challenges">
+                        @if (_incomingChallenges.Count == 0)
+                        {
+                            <MudPaper Elevation="0" Class="game-panel empty-panel" data-testid="battle-empty">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No incoming challenges.</MudText>
+                            </MudPaper>
+                        }
+                        @foreach (var challenge in _incomingChallenges)
+                        {
+                            @RenderChallengeCard(challenge)
+                        }
+                    </MudStack>
+                </MudTabPanel>
+
+                <MudTabPanel Text="@OutgoingTabLabel" Icon="@Icons.Material.Filled.CallMade" data-testid="outgoing-tab">
+                    <MudStack Class="mt-3" Spacing="2" data-testid="outgoing-challenges">
+                        @if (_outgoingChallenges.Count == 0)
+                        {
+                            <MudPaper Elevation="0" Class="game-panel empty-panel">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No outgoing challenges.</MudText>
+                            </MudPaper>
+                        }
+                        @foreach (var challenge in _outgoingChallenges)
+                        {
+                            @RenderChallengeCard(challenge)
+                        }
+                    </MudStack>
+                </MudTabPanel>
+
+                <MudTabPanel Text="@SelectionTabLabel" Icon="@Icons.Material.Filled.SportsKabaddi" data-testid="selection-tab">
+                    <MudStack Class="mt-3" Spacing="2" data-testid="selection-challenges">
+                        @if (_acceptedChallenges.Count == 0)
+                        {
+                            <MudPaper Elevation="0" Class="game-panel empty-panel">
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">No accepted battles waiting for selections.</MudText>
+                            </MudPaper>
+                        }
+                        @foreach (var challenge in _acceptedChallenges)
+                        {
+                            @RenderChallengeCard(challenge)
+                        }
+                    </MudStack>
                 </MudTabPanel>
             </MudTabs>
         </MudStack>
     }
 </MudContainer>
 
-@if (_showAcceptModal && _acceptTargetBattle is not null)
+@if (_showSelectionModal && _selectionTargetBattle is not null)
 {
-    <div class="game-modal-backdrop" data-testid="accept-modal">
+    <div class="game-modal-backdrop" data-testid="selection-modal">
         <MudPaper Elevation="8" Class="game-modal">
             <MudStack Spacing="2">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                    <MudText Typo="Typo.h6">Pick your recruit</MudText>
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseAcceptModal" data-testid="accept-cancel-btn" />
+                    <div>
+                        <MudText Typo="Typo.overline">Battle selection</MudText>
+                        <MudText Typo="Typo.h6">vs @OpponentName(_selectionTargetBattle)</MudText>
+                    </div>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="CloseSelectionModal" data-testid="selection-cancel-btn" />
                 </MudStack>
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    Face @_acceptTargetBattle.ChallengerUsername with one of your collected recruits.
-                </MudText>
-                <MudSelect T="int?" Label="Your recruit" @bind-Value="_selectedPlayerForAccept" Variant="Variant.Outlined" Dense="true" data-testid="accept-player-select">
+
+                <MudSelect T="int?" Label="Your recruit" @bind-Value="_selectedPlayerForSelection" Variant="Variant.Outlined" Dense="true" data-testid="selection-player-select">
                     <MudSelectItem T="int?" Value="@((int?)null)">Select a recruit</MudSelectItem>
                     @foreach (var collection in _collectedPlayers.Where(c => c.Player is not null))
                     {
@@ -211,15 +209,40 @@
                         </MudSelectItem>
                     }
                 </MudSelect>
+
+                <MudSelect T="BattleMove?" Label="Hidden move" @bind-Value="_selectedMove" Variant="Variant.Outlined" Dense="true" data-testid="selection-move-select">
+                    <MudSelectItem T="BattleMove?" Value="@((BattleMove?)null)">Select a move</MudSelectItem>
+                    @foreach (var move in Enum.GetValues<BattleMove>())
+                    {
+                        <MudSelectItem T="BattleMove?" Value="@move">@move</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (SelectedSelectionCollection?.Player is { } player)
+                {
+                    <MudPaper Elevation="0" Class="selection-preview">
+                        <MudStack Spacing="2">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <div>
+                                    <MudText Typo="Typo.overline">Selected recruit</MudText>
+                                    <MudText Typo="Typo.h6">@player.Name</MudText>
+                                </div>
+                                <MudChip T="string" Color="@RarityColor(player.Rarity)" Variant="Variant.Filled">@player.Rarity</MudChip>
+                            </MudStack>
+                            @RenderStats(player)
+                        </MudStack>
+                    </MudPaper>
+                }
+
                 <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="1">
-                    <MudButton Variant="Variant.Text" OnClick="CloseAcceptModal">Cancel</MudButton>
+                    <MudButton Variant="Variant.Text" OnClick="CloseSelectionModal">Cancel</MudButton>
                     <MudButton Variant="Variant.Filled"
-                               Color="Color.Success"
+                               Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.Check"
-                               Disabled="@(!_selectedPlayerForAccept.HasValue || _isAccepting)"
-                               OnClick="ConfirmAcceptAsync"
-                               data-testid="accept-fight-btn">
-                        @(_isAccepting ? "Resolving..." : "Accept and Battle")
+                               Disabled="@(!_selectedPlayerForSelection.HasValue || !_selectedMove.HasValue || _isSubmittingSelection)"
+                               OnClick="SubmitSelectionAsync"
+                               data-testid="selection-submit-btn">
+                        @(_isSubmittingSelection ? "Submitting..." : "Submit")
                     </MudButton>
                 </MudStack>
             </MudStack>
@@ -248,6 +271,7 @@
                             <MudText Typo="Typo.caption">Winner</MudText>
                             <MudText Typo="Typo.h6">@result.WinnerUsername</MudText>
                             <MudText Typo="Typo.body2">@result.WinnerPlayerName</MudText>
+                            <MudText Typo="Typo.caption">@MoveScoreDisplay(result.WinnerMove, result.WinnerScore)</MudText>
                         </div>
                     </MudItem>
                     <MudItem xs="12" sm="6">
@@ -255,6 +279,7 @@
                             <MudText Typo="Typo.caption">Defeated</MudText>
                             <MudText Typo="Typo.h6">@result.LoserUsername</MudText>
                             <MudText Typo="Typo.body2">@result.LoserPlayerName</MudText>
+                            <MudText Typo="Typo.caption">@MoveScoreDisplay(result.LoserMove, result.LoserScore)</MudText>
                         </div>
                     </MudItem>
                 </MudGrid>
@@ -277,13 +302,14 @@
     private string? _formError;
     private bool _isSubmitting;
     private bool _isAccepting;
+    private bool _isSubmittingSelection;
     private string _currentUsername = string.Empty;
     private int _activeTabIndex;
     private string _opponentUsername = string.Empty;
-    private int? _selectedPlayerId;
-    private bool _showAcceptModal;
-    private BattleSummaryDto? _acceptTargetBattle;
-    private int? _selectedPlayerForAccept;
+    private bool _showSelectionModal;
+    private BattleSummaryDto? _selectionTargetBattle;
+    private int? _selectedPlayerForSelection;
+    private BattleMove? _selectedMove;
     private bool _showResultModal;
     private BattleResult? _resultToShow;
     private int _challengesSentThisHour;
@@ -291,8 +317,8 @@
     private IReadOnlyList<CollectionModel> _collectedPlayers = Array.Empty<CollectionModel>();
     private BattleResult? _lastShownResult;
 
-    private CollectionModel? SelectedCollection =>
-        _selectedPlayerId.HasValue ? _collectedPlayers.FirstOrDefault(c => c.PlayerId == _selectedPlayerId.Value) : null;
+    private CollectionModel? SelectedSelectionCollection =>
+        _selectedPlayerForSelection.HasValue ? _collectedPlayers.FirstOrDefault(c => c.PlayerId == _selectedPlayerForSelection.Value) : null;
 
     private List<BattleSummaryDto> _incomingChallenges => BattleState.Value.ActiveChallenges
         .Where(b => string.Equals(b.OpponentUsername, _currentUsername, StringComparison.OrdinalIgnoreCase)
@@ -301,18 +327,21 @@
         .ToList();
 
     private List<BattleSummaryDto> _outgoingChallenges => BattleState.Value.ActiveChallenges
-        .Where(b => string.Equals(b.ChallengerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase))
+        .Where(b => string.Equals(b.ChallengerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase)
+                    && b.Status == BattleStatus.Pending)
         .OrderByDescending(b => b.CreatedAt)
         .ToList();
 
-    private string ActiveTabLabel
-    {
-        get
-        {
-            var count = _incomingChallenges.Count + _outgoingChallenges.Count;
-            return count == 0 ? "Active" : $"Active ({count})";
-        }
-    }
+    private List<BattleSummaryDto> _acceptedChallenges => BattleState.Value.ActiveChallenges
+        .Where(b => b.Status == BattleStatus.Accepted
+                    && (string.Equals(b.ChallengerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(b.OpponentUsername, _currentUsername, StringComparison.OrdinalIgnoreCase)))
+        .OrderByDescending(b => b.AcceptedAt ?? b.CreatedAt)
+        .ToList();
+
+    private string IncomingTabLabel => _incomingChallenges.Count == 0 ? "Incoming" : $"Incoming ({_incomingChallenges.Count})";
+    private string OutgoingTabLabel => _outgoingChallenges.Count == 0 ? "Outgoing" : $"Outgoing ({_outgoingChallenges.Count})";
+    private string SelectionTabLabel => _acceptedChallenges.Count == 0 ? "Pick" : $"Pick ({_acceptedChallenges.Count})";
 
     protected override async Task OnInitializedAsync()
     {
@@ -332,28 +361,31 @@
         var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
         _opponentUsername = query["opponent"] ?? string.Empty;
-        if (int.TryParse(query["player"], out var playerId))
-            _selectedPlayerId = playerId;
 
-        _collectedPlayers = InventoryState.Value.CollectedPlayers;
-        if (_collectedPlayers.Count == 0)
-        {
-            try
-            {
-                var collection = await ApiClient.GetCollectionAsync();
-                _collectedPlayers = collection.AsReadOnly();
-                Dispatcher.Dispatch(new FetchInventoryResultAction(collection.AsReadOnly()));
-            }
-            catch
-            {
-                _collectedPlayers = Array.Empty<CollectionModel>();
-            }
-        }
-
+        await LoadCollectionAsync();
         await LoadBattlesAsync();
         BattleState.StateChanged += OnBattleStateChanged;
         SignalRClient.BattleResolved += OnBattleResolved;
+        SignalRClient.BattleUpdated += OnBattleUpdated;
         SignalRClient.ChallengeReceived += OnChallengeReceived;
+    }
+
+    private async Task LoadCollectionAsync()
+    {
+        _collectedPlayers = InventoryState.Value.CollectedPlayers;
+        if (_collectedPlayers.Count > 0)
+            return;
+
+        try
+        {
+            var collection = await ApiClient.GetCollectionAsync();
+            _collectedPlayers = collection.AsReadOnly();
+            Dispatcher.Dispatch(new FetchInventoryResultAction(collection.AsReadOnly()));
+        }
+        catch
+        {
+            _collectedPlayers = Array.Empty<CollectionModel>();
+        }
     }
 
     private async Task LoadBattlesAsync()
@@ -383,9 +415,9 @@
 
     private async Task SendChallengeAsync()
     {
-        if (!_selectedPlayerId.HasValue || string.IsNullOrWhiteSpace(_opponentUsername))
+        if (string.IsNullOrWhiteSpace(_opponentUsername))
         {
-            _formError = "Select a recruit and enter an opponent username.";
+            _formError = "Enter an opponent username.";
             return;
         }
 
@@ -400,19 +432,19 @@
 
         try
         {
-            var battle = await ApiClient.SendChallengeAsync(_opponentUsername.Trim(), _selectedPlayerId.Value);
+            var battle = await ApiClient.SendChallengeAsync(_opponentUsername.Trim());
             if (battle is not null)
             {
-                Dispatcher.Dispatch(new ChallengeSentAction(battle));
+                Dispatcher.Dispatch(new BattleUpdatedAction(battle));
                 _challengesSentThisHour++;
                 _successMessage = $"Challenge sent to {battle.OpponentUsername}.";
                 _opponentUsername = string.Empty;
-                _activeTabIndex = 1;
+                _activeTabIndex = 2;
             }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
         {
-            _formError = "Check the opponent username, selected recruit, and pending challenge limit.";
+            _formError = "Check the opponent username, collection requirements, and pending challenge limit.";
         }
         catch (HttpRequestException ex) when ((int?)ex.StatusCode == 429)
         {
@@ -428,40 +460,20 @@
         }
     }
 
-    private void OpenAcceptModal(BattleSummaryDto challenge)
+    private async Task AcceptChallengeAsync(BattleSummaryDto challenge)
     {
-        _acceptTargetBattle = challenge;
-        _selectedPlayerForAccept = null;
-        _showAcceptModal = true;
-    }
-
-    private void CloseAcceptModal()
-    {
-        _showAcceptModal = false;
-        _acceptTargetBattle = null;
-        _selectedPlayerForAccept = null;
-    }
-
-    private async Task ConfirmAcceptAsync()
-    {
-        if (_acceptTargetBattle is null || !_selectedPlayerForAccept.HasValue)
-            return;
-
         _isAccepting = true;
+        _errorMessage = null;
 
         try
         {
-            var battle = await ApiClient.AcceptChallengeAsync(_acceptTargetBattle.Id, _selectedPlayerForAccept.Value);
+            var battle = await ApiClient.AcceptChallengeAsync(challenge.Id);
             if (battle is not null)
             {
-                Dispatcher.Dispatch(new BattleCompletedAction(battle));
-                if (battle.Result is not null)
-                {
-                    _resultToShow = battle.Result;
-                    _showResultModal = true;
-                }
-                _successMessage = "Challenge accepted and resolved.";
-                await LoadBattlesAsync();
+                Dispatcher.Dispatch(new BattleUpdatedAction(battle));
+                _successMessage = "Challenge accepted.";
+                _activeTabIndex = 3;
+                OpenSelectionModal(battle);
             }
         }
         catch (HttpRequestException ex)
@@ -471,7 +483,6 @@
         finally
         {
             _isAccepting = false;
-            CloseAcceptModal();
         }
     }
 
@@ -490,8 +501,78 @@
         }
     }
 
+    private void OpenSelectionModal(BattleSummaryDto battle)
+    {
+        _selectionTargetBattle = battle;
+        _selectedPlayerForSelection = CurrentUserPlayerId(battle);
+        _selectedMove = CurrentUserMove(battle);
+        _showSelectionModal = true;
+    }
+
+    private void CloseSelectionModal()
+    {
+        _showSelectionModal = false;
+        _selectionTargetBattle = null;
+        _selectedPlayerForSelection = null;
+        _selectedMove = null;
+    }
+
+    private async Task SubmitSelectionAsync()
+    {
+        if (_selectionTargetBattle is null || !_selectedPlayerForSelection.HasValue || !_selectedMove.HasValue)
+            return;
+
+        _isSubmittingSelection = true;
+        _errorMessage = null;
+
+        try
+        {
+            var battle = await ApiClient.SubmitBattleSelectionAsync(
+                _selectionTargetBattle.Id,
+                _selectedPlayerForSelection.Value,
+                _selectedMove.Value);
+
+            if (battle is not null)
+            {
+                Dispatcher.Dispatch(new BattleUpdatedAction(battle));
+                if (battle.Result is not null)
+                {
+                    _resultToShow = battle.Result;
+                    _showResultModal = true;
+                    _successMessage = "Battle resolved.";
+                }
+                else
+                {
+                    _successMessage = "Selection submitted.";
+                }
+
+                await LoadBattlesAsync();
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            _errorMessage = $"Failed to submit selection: {ex.Message}";
+        }
+        finally
+        {
+            _isSubmittingSelection = false;
+            CloseSelectionModal();
+        }
+    }
+
     private void OnBattleStateChanged(object? sender, EventArgs e)
     {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void OnBattleUpdated(BattleSummaryDto battle)
+    {
+        if (battle.Result is not null)
+        {
+            _resultToShow = battle.Result;
+            _showResultModal = true;
+        }
+
         _ = InvokeAsync(StateHasChanged);
     }
 
@@ -513,7 +594,7 @@
 
     private void OnChallengeReceived(ChallengeNotification notification)
     {
-        _successMessage = $"{notification.ChallengerUsername} challenged you with {notification.PlayerName}.";
+        _successMessage = $"{notification.ChallengerUsername} challenged you.";
         _activeTabIndex = 1;
         _ = InvokeAsync(async () =>
         {
@@ -528,29 +609,57 @@
         _resultToShow = null;
     }
 
-    private RenderFragment RenderChallengeCard(BattleSummaryDto challenge, bool incoming) => @<MudPaper Elevation="1" Class="game-panel challenge-card" data-testid="@(incoming ? "incoming-card" : "outgoing-card")">
+    private RenderFragment RenderChallengeCard(BattleSummaryDto challenge) => @<MudPaper Elevation="1" Class="game-panel challenge-card" data-testid="@ChallengeCardTestId(challenge)">
         <MudStack Spacing="2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                 <div>
-                    <MudText Typo="Typo.caption">@(incoming ? "From" : "To")</MudText>
-                    <MudText Typo="Typo.h6">@(incoming ? challenge.ChallengerUsername : challenge.OpponentUsername)</MudText>
+                    <MudText Typo="Typo.caption">@RoleLabel(challenge)</MudText>
+                    <MudText Typo="Typo.h6">@OpponentName(challenge)</MudText>
                 </div>
                 <MudChip T="string" Color="@StatusColor(challenge.Status)" Variant="Variant.Filled">@StatusLabel(challenge.Status)</MudChip>
             </MudStack>
-            <MudText Typo="Typo.body2">
-                @(incoming ? "Their recruit" : "Your recruit"): @PlayerDisplay(incoming ? challenge.ChallengerPlayer : challenge.ChallengerPlayer)
-            </MudText>
+
+            <MudGrid Spacing="2">
+                <MudItem xs="12" md="6">
+                    <div class="selection-status">
+                        <MudText Typo="Typo.caption">Your selection</MudText>
+                        <MudText Typo="Typo.body2">@SelectionDisplay(CurrentUserPlayer(challenge), CurrentUserMove(challenge))</MudText>
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <div class="selection-status">
+                        <MudText Typo="Typo.caption">Opponent</MudText>
+                        <MudText Typo="Typo.body2">@OpponentSubmissionDisplay(challenge)</MudText>
+                    </div>
+                </MudItem>
+            </MudGrid>
+
             <MudText Typo="Typo.caption" Color="Color.Secondary">@GetRelativeTime(challenge.CreatedAt)</MudText>
-            @if (incoming && challenge.Status == BattleStatus.Pending)
+
+            @if (IsIncoming(challenge) && challenge.Status == BattleStatus.Pending)
             {
                 <MudStack Row="true" Spacing="1">
-                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check" Size="Size.Small" OnClick="() => OpenAcceptModal(challenge)" data-testid="accept-btn">
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check" Size="Size.Small" Disabled="@_isAccepting" OnClick="() => AcceptChallengeAsync(challenge)" data-testid="accept-btn">
                         Accept
                     </MudButton>
                     <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="() => DeclineChallengeAsync(challenge.Id)" data-testid="decline-btn">
                         Decline
                     </MudButton>
                 </MudStack>
+            }
+            else if (challenge.Status == BattleStatus.Pending)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Waiting for opponent response.</MudText>
+            }
+            else if (challenge.Status == BattleStatus.Accepted && !CurrentUserSubmitted(challenge))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SportsKabaddi" Size="Size.Small" OnClick="() => OpenSelectionModal(challenge)" data-testid="pick-selection-btn">
+                    Pick Recruit and Move
+                </MudButton>
+            }
+            else if (challenge.Status == BattleStatus.Accepted)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">You submitted. Waiting for opponent.</MudAlert>
             }
         </MudStack>
     </MudPaper>;
@@ -570,8 +679,58 @@
         <MudProgressLinear Value="@StatPercent(value)" Color="@color" Rounded="true" />
     </div>;
 
-    private static string PlayerDisplay(BattlePlayerSummaryDto? player) =>
-        player is null ? "Unknown recruit" : $"{player.Name} ({player.Position}, {player.Rarity})";
+    private bool IsIncoming(BattleSummaryDto battle) =>
+        string.Equals(battle.OpponentUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+
+    private string RoleLabel(BattleSummaryDto battle) => IsIncoming(battle) ? "From" : "To";
+
+    private string OpponentName(BattleSummaryDto battle) =>
+        IsIncoming(battle) ? battle.ChallengerUsername : battle.OpponentUsername;
+
+    private bool CurrentUserIsChallenger(BattleSummaryDto battle) =>
+        string.Equals(battle.ChallengerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
+
+    private bool CurrentUserSubmitted(BattleSummaryDto battle) =>
+        CurrentUserIsChallenger(battle) ? battle.ChallengerSubmitted : battle.OpponentSubmitted;
+
+    private bool OpponentSubmitted(BattleSummaryDto battle) =>
+        CurrentUserIsChallenger(battle) ? battle.OpponentSubmitted : battle.ChallengerSubmitted;
+
+    private BattlePlayerSummaryDto? CurrentUserPlayer(BattleSummaryDto battle) =>
+        CurrentUserIsChallenger(battle) ? battle.ChallengerPlayer : battle.OpponentPlayer;
+
+    private int? CurrentUserPlayerId(BattleSummaryDto battle) =>
+        CurrentUserIsChallenger(battle) ? battle.ChallengerPlayerId : battle.OpponentPlayerId;
+
+    private BattleMove? CurrentUserMove(BattleSummaryDto battle) =>
+        CurrentUserIsChallenger(battle) ? battle.ChallengerMove : battle.OpponentMove;
+
+    private static string SelectionDisplay(BattlePlayerSummaryDto? player, BattleMove? move)
+    {
+        if (player is null || move is null)
+            return "Not submitted";
+
+        return $"{player.Name} with {move}";
+    }
+
+    private string OpponentSubmissionDisplay(BattleSummaryDto battle)
+    {
+        if (battle.Status == BattleStatus.Completed)
+        {
+            var player = CurrentUserIsChallenger(battle) ? battle.OpponentPlayer : battle.ChallengerPlayer;
+            var move = CurrentUserIsChallenger(battle) ? battle.OpponentMove : battle.ChallengerMove;
+            return SelectionDisplay(player, move);
+        }
+
+        return OpponentSubmitted(battle) ? "Submitted" : "Waiting";
+    }
+
+    private static string ChallengeCardTestId(BattleSummaryDto battle) => battle.Status switch
+    {
+        BattleStatus.Accepted => "accepted-card",
+        BattleStatus.Pending => "pending-card",
+        _ => "battle-card"
+    };
 
     private static double StatPercent(int value) => Math.Clamp(value, 0, 99) * 100.0 / 99.0;
 
@@ -583,6 +742,13 @@
         if (elapsed.TotalHours < 24) return $"{(int)elapsed.TotalHours}h ago";
         if (elapsed.TotalDays < 7) return $"{(int)elapsed.TotalDays}d ago";
         return utcTime.ToString("MMM d");
+    }
+
+    private static string MoveScoreDisplay(BattleMove? move, double? score)
+    {
+        if (move is null && score is null) return string.Empty;
+        if (score is null) return move?.ToString() ?? string.Empty;
+        return $"{move}: {score:0.##}";
     }
 
     private static Color StatusColor(BattleStatus status) => status switch
@@ -619,6 +785,7 @@
     {
         BattleState.StateChanged -= OnBattleStateChanged;
         SignalRClient.BattleResolved -= OnBattleResolved;
+        SignalRClient.BattleUpdated -= OnBattleUpdated;
         SignalRClient.ChallengeReceived -= OnChallengeReceived;
     }
 }
@@ -651,8 +818,17 @@
         min-height: 10rem;
     }
 
-    .player-detail-panel {
-        min-height: 18rem;
+    .collection-panel {
+        min-height: 15rem;
+    }
+
+    .mini-recruit,
+    .selection-status,
+    .selection-preview {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 8px;
+        padding: 0.75rem;
+        background: #f8fafc;
     }
 
     .stat-row {

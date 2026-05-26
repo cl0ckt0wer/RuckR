@@ -3,8 +3,8 @@ using Microsoft.Playwright;
 namespace RuckR.Tests.Pages;
 
 /// <summary>
-/// Page Object for the /players/nearby page — a grid of nearby player cards
-/// with fuzzy distance display, Challenge/Scout actions, radius filter, and
+/// Page Object for the /players/nearby page — a grid of nearby user cards
+/// with fuzzy distance display, Challenge actions, radius filter, and
 /// GPS-disabled / empty / loading / error states.
 /// </summary>
 public class PlayerGridPage : BasePage
@@ -22,7 +22,7 @@ public class PlayerGridPage : BasePage
     // ── Grid loading ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Wait for the player grid to finish loading — either player cards appear
+    /// Wait for the user grid to finish loading — either user cards appear
     /// or the empty-state message is shown.
     /// </summary>
     public async Task WaitForPlayerGridLoadedAsync(int timeoutMs = 15000)
@@ -31,7 +31,7 @@ public class PlayerGridPage : BasePage
         try
         {
             await Task.WhenAny(
-                Page.WaitForSelectorAsync("[data-testid='player-card']", new() { Timeout = timeoutMs }),
+                Page.WaitForSelectorAsync("[data-testid='user-card']", new() { Timeout = timeoutMs }),
                 Page.WaitForSelectorAsync("[data-testid='empty-state']", new() { Timeout = timeoutMs })
             );
         }
@@ -40,32 +40,32 @@ public class PlayerGridPage : BasePage
 
     // ── Player card count ───────────────────────────────────────────────
 
-    /// <summary>Return the total number of player cards currently visible.</summary>
+    /// <summary>Return the total number of user cards currently visible.</summary>
     public async Task<int> GetNearbyPlayerCountAsync()
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='user-card']");
         return cards.Count;
     }
 
     // ── Card content accessors ──────────────────────────────────────────
 
-    /// <summary>Get the player name from a card at the given zero-based index.</summary>
+    /// <summary>Get the user name from a card at the given zero-based index.</summary>
     public async Task<string?> GetPlayerNameAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='user-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var heading = await cards[index].QuerySelectorAsync("[data-testid='player-name']");
+        var heading = await cards[index].QuerySelectorAsync("[data-testid='user-name']");
         return heading is not null ? await heading.TextContentAsync() : null;
     }
 
     /// <summary>Get the owner badge text from a card at the given zero-based index.</summary>
     public async Task<string?> GetOwnerBadgeAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='user-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var badge = await cards[index].QuerySelectorAsync("[data-testid='owner-badge']");
+        var badge = await cards[index].QuerySelectorAsync("[data-testid='distance-badge']");
         return badge is not null ? await badge.TextContentAsync() : null;
     }
 
@@ -75,21 +75,21 @@ public class PlayerGridPage : BasePage
     /// </summary>
     public async Task<string?> GetFuzzyDistanceTextAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='user-card']");
         if (index < 0 || index >= cards.Count)
             return null;
-        var distance = await cards[index].QuerySelectorAsync("[data-testid='distance-display']");
+        var distance = await cards[index].QuerySelectorAsync("[data-testid='distance-badge']");
         return distance is not null ? (await distance.TextContentAsync())?.Trim() : null;
     }
 
     // ── Card actions ────────────────────────────────────────────────────
 
     /// <summary>
-    /// Click the "Challenge" button on the player card at the given index.
+    /// Click the "Challenge" button on the user card at the given index.
     /// </summary>
     public async Task ClickChallengeButtonAsync(int index)
     {
-        var cards = await Page.QuerySelectorAllAsync("[data-testid='player-card']");
+        var cards = await Page.QuerySelectorAllAsync("[data-testid='user-card']");
         if (index < 0 || index >= cards.Count)
             throw new ArgumentOutOfRangeException(nameof(index));
         var challengeBtn = await cards[index].QuerySelectorAsync("[data-testid='challenge-btn']");

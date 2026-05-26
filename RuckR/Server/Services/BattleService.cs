@@ -6,16 +6,16 @@ using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services;
 
-/// <summary>Business service for challenge limits, battle resolution, and battle summaries.</summary>
+/// <summary>Business service for challenge limits, battle state transitions, and RPSLS resolution.</summary>
 public class BattleService : IBattleService
 {
-    /// <summary>Maximum number of challenges a user can send per rolling hour.</summary>
+    /// <inheritdoc />
     public int MaxChallengesPerHour => 10;
 
-    /// <summary>Maximum number of pending outgoing challenges allowed per user.</summary>
+    /// <inheritdoc />
     public int MaxPendingChallenges => 3;
 
-    /// <summary>Challenge lifetime before it expires.</summary>
+    /// <inheritdoc />
     public TimeSpan ChallengeExpiryDuration => TimeSpan.FromHours(24);
 
     private readonly RuckRDbContext _db;
@@ -36,40 +36,65 @@ public class BattleService : IBattleService
         _userManager = userManager;
     }
 
-    /// <summary>Returns whether the user can create another pending challenge.</summary>
-    public bool CanChallenge(string userId, List<BattleModel> pendingBattles)
+    /// <inheritdoc />
+    public async Task<BattleSummaryDto> CreateChallengeAsync(string challengerUserId, string opponentUsername, string? idempotencyKey = null)
     {
+        if (string.IsNullOrWhiteSpace(challengerUserId))
+            throw new BattleOperationException(HttpStatusCode.Unauthorized, "User identity not found.");
+
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var existing = await _db.Battles
+                .FirstOrDefaultAsync(b => b.IdempotencyKey == idempotencyKey && b.ChallengerId == challengerUserId);
+            if (existing is not null)
+                return await ToSummaryAsync(existing, challengerUserId);
+        }
+
+        var opponent = await _userManager.FindByNameAsync(opponentUsername);
+        if (opponent is null)
+            throw new BattleOperationException(HttpStatusCode.NotFound, $"User '{opponentUsername}' not found.");
+
+        if (opponent.Id == challengerUserId)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Cannot challenge yourself.");
+
+        var challengerRecruitCount = await _db.Collections.CountAsync(c => c.UserId == challengerUserId);
+        if (challengerRecruitCount == 0)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "You need at least one recruit before sending a challenge.");
+
+        var opponentRecruitCount = await _db.Collections.CountAsync(c => c.UserId == opponent.Id);
+        if (opponentRecruitCount == 0)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Opponent has no recruits to battle with.");
+
         var expiryCutoff = DateTime.UtcNow - ChallengeExpiryDuration;
-        var activePending = pendingBattles.Count(b =>
-            b.ChallengerId == userId &&
-            b.Status == BattleStatus.Pending &&
-            b.CreatedAt > expiryCutoff);
+        var pendingCount = await _db.Battles
+            .CountAsync(b => b.ChallengerId == challengerUserId
+                && b.Status == BattleStatus.Pending
+                && b.CreatedAt > expiryCutoff);
 
-        return activePending < MaxPendingChallenges;
+        if (pendingCount >= MaxPendingChallenges)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, $"You already have {MaxPendingChallenges} or more pending challenges. Wait for them to expire or be resolved.");
+
+        var allowed = await _rateLimitService.IsAllowedAsync(challengerUserId, "challenge", MaxChallengesPerHour, TimeSpan.FromHours(1));
+        if (!allowed)
+            throw new BattleOperationException(HttpStatusCode.TooManyRequests, $"Rate limit exceeded. You can send up to {MaxChallengesPerHour} challenges per hour.");
+
+        var battle = new BattleModel
+        {
+            ChallengerId = challengerUserId,
+            OpponentId = opponent.Id,
+            Status = BattleStatus.Pending,
+            CreatedAt = DateTime.UtcNow,
+            IdempotencyKey = idempotencyKey
+        };
+
+        _db.Battles.Add(battle);
+        await _db.SaveChangesAsync();
+
+        return await ToSummaryAsync(battle, challengerUserId);
     }
 
-    /// <summary>Resolves a battle asynchronously.</summary>
-    public Task<BattleResult> ResolveBattleAsync(
-        PlayerModel challengerPlayer,
-        PlayerModel opponentPlayer,
-        string challengerUsername,
-        string opponentUsername)
-    {
-        return ResolveBattlePureAsync(challengerPlayer, opponentPlayer, challengerUsername, opponentUsername);
-    }
-
-    /// <summary>Resolves a battle using pure resolver logic.</summary>
-    public Task<BattleResult> ResolveBattlePureAsync(
-        PlayerModel challengerPlayer,
-        PlayerModel opponentPlayer,
-        string challengerUsername,
-        string opponentUsername)
-    {
-        return Task.FromResult(_battleResolver.Resolve(challengerPlayer, opponentPlayer, challengerUsername, opponentUsername));
-    }
-
-    /// <summary>Accepts a pending challenge and resolves it immediately.</summary>
-    public async Task<BattleSummaryDto> AcceptAndResolveChallengeAsync(int battleId, string opponentUserId, int selectedPlayerId)
+    /// <inheritdoc />
+    public async Task<BattleSummaryDto> AcceptChallengeAsync(int battleId, string opponentUserId)
     {
         var battle = await _db.Battles.FirstOrDefaultAsync(b => b.Id == battleId);
         if (battle is null)
@@ -78,49 +103,14 @@ public class BattleService : IBattleService
         if (battle.OpponentId != opponentUserId)
             throw new BattleOperationException(HttpStatusCode.Forbidden, "Only the opponent can accept this challenge.");
 
+        if (await ExpireIfNeededAsync(battle))
+            throw new BattleOperationException(HttpStatusCode.Gone, "Challenge expired.");
+
         if (battle.Status != BattleStatus.Pending)
             throw new BattleOperationException(HttpStatusCode.BadRequest, "Challenge is no longer pending.");
 
-        if (battle.CreatedAt <= DateTime.UtcNow - ChallengeExpiryDuration)
-        {
-            battle.Status = BattleStatus.Expired;
-            battle.ResolvedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-            throw new BattleOperationException(HttpStatusCode.Gone, "Challenge expired.");
-        }
-
-        var opponentPlayer = await _db.Players.FindAsync(selectedPlayerId);
-        if (opponentPlayer is null)
-            throw new BattleOperationException(HttpStatusCode.NotFound, $"Recruit with id {selectedPlayerId} not found.");
-
-        var opponentOwnsPlayer = await _db.Collections
-            .AnyAsync(c => c.UserId == opponentUserId && c.PlayerId == selectedPlayerId);
-        if (!opponentOwnsPlayer)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "Selected recruit is not in your collection.");
-
-        var challengerPlayer = await _db.Players.FindAsync(battle.ChallengerPlayerId);
-        if (challengerPlayer is null)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger's recruit no longer exists.");
-
-        var challengerOwnsPlayer = await _db.Collections
-            .AnyAsync(c => c.UserId == battle.ChallengerId && c.PlayerId == battle.ChallengerPlayerId);
-        if (!challengerOwnsPlayer)
-            throw new BattleOperationException(HttpStatusCode.BadRequest, "The challenger no longer owns the selected recruit.");
-
-        var challengerUser = await _userManager.FindByIdAsync(battle.ChallengerId);
-        var opponentUser = await _userManager.FindByIdAsync(opponentUserId);
-        var challengerUsername = challengerUser?.UserName ?? battle.ChallengerId;
-        var opponentUsername = opponentUser?.UserName ?? opponentUserId;
-
-        var result = _battleResolver.Resolve(challengerPlayer, opponentPlayer, challengerUsername, opponentUsername);
-        var winnerId = string.Equals(result.WinnerUsername, challengerUsername, StringComparison.OrdinalIgnoreCase)
-            ? battle.ChallengerId
-            : opponentUserId;
-
-        battle.OpponentPlayerId = selectedPlayerId;
-        battle.Status = BattleStatus.Completed;
-        battle.WinnerId = winnerId;
-        battle.ResolvedAt = DateTime.UtcNow;
+        battle.Status = BattleStatus.Accepted;
+        battle.AcceptedAt = DateTime.UtcNow;
 
         try
         {
@@ -131,16 +121,115 @@ public class BattleService : IBattleService
             throw new BattleOperationException(HttpStatusCode.Conflict, "This challenge was already accepted or modified concurrently.", ex);
         }
 
-        return await ToSummaryAsync(battle, result);
+        return await ToSummaryAsync(battle, opponentUserId);
     }
 
-    /// <summary>Builds a user-facing battle summary DTO.</summary>
-    public async Task<BattleSummaryDto> ToSummaryAsync(BattleModel battle, BattleResult? result = null)
+    /// <inheritdoc />
+    public async Task<BattleSummaryDto> SubmitSelectionAsync(int battleId, string userId, int playerId, BattleMove move)
     {
-        var userIds = new[] { battle.ChallengerId, battle.OpponentId }
+        var battle = await _db.Battles.FirstOrDefaultAsync(b => b.Id == battleId);
+        if (battle is null)
+            throw new BattleOperationException(HttpStatusCode.NotFound, $"Battle with id {battleId} not found.");
+
+        if (battle.ChallengerId != userId && battle.OpponentId != userId)
+            throw new BattleOperationException(HttpStatusCode.Forbidden, "Only battle participants can submit selections.");
+
+        var isChallenger = battle.ChallengerId == userId;
+        if (battle.Status == BattleStatus.Completed && HasSameSelection(battle, isChallenger, playerId, move))
+            return await ToSummaryAsync(battle, userId);
+
+        if (await ExpireIfNeededAsync(battle))
+            throw new BattleOperationException(HttpStatusCode.Gone, "Challenge expired.");
+
+        if (battle.Status != BattleStatus.Accepted)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Challenge must be accepted before selections can be submitted.");
+
+        var selectedPlayer = await _db.Players.FirstOrDefaultAsync(p => p.Id == playerId);
+        if (selectedPlayer is null)
+            throw new BattleOperationException(HttpStatusCode.NotFound, $"Recruit with id {playerId} not found.");
+
+        var ownsPlayer = await _db.Collections.AnyAsync(c => c.UserId == userId && c.PlayerId == playerId);
+        if (!ownsPlayer)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Selected recruit is not in your collection.");
+
+        if (isChallenger)
+        {
+            if (battle.ChallengerSubmittedAt.HasValue)
+            {
+                if (battle.ChallengerPlayerId == playerId && battle.ChallengerMove == move)
+                    return await ToSummaryAsync(battle, userId);
+                throw new BattleOperationException(HttpStatusCode.BadRequest, "Your battle selection has already been submitted.");
+            }
+
+            battle.ChallengerPlayerId = playerId;
+            battle.ChallengerMove = move;
+            battle.ChallengerSubmittedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            if (battle.OpponentSubmittedAt.HasValue)
+            {
+                if (battle.OpponentPlayerId == playerId && battle.OpponentMove == move)
+                    return await ToSummaryAsync(battle, userId);
+                throw new BattleOperationException(HttpStatusCode.BadRequest, "Your battle selection has already been submitted.");
+            }
+
+            battle.OpponentPlayerId = playerId;
+            battle.OpponentMove = move;
+            battle.OpponentSubmittedAt = DateTime.UtcNow;
+        }
+
+        BattleResult? result = null;
+        if (battle.ChallengerPlayerId.HasValue
+            && battle.OpponentPlayerId.HasValue
+            && battle.ChallengerMove.HasValue
+            && battle.OpponentMove.HasValue)
+        {
+            result = await ResolveAcceptedBattleAsync(battle);
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new BattleOperationException(HttpStatusCode.Conflict, "This challenge was already modified concurrently.", ex);
+        }
+
+        return await ToSummaryAsync(battle, userId, result);
+    }
+
+    /// <inheritdoc />
+    public async Task DeclineChallengeAsync(int battleId, string opponentUserId)
+    {
+        var battle = await _db.Battles.FirstOrDefaultAsync(b => b.Id == battleId);
+        if (battle is null)
+            throw new BattleOperationException(HttpStatusCode.NotFound, $"Battle with id {battleId} not found.");
+
+        if (battle.OpponentId != opponentUserId)
+            throw new BattleOperationException(HttpStatusCode.Forbidden, "Only the opponent can decline this challenge.");
+
+        if (await ExpireIfNeededAsync(battle))
+            throw new BattleOperationException(HttpStatusCode.Gone, "Challenge expired.");
+
+        if (battle.Status != BattleStatus.Pending)
+            throw new BattleOperationException(HttpStatusCode.BadRequest, "Challenge is no longer pending.");
+
+        battle.Status = BattleStatus.Declined;
+        battle.ResolvedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    /// <inheritdoc />
+    public async Task<BattleSummaryDto> ToSummaryAsync(BattleModel battle, string? viewerUserId = null, BattleResult? result = null)
+    {
+        var userIds = new[] { battle.ChallengerId, battle.OpponentId, battle.WinnerId }
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct()
+            .Cast<string>()
             .ToArray();
+
         var users = new Dictionary<string, IdentityUser>();
         foreach (var userId in userIds)
         {
@@ -149,14 +238,33 @@ public class BattleService : IBattleService
                 users[userId] = user;
         }
 
-        var challengerPlayer = await _db.Players.AsNoTracking().FirstOrDefaultAsync(p => p.Id == battle.ChallengerPlayerId);
-        var opponentPlayer = battle.OpponentPlayerId > 0
-            ? await _db.Players.AsNoTracking().FirstOrDefaultAsync(p => p.Id == battle.OpponentPlayerId)
+        var playerIds = new[] { battle.ChallengerPlayerId, battle.OpponentPlayerId }
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToArray();
+
+        var players = await _db.Players
+            .AsNoTracking()
+            .Where(p => playerIds.Contains(p.Id))
+            .ToDictionaryAsync(p => p.Id);
+
+        var challengerPlayer = battle.ChallengerPlayerId.HasValue && players.TryGetValue(battle.ChallengerPlayerId.Value, out var cp)
+            ? cp
+            : null;
+        var opponentPlayer = battle.OpponentPlayerId.HasValue && players.TryGetValue(battle.OpponentPlayerId.Value, out var op)
+            ? op
             : null;
 
         var challengerUsername = DisplayName(users, battle.ChallengerId);
         var opponentUsername = DisplayName(users, battle.OpponentId);
         var winnerUsername = battle.WinnerId is not null ? DisplayName(users, battle.WinnerId) : null;
+
+        var isCompleted = battle.Status == BattleStatus.Completed;
+        var viewerIsChallenger = viewerUserId == battle.ChallengerId;
+        var viewerIsOpponent = viewerUserId == battle.OpponentId;
+        var showChallengerSelection = isCompleted || viewerIsChallenger;
+        var showOpponentSelection = isCompleted || viewerIsOpponent;
 
         result ??= BuildStoredResult(battle, challengerUsername, opponentUsername, challengerPlayer, opponentPlayer, winnerUsername);
 
@@ -167,28 +275,90 @@ public class BattleService : IBattleService
             challengerUsername,
             battle.OpponentId,
             opponentUsername,
-            battle.ChallengerPlayerId,
-            battle.OpponentPlayerId,
-            ToPlayerSummary(challengerPlayer),
-            ToPlayerSummary(opponentPlayer),
+            showChallengerSelection ? battle.ChallengerPlayerId : null,
+            showOpponentSelection ? battle.OpponentPlayerId : null,
+            showChallengerSelection ? ToPlayerSummary(challengerPlayer) : null,
+            showOpponentSelection ? ToPlayerSummary(opponentPlayer) : null,
             battle.WinnerId,
             winnerUsername,
-            result,
+            isCompleted ? result : null,
             battle.CreatedAt,
             battle.ResolvedAt,
-            battle.IdempotencyKey);
+            battle.IdempotencyKey,
+            battle.AcceptedAt,
+            battle.ChallengerSubmittedAt.HasValue,
+            battle.OpponentSubmittedAt.HasValue,
+            showChallengerSelection ? battle.ChallengerMove : null,
+            showOpponentSelection ? battle.OpponentMove : null,
+            showChallengerSelection ? battle.ChallengerSubmittedAt : null,
+            showOpponentSelection ? battle.OpponentSubmittedAt : null,
+            isCompleted ? battle.ChallengerScore : null,
+            isCompleted ? battle.OpponentScore : null);
     }
 
-    /// <summary>Builds user-facing battle summary DTOs.</summary>
-    public async Task<IReadOnlyList<BattleSummaryDto>> ToSummariesAsync(IEnumerable<BattleModel> battles)
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<BattleSummaryDto>> ToSummariesAsync(IEnumerable<BattleModel> battles, string? viewerUserId = null)
     {
         var summaries = new List<BattleSummaryDto>();
         foreach (var battle in battles)
         {
-            summaries.Add(await ToSummaryAsync(battle));
+            summaries.Add(await ToSummaryAsync(battle, viewerUserId));
         }
 
         return summaries;
+    }
+
+    private async Task<bool> ExpireIfNeededAsync(BattleModel battle)
+    {
+        if (battle.Status is not (BattleStatus.Pending or BattleStatus.Accepted))
+            return false;
+
+        if (battle.CreatedAt > DateTime.UtcNow - ChallengeExpiryDuration)
+            return false;
+
+        battle.Status = BattleStatus.Expired;
+        battle.ResolvedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    private static bool HasSameSelection(BattleModel battle, bool isChallenger, int playerId, BattleMove move)
+    {
+        return isChallenger
+            ? battle.ChallengerPlayerId == playerId && battle.ChallengerMove == move
+            : battle.OpponentPlayerId == playerId && battle.OpponentMove == move;
+    }
+
+    private async Task<BattleResult> ResolveAcceptedBattleAsync(BattleModel battle)
+    {
+        var challengerPlayer = await _db.Players.FirstAsync(p => p.Id == battle.ChallengerPlayerId!.Value);
+        var opponentPlayer = await _db.Players.FirstAsync(p => p.Id == battle.OpponentPlayerId!.Value);
+        var challengerUser = await _userManager.FindByIdAsync(battle.ChallengerId);
+        var opponentUser = await _userManager.FindByIdAsync(battle.OpponentId);
+        var challengerUsername = challengerUser?.UserName ?? battle.ChallengerId;
+        var opponentUsername = opponentUser?.UserName ?? battle.OpponentId;
+
+        var result = _battleResolver.Resolve(
+            challengerPlayer,
+            opponentPlayer,
+            battle.ChallengerId,
+            battle.OpponentId,
+            challengerUsername,
+            opponentUsername,
+            battle.ChallengerMove!.Value,
+            battle.OpponentMove!.Value,
+            battle.Id);
+
+        battle.Status = BattleStatus.Completed;
+        battle.WinnerId = string.Equals(result.WinnerUsername, challengerUsername, StringComparison.OrdinalIgnoreCase)
+            ? battle.ChallengerId
+            : battle.OpponentId;
+        battle.ResolvedAt = DateTime.UtcNow;
+        battle.ChallengerScore = result.ChallengerScore;
+        battle.OpponentScore = result.OpponentScore;
+        battle.ResolutionMethod = result.Method;
+
+        return result;
     }
 
     private static string DisplayName(IReadOnlyDictionary<string, IdentityUser> users, string userId)
@@ -223,11 +393,13 @@ public class BattleService : IBattleService
         PlayerModel? opponentPlayer,
         string? winnerUsername)
     {
-        if (battle.Status != BattleStatus.Completed ||
-            string.IsNullOrWhiteSpace(battle.WinnerId) ||
-            challengerPlayer is null ||
-            opponentPlayer is null ||
-            string.IsNullOrWhiteSpace(winnerUsername))
+        if (battle.Status != BattleStatus.Completed
+            || string.IsNullOrWhiteSpace(battle.WinnerId)
+            || challengerPlayer is null
+            || opponentPlayer is null
+            || string.IsNullOrWhiteSpace(winnerUsername)
+            || battle.ChallengerMove is null
+            || battle.OpponentMove is null)
         {
             return null;
         }
@@ -236,14 +408,26 @@ public class BattleService : IBattleService
         var winnerPlayer = challengerWon ? challengerPlayer : opponentPlayer;
         var loserPlayer = challengerWon ? opponentPlayer : challengerPlayer;
         var loserUsername = challengerWon ? opponentUsername : challengerUsername;
+        var winnerMove = challengerWon ? battle.ChallengerMove : battle.OpponentMove;
+        var loserMove = challengerWon ? battle.OpponentMove : battle.ChallengerMove;
+        var winnerScore = challengerWon ? battle.ChallengerScore : battle.OpponentScore;
+        var loserScore = challengerWon ? battle.OpponentScore : battle.ChallengerScore;
 
         return new BattleResult(
             winnerUsername,
             loserUsername,
             winnerPlayer.Name,
             loserPlayer.Name,
-            "Resolved",
-            battle.ResolvedAt ?? battle.CreatedAt);
+            battle.ResolutionMethod ?? "Resolved",
+            battle.ResolvedAt ?? battle.CreatedAt,
+            winnerMove,
+            loserMove,
+            winnerScore,
+            loserScore,
+            battle.ChallengerMove,
+            battle.OpponentMove,
+            battle.ChallengerScore,
+            battle.OpponentScore);
     }
 }
 

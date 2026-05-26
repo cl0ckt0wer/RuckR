@@ -92,7 +92,7 @@
                             @if (battle.Result is not null)
                             {
                                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true">
-                                    @battle.Result.WinnerUsername won with @battle.Result.WinnerPlayerName. Method: @battle.Result.Method.
+                                    @battle.Result.WinnerUsername won with @battle.Result.WinnerPlayerName. @MoveScoreDisplay(battle.Result.WinnerMove, battle.Result.WinnerScore) beat @MoveScoreDisplay(battle.Result.LoserMove, battle.Result.LoserScore). Method: @battle.Result.Method.
                                 </MudAlert>
                             }
                             else
@@ -108,11 +108,21 @@
                                             <MudText Typo="Typo.subtitle2">Your side</MudText>
                                             <MudText Typo="Typo.body2">Role: @(isUserChallenger ? "Challenger" : "Opponent")</MudText>
                                             <MudText Typo="Typo.body2">Recruit: @userPlayerDisplay</MudText>
+                                            <MudText Typo="Typo.body2">Move: @(isUserChallenger ? battle.ChallengerMove : battle.OpponentMove)</MudText>
+                                            @if ((isUserChallenger ? battle.ChallengerScore : battle.OpponentScore) is { } userScore)
+                                            {
+                                                <MudText Typo="Typo.body2">Score: @userScore.ToString("0.##")</MudText>
+                                            }
                                         </MudItem>
                                         <MudItem xs="12" md="6">
                                             <MudText Typo="Typo.subtitle2">Opponent</MudText>
                                             <MudText Typo="Typo.body2">User: @opponentDisplay</MudText>
                                             <MudText Typo="Typo.body2">Recruit: @opponentPlayerDisplay</MudText>
+                                            <MudText Typo="Typo.body2">Move: @(isUserChallenger ? battle.OpponentMove : battle.ChallengerMove)</MudText>
+                                            @if ((isUserChallenger ? battle.OpponentScore : battle.ChallengerScore) is { } opponentScore)
+                                            {
+                                                <MudText Typo="Typo.body2">Score: @opponentScore.ToString("0.##")</MudText>
+                                            }
                                         </MudItem>
                                     </MudGrid>
                                     <MudDivider />
@@ -237,6 +247,13 @@
 
     private static string PlayerDisplay(BattlePlayerSummaryDto? player) =>
         player is null ? "No recruit selected" : $"{player.Name} ({player.Position}, {player.Rarity})";
+
+    private static string MoveScoreDisplay(BattleMove? move, double? score)
+    {
+        if (move is null && score is null) return "selection";
+        if (score is null) return move?.ToString() ?? "selection";
+        return $"{move} ({score:0.##})";
+    }
 
     private static string HistoryCardClass(bool expanded) => expanded
         ? "game-panel history-card history-card--expanded"

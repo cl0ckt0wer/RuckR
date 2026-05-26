@@ -78,6 +78,28 @@ public class ApiClientService
         }
     }
 
+    /// <summary>
+    /// Gets nearby challengeable users from recent live GPS state.
+    /// </summary>
+    /// <param name="lat">Latitude.</param>
+    /// <param name="lng">Longitude.</param>
+    /// <param name="radius">Search radius in meters.</param>
+    /// <returns>List of nearby users with recruit counts.</returns>
+    public async Task<List<NearbyUserDto>> GetNearbyUsersAsync(double lat, double lng, double radius = 10_000)
+    {
+        try
+        {
+            _logger.LogDebug("Fetching nearby users at ({Lat}, {Lng}) radius {Radius}", lat, lng, radius);
+            return await _http.GetFromJsonAsync<List<NearbyUserDto>>(
+                $"api/users/nearby?lat={lat}&lng={lng}&radius={radius}") ?? new();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch nearby users at ({Lat}, {Lng})", lat, lng);
+            return new();
+        }
+    }
+
     // Pitches
     /// <summary>
     /// Gets nearby pitches.
@@ -333,11 +355,10 @@ public class ApiClientService
     /// Sends a new battle challenge.
     /// </summary>
     /// <param name="opponentUsername">Opponent user name.</param>
-    /// <param name="selectedPlayerId">Challenger collection recruit/player-card identifier.</param>
     /// <returns>Created battle summary.</returns>
-    public async Task<BattleSummaryDto?> SendChallengeAsync(string opponentUsername, int selectedPlayerId)
+    public async Task<BattleSummaryDto?> SendChallengeAsync(string opponentUsername)
     {
-        var response = await _http.PostAsJsonAsync("api/battles/challenge", new ChallengeRequest(opponentUsername, selectedPlayerId));
+        var response = await _http.PostAsJsonAsync("api/battles/challenge", new ChallengeRequest(opponentUsername));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
     }
@@ -346,11 +367,24 @@ public class ApiClientService
     /// Accepts a battle challenge.
     /// </summary>
     /// <param name="battleId">Challenge identifier.</param>
-    /// <param name="selectedPlayerId">Selected recruit/player-card identifier.</param>
-    /// <returns>Resolved battle summary.</returns>
-    public async Task<BattleSummaryDto?> AcceptChallengeAsync(int battleId, int selectedPlayerId)
+    /// <returns>Accepted battle summary.</returns>
+    public async Task<BattleSummaryDto?> AcceptChallengeAsync(int battleId)
     {
-        var response = await _http.PostAsJsonAsync($"api/battles/{battleId}/accept", new AcceptChallengeRequest(selectedPlayerId));
+        var response = await _http.PostAsJsonAsync($"api/battles/{battleId}/accept", new AcceptChallengeRequest());
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
+    }
+
+    /// <summary>
+    /// Submits a recruit and hidden RPSLS move for an accepted battle.
+    /// </summary>
+    /// <param name="battleId">Battle identifier.</param>
+    /// <param name="playerId">Owned recruit/player-card identifier.</param>
+    /// <param name="move">Hidden RPSLS move.</param>
+    /// <returns>Updated battle summary.</returns>
+    public async Task<BattleSummaryDto?> SubmitBattleSelectionAsync(int battleId, int playerId, BattleMove move)
+    {
+        var response = await _http.PostAsJsonAsync($"api/battles/{battleId}/selection", new BattleSelectionRequest(playerId, move));
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<BattleSummaryDto>();
     }
