@@ -289,6 +289,49 @@ public class MapPage : BasePage
         throw new TimeoutException($"No pitch overlay appeared after tapping the seeded pitch area within {timeoutMs}ms.");
     }
 
+    /// <summary>Click the map at the given pitch location and wait for its hub overlay.</summary>
+    public async Task ClickPitchAreaAsync(double latitude, double longitude, int timeoutMs = 15_000)
+    {
+        await SetArcGisViewCenterAsync(latitude, longitude, 17);
+        await Page.WaitForTimeoutAsync(1_000);
+        await ClickMapCenterAsync();
+        await WaitForPitchOverlayAsync(timeoutMs);
+    }
+
+    /// <summary>Wait until the pitch layer contains a graphic with the requested pitch id.</summary>
+    public async Task WaitForPitchGraphicByIdAsync(int pitchId, int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"async ({ pitchId }) => {
+                const root = document.querySelector('[data-testid=""map-container""]');
+                const view = root?.querySelector('arcgis-map')?.view;
+                const layers = view?.map?.allLayers?.items ?? view?.map?.layers?.items ?? [];
+                const layer = layers.find(l => l.title === 'Pitches');
+                if (!layer) return false;
+                if (layer.when) await layer.when();
+
+                const hasPitch = collection => {
+                    if (!collection) return false;
+                    const items = Array.isArray(collection)
+                        ? collection
+                        : Array.isArray(collection.items)
+                            ? collection.items
+                            : typeof collection.toArray === 'function'
+                                ? collection.toArray()
+                                : [];
+                    return items.some(g => Number(g.attributes?._ruckrId ?? g.attributes?.pitchId) === Number(pitchId));
+                };
+
+                if (hasPitch(layer.graphics) || hasPitch(layer.source)) return true;
+                if (!layer.queryFeatureCount) return false;
+
+                const count = await layer.queryFeatureCount({ where: `pitchId = ${Number(pitchId)}` });
+                return count > 0;
+            }",
+            new { pitchId },
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
     // ── Native map widgets ────────────────────────────────────────────
 
     /// <summary>Wait for native ArcGIS/GeoBlazor map widgets to become visible.</summary>
@@ -591,6 +634,51 @@ public class MapPage : BasePage
     public async Task<string?> GetPitchOverlayNameAsync()
     {
         return await Page.GetByTestId("pitch-name").TextContentAsync();
+    }
+
+    /// <summary>Return the selected pitch type label from the hub panel.</summary>
+    public async Task<string> GetPitchTypeTextAsync() =>
+        (await Page.GetByTestId("pitch-type").TextContentAsync())?.Trim() ?? string.Empty;
+
+    /// <summary>Return the active recruit count shown by the selected pitch hub.</summary>
+    public async Task<int> GetActiveRecruitCountAsync()
+    {
+        var text = (await Page.GetByTestId("active-recruit-count").TextContentAsync())?.Trim() ?? "0";
+        return int.TryParse(text, out var count) ? count : 0;
+    }
+
+    /// <summary>Wait until the selected pitch hub has active recruits and an enabled Recruit here button.</summary>
+    public async Task WaitForPitchHubRecruitReadyAsync(int timeoutMs = 10_000)
+    {
+        await Page.WaitForFunctionAsync(
+            @"() => {
+                const countText = document.querySelector('[data-testid=""active-recruit-count""]')?.textContent?.trim() ?? '0';
+                const count = Number.parseInt(countText, 10);
+                const button = document.querySelector('[data-testid=""capture-players-btn""]');
+                return Number.isFinite(count)
+                    && count > 0
+                    && !!button
+                    && !button.disabled
+                    && button.getAttribute('aria-disabled') !== 'true';
+            }",
+            null,
+            new PageWaitForFunctionOptions { Timeout = timeoutMs });
+    }
+
+    /// <summary>Click the pitch hub Recruit here action.</summary>
+    public async Task ClickRecruitHereAsync()
+    {
+        await Page.GetByTestId("capture-players-btn").ClickAsync();
+    }
+
+    /// <summary>Wait for the recruit board radar to become visible.</summary>
+    public async Task WaitForRecruitBoardAsync(int timeoutMs = 10_000)
+    {
+        await Page.WaitForSelectorAsync("[data-testid='encounter-radar']", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = timeoutMs
+        });
     }
 
     /// <summary>Close the pitch detail overlay by clicking its close button.</summary>

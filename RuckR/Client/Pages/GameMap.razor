@@ -264,7 +264,7 @@
             </MudStack>
 
             <MudStack Row="true" Class="pitch-card__meta">
-                <MudChip T="string" Color="@PitchTypeChipColor(_selectedPitch.Type)" Size="Size.Small" Variant="Variant.Filled">@PitchTypeDisplayName(_selectedPitch.Type)</MudChip>
+                <MudChip T="string" Color="@PitchTypeChipColor(_selectedPitch.Type)" Size="Size.Small" Variant="Variant.Filled" data-testid="pitch-type">@PitchTypeDisplayName(_selectedPitch.Type)</MudChip>
                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@PitchHubDistanceText</MudChip>
             </MudStack>
 
