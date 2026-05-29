@@ -9,7 +9,9 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
@@ -187,6 +189,20 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
+var profileImagesRoot = UploadStoragePaths.ResolveProfileImagesRoot(app.Configuration, app.Environment);
+Directory.CreateDirectory(profileImagesRoot);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(profileImagesRoot),
+    RequestPath = UploadStoragePaths.ProfileImagesRequestPath,
+    ContentTypeProvider = BuildProfileImageContentTypeProvider(),
+    OnPrepareResponse = context =>
+    {
+        context.Context.Response.Headers["Cache-Control"] = "public, max-age=604800";
+        context.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    }
+});
+
 // Serve client appsettings with GeoBlazor/ArcGIS key injection (before static files).
 if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGisPortalItemId) || !string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
 {
@@ -235,6 +251,16 @@ static string? ResolveClientAppSettingsPath(IWebHostEnvironment environment, str
 {
     var relativePath = requestPath.TrimStart('/');
     return ResolveClientStaticAssetPath(environment, relativePath);
+}
+
+static FileExtensionContentTypeProvider BuildProfileImageContentTypeProvider()
+{
+    var provider = new FileExtensionContentTypeProvider();
+    provider.Mappings[".jpg"] = "image/jpeg";
+    provider.Mappings[".jpeg"] = "image/jpeg";
+    provider.Mappings[".png"] = "image/png";
+    provider.Mappings[".webp"] = "image/webp";
+    return provider;
 }
 
 static string? ResolveClientStaticAssetPath(IWebHostEnvironment environment, string relativePath)

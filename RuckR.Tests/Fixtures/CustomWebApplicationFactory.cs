@@ -10,7 +10,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -276,6 +278,25 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
                 return;
             }
             await next();
+        });
+
+        var profileImagesRoot = UploadStoragePaths.ResolveProfileImagesRoot(_kestrelApp.Configuration, _kestrelApp.Environment);
+        Directory.CreateDirectory(profileImagesRoot);
+        var profileImageContentTypes = new FileExtensionContentTypeProvider();
+        profileImageContentTypes.Mappings[".jpg"] = "image/jpeg";
+        profileImageContentTypes.Mappings[".jpeg"] = "image/jpeg";
+        profileImageContentTypes.Mappings[".png"] = "image/png";
+        profileImageContentTypes.Mappings[".webp"] = "image/webp";
+        _kestrelApp.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new PhysicalFileProvider(profileImagesRoot),
+            RequestPath = UploadStoragePaths.ProfileImagesRequestPath,
+            ContentTypeProvider = profileImageContentTypes,
+            OnPrepareResponse = context =>
+            {
+                context.Context.Response.Headers["Cache-Control"] = "public, max-age=604800";
+                context.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            }
         });
 
         _kestrelApp.UseBlazorFrameworkFiles();

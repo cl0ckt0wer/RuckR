@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using RuckR.Shared.Models;
@@ -413,6 +414,25 @@ public class ApiClientService
     public async Task<UserProfileModel?> SaveUserProfileAsync(UserProfileUpdateRequest profile)
     {
         var response = await _http.PutAsJsonAsync("api/profile", profile);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<UserProfileModel>();
+    }
+
+    /// <summary>
+    /// Uploads a profile avatar image and returns the updated public profile.
+    /// </summary>
+    /// <param name="content">Image content stream.</param>
+    /// <param name="fileName">Original file name.</param>
+    /// <param name="contentType">Browser-provided content type.</param>
+    /// <returns>Saved user profile.</returns>
+    public async Task<UserProfileModel?> UploadProfileAvatarAsync(Stream content, string fileName, string contentType)
+    {
+        using var form = new MultipartFormDataContent();
+        using var fileContent = new StreamContent(content);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(fileContent, "file", fileName);
+
+        var response = await _http.PostAsync("api/profile/avatar", form);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<UserProfileModel>();
     }

@@ -72,9 +72,9 @@
                         <DataAnnotationsValidator />
                         <MudStack Spacing="3">
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="profile-summary">
-                                @if (!string.IsNullOrWhiteSpace(_editModel.AvatarUrl))
+                                @if (!string.IsNullOrWhiteSpace(AvatarPreviewSource))
                                 {
-                                    <img class="profile-avatar" src="@_editModel.AvatarUrl" alt="" data-testid="profile-avatar-preview" />
+                                    <img class="profile-avatar" src="@AvatarPreviewSource" alt="" data-testid="profile-avatar-preview" />
                                 }
                                 else
                                 {
@@ -89,11 +89,46 @@
                                 </div>
                             </MudStack>
 
-                            <div>
-                                <label class="form-label" for="profile-avatar-url-input">Profile picture URL</label>
-                                <InputText id="profile-avatar-url-input" class="form-control" @bind-Value="_editModel.AvatarUrl" data-testid="profile-avatar-url-input" />
-                                <ValidationMessage For="() => _editModel.AvatarUrl" />
-                            </div>
+                            <MudPaper Elevation="0" Class="profile-upload-panel" data-testid="profile-avatar-upload-panel">
+                                <MudStack Spacing="2">
+                                    <div>
+                                        <label class="form-label" for="profile-avatar-file-input">Profile picture</label>
+                                        <InputFile id="profile-avatar-file-input"
+                                                   OnChange="OnAvatarFileSelectedAsync"
+                                                   accept="image/jpeg,image/png,image/webp"
+                                                   class="form-control"
+                                                   data-testid="profile-avatar-file-input" />
+                                        <div class="field-hint">JPEG, PNG, or WebP. Max 2 MB.</div>
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(_avatarUploadError))
+                                    {
+                                        <MudAlert Severity="Severity.Error" Dense="true" data-testid="profile-avatar-error">@_avatarUploadError</MudAlert>
+                                    }
+
+                                    @if (_selectedAvatarBytes is not null)
+                                    {
+                                        <MudButton ButtonType="ButtonType.Button"
+                                                   Variant="Variant.Filled"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                                                   Disabled="@_isUploadingAvatar"
+                                                   OnClick="UploadSelectedAvatarAsync"
+                                                   data-testid="profile-avatar-upload-btn">
+                                            @(_isUploadingAvatar ? "Uploading" : "Upload photo")
+                                        </MudButton>
+                                    }
+
+                                    @if (CanEditExternalAvatarUrl)
+                                    {
+                                        <div>
+                                            <label class="form-label" for="profile-avatar-url-input">External image URL</label>
+                                            <InputText id="profile-avatar-url-input" class="form-control" @bind-Value="_editModel.AvatarUrl" data-testid="profile-avatar-url-input" />
+                                            <ValidationMessage For="() => _editModel.AvatarUrl" />
+                                        </div>
+                                    }
+                                </MudStack>
+                            </MudPaper>
 
                             <div>
                                 <label class="form-label" for="profile-location-input">Location</label>
@@ -129,17 +164,37 @@
 </MudContainer>
 
 @code {
+    private const long MaxAvatarBytes = 2 * 1024 * 1024;
+    private static readonly HashSet<string> AllowedAvatarContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    };
+
     private UserProfileModel? _profile;
     private UserProfileUpdateRequest _editModel = new();
     private bool _isLoading = true;
     private bool _isEditing;
     private bool _isSaving;
+    private bool _isUploadingAvatar;
+    private byte[]? _selectedAvatarBytes;
+    private string? _selectedAvatarFileName;
+    private string? _selectedAvatarContentType;
+    private string? _selectedAvatarPreviewDataUrl;
+    private string? _avatarUploadError;
     private string? _errorMessage;
     private string? _saveMessage;
 
     private string DisplayName => string.IsNullOrWhiteSpace(_profile?.Name) ? "RuckR Player" : _profile!.Name!;
 
     private string BioText => string.IsNullOrWhiteSpace(_profile?.Biography) ? "No bio yet." : _profile!.Biography!;
+
+    private string? AvatarPreviewSource => _selectedAvatarPreviewDataUrl ?? _editModel.AvatarUrl;
+
+    private bool CanEditExternalAvatarUrl =>
+        Uri.TryCreate(_profile?.AvatarUrl, UriKind.Absolute, out var uri)
+        && uri.Scheme is "http" or "https";
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,6 +231,7 @@
     private void BeginEdit()
     {
         ResetEditModel();
+        ClearSelectedAvatar();
         _saveMessage = null;
         _isEditing = true;
     }
@@ -197,6 +253,7 @@
 
             _profile = saved;
             ResetEditModel();
+            ClearSelectedAvatar();
             _isEditing = false;
             _saveMessage = "Profile saved.";
         }
@@ -213,9 +270,97 @@
     private void CancelEdit()
     {
         ResetEditModel();
+        ClearSelectedAvatar();
         _isEditing = false;
         _errorMessage = null;
         _saveMessage = null;
+    }
+
+    private async Task OnAvatarFileSelectedAsync(InputFileChangeEventArgs args)
+    {
+        ClearSelectedAvatar();
+        var file = args.File;
+
+        if (file.Size <= 0)
+        {
+            _avatarUploadError = "Choose a non-empty image file.";
+            return;
+        }
+
+        if (file.Size > MaxAvatarBytes)
+        {
+            _avatarUploadError = "Profile picture must be 2 MB or smaller.";
+            return;
+        }
+
+        if (!AllowedAvatarContentTypes.Contains(file.ContentType))
+        {
+            _avatarUploadError = "Profile picture must be a JPEG, PNG, or WebP image.";
+            return;
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxAvatarBytes);
+            using var memory = new MemoryStream((int)file.Size);
+            await stream.CopyToAsync(memory);
+            _selectedAvatarBytes = memory.ToArray();
+            _selectedAvatarFileName = file.Name;
+            _selectedAvatarContentType = file.ContentType;
+            _selectedAvatarPreviewDataUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(_selectedAvatarBytes)}";
+        }
+        catch (Exception ex)
+        {
+            _avatarUploadError = $"Profile picture could not be read: {ex.Message}";
+        }
+    }
+
+    private async Task UploadSelectedAvatarAsync()
+    {
+        if (_selectedAvatarBytes is null
+            || string.IsNullOrWhiteSpace(_selectedAvatarFileName)
+            || string.IsNullOrWhiteSpace(_selectedAvatarContentType))
+        {
+            _avatarUploadError = "Choose an image before uploading.";
+            return;
+        }
+
+        _isUploadingAvatar = true;
+        _avatarUploadError = null;
+        _saveMessage = null;
+
+        try
+        {
+            using var stream = new MemoryStream(_selectedAvatarBytes);
+            var saved = await ApiClient.UploadProfileAvatarAsync(stream, _selectedAvatarFileName, _selectedAvatarContentType);
+            if (saved is null)
+            {
+                _avatarUploadError = "Profile picture could not be uploaded.";
+                return;
+            }
+
+            _profile = saved;
+            ResetEditModel();
+            ClearSelectedAvatar();
+            _saveMessage = "Profile picture uploaded.";
+        }
+        catch (Exception ex)
+        {
+            _avatarUploadError = $"Profile picture could not be uploaded: {ex.Message}";
+        }
+        finally
+        {
+            _isUploadingAvatar = false;
+        }
+    }
+
+    private void ClearSelectedAvatar()
+    {
+        _selectedAvatarBytes = null;
+        _selectedAvatarFileName = null;
+        _selectedAvatarContentType = null;
+        _selectedAvatarPreviewDataUrl = null;
+        _avatarUploadError = null;
     }
 
     private void ResetEditModel()
@@ -245,6 +390,19 @@
         border-radius: 8px;
         padding: 1rem;
         background: #fff;
+    }
+
+    .profile-upload-panel {
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 8px;
+        padding: 0.85rem;
+        background: #f8fafc;
+    }
+
+    .field-hint {
+        margin-top: 0.25rem;
+        color: #64748b;
+        font-size: 0.82rem;
     }
 
     .profile-summary {

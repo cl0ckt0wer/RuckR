@@ -271,7 +271,7 @@ fi
 
 # ── Deploy secrets ──
 step "4/10  Deploying secrets"
-ssh "$SSH_HOST" "mkdir -p $(remote_quote "$DEPLOY_DIR") && cat > $(remote_quote "$DEPLOY_DIR/secrets.env")" <<SECEOF
+ssh "$SSH_HOST" "mkdir -p $(remote_quote "$DEPLOY_DIR") $(remote_quote "$DEPLOY_DIR/uploads/profile-images") && cat > $(remote_quote "$DEPLOY_DIR/secrets.env")" <<SECEOF
 RUCKR_DB_PASSWORD=$PASSWORD
 MSSQL_SA_PASSWORD=$PASSWORD
 SECEOF
@@ -296,6 +296,7 @@ RUCKR_DB_PASSWORD=$(remote_quote "$PASSWORD")
 MSSQL_SA_PASSWORD=$(remote_quote "$PASSWORD")
 ConnectionStrings__RuckRDbContext=$(remote_quote "$CONNECTION_STRING")
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+Uploads__RootPath=$(remote_quote "$ABS_DEPLOY_DIR/uploads")
 ArcGISApiKey=$(remote_quote "$ARC_GIS_KEY")
 ARC_GIS_API_KEY=$(remote_quote "$ARC_GIS_KEY")
 ArcGISPlacesApiKey=$(remote_quote "$ARC_GIS_PLACES_KEY")

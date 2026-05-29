@@ -21,7 +21,7 @@ namespace RuckR.Shared.Models
         public string? Location { get; set; }
 
         /// <summary>Optional public profile image URL.</summary>
-        [Url]
+        [ProfileAvatarUrl]
         [StringLength(500)]
         public string? AvatarUrl { get; set; }
     }

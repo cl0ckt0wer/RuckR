@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using RuckR.Shared.Models;
 
 namespace RuckR.Server.Services
@@ -14,5 +15,12 @@ namespace RuckR.Server.Services
         /// <param name="profile">Editable profile payload to persist.</param>
         /// <returns>Saved profile model.</returns>
         Task<UserProfileModel> CreateOrUpdateProfileAsync(string userId, UserProfileUpdateRequest profile);
+
+        /// <summary>Uploads and persists a locally served profile avatar.</summary>
+        /// <param name="userId">User identifier.</param>
+        /// <param name="file">Multipart image file.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <returns>Saved profile model.</returns>
+        Task<UserProfileModel> UploadAvatarAsync(string userId, IFormFile file, CancellationToken cancellationToken = default);
     }
 }
