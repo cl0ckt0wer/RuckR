@@ -106,10 +106,67 @@ public class PitchHubRecruitUiTests : IAsyncLifetime
         cut.WaitForAssertion(() =>
         {
             Assert.Empty(cut.FindAll("[data-testid='pitch-overlay']"));
-            Assert.True(GetPrivate<bool>(cut.Instance, "_showRecruitBoard"));
             Assert.Null(GetPrivate<PitchModel?>(cut.Instance, "_selectedPitch"));
             Assert.Null(GetPrivate<PitchHubDto?>(cut.Instance, "_pitchHub"));
+            Assert.False(GetPrivate<bool>(cut.Instance, "_showRecruitBoard"));
+            var boardPitch = GetPrivate<PitchModel?>(cut.Instance, "_recruitBoardPitch");
+            Assert.NotNull(boardPitch);
+            Assert.Equal("Test Pitch Hub", boardPitch.Name);
+            Assert.Contains("Recruiting at Test Pitch Hub", cut.Find("[data-testid='recruit-board-title']").TextContent);
+            Assert.Equal("1", cut.Find("[data-testid='recruit-board-count']").TextContent.Trim());
             Assert.Contains(_dispatcher.DispatchedActions, action => action is ClearSelectionAction);
+        });
+    }
+
+    /// <summary>
+    /// Verifies visible recruits do not show a global recruit board before a pitch is selected.
+    /// </summary>
+    [Fact]
+    public void RecruitBoard_WhenNoPitchSelected_IsHidden()
+    {
+        var cut = _context.Render<GameMap>();
+
+        SetPrivate(cut.Instance, "_isAuthenticated", true);
+        cut.Render();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Empty(cut.FindAll("[data-testid='encounter-radar']"));
+        });
+    }
+
+    /// <summary>
+    /// Verifies the pitch recruit board only counts encounters near the selected pitch.
+    /// </summary>
+    [Fact]
+    public void RecruitHere_FiltersRecruitBoardToSelectedPitch()
+    {
+        _mapState.SetValue(new MapState
+        {
+            VisibleEncounters = new[]
+            {
+                CreateEncounter(
+                    Guid.Parse("f8d3e239-07c1-471a-9e20-04e7d1ce2c01"),
+                    "Scrum Spark",
+                    51.508894,
+                    -0.126352),
+                CreateEncounter(
+                    Guid.Parse("2ef5e916-035e-49f9-8634-bd9d7a414bd6"),
+                    "Far Runner",
+                    52.508894,
+                    -0.126352)
+            }
+        });
+        var cut = _context.Render<GameMap>();
+        ShowPitchHub(cut, activeRecruitCount: 2);
+
+        cut.Find("[data-testid='capture-players-btn']").Click();
+
+        cut.WaitForAssertion(() =>
+        {
+            Assert.Equal("1", cut.Find("[data-testid='recruit-board-count']").TextContent.Trim());
+            Assert.Contains("Scrum Spark", cut.Find("[data-testid='spotlight-encounter-btn']").TextContent);
+            Assert.DoesNotContain("Far Runner", cut.Find("[data-testid='encounter-radar']").TextContent);
         });
     }
 
@@ -162,6 +219,25 @@ public class PitchHubRecruitUiTests : IAsyncLifetime
 
         cut.Render();
     }
+
+    private static PlayerEncounterDto CreateEncounter(
+        Guid encounterId,
+        string name,
+        double latitude,
+        double longitude) =>
+        new(
+            encounterId,
+            PlayerId: 12,
+            Name: name,
+            Position: "Flanker",
+            Rarity: "Rare",
+            Level: 7,
+            Latitude: latitude,
+            Longitude: longitude,
+            ExpiresAtUtc: DateTime.UtcNow.AddMinutes(20),
+            SuccessChancePercent: 70,
+            BaseRecruitmentSeconds: 120,
+            ParkName: "Test Pitch");
 
     private static void SetPrivate<T>(GameMap instance, string fieldName, T value)
     {

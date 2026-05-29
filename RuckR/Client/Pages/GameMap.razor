@@ -213,33 +213,43 @@
             </div>
         }
 
-        @if (_isAuthenticated && _selectedEncounter is null && MapState.Value.VisibleEncounters.Count > 0)
-        {
-            <MudPaper Elevation="3" Class="encounter-radar" data-testid="encounter-radar">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__header">
-                    <MudText Typo="Typo.caption">Recruit board</MudText>
-                    <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Size="Size.Small">@MapState.Value.VisibleEncounters.Count</MudChip>
-                </MudStack>
-                @if (SpotlightEncounter is not null)
-                {
-                    <MudButton Class="encounter-radar__target encounter-radar__target--spotlight"
-                               Variant="Variant.Text"
-                               FullWidth="true"
-                               data-testid="spotlight-encounter-btn"
-                               aria-label="@($"Rare sighting: {SpotlightEncounter.Name}")"
-                               OnClick="() => SelectEncounterAsync(SpotlightEncounter)">
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__target-inner">
-                            <span>
-                                <small class="encounter-radar__kicker">Rare sighting</small>
-                                <strong>@SpotlightEncounter.Name</strong>
-                                <small>@SpotlightSightingSummary(SpotlightEncounter)</small>
-                            </span>
-                            <span class="encounter-radar__timer">@EncounterExpiresText(SpotlightEncounter)</span>
-                        </MudStack>
-                    </MudButton>
-                }
-            </MudPaper>
-        }
+    }
+
+    @if (ShouldShowRecruitBoard)
+    {
+        var recruitBoardEncounters = RecruitBoardEncounters;
+        var recruitBoardSpotlight = RecruitBoardSpotlightEncounter;
+
+        <MudPaper Elevation="3" Class="encounter-radar" data-testid="encounter-radar">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__header">
+                <MudText Typo="Typo.caption" data-testid="recruit-board-title">Recruiting at @RecruitBoardPitchName</MudText>
+                <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Size="Size.Small" data-testid="recruit-board-count">@recruitBoardEncounters.Count</MudChip>
+            </MudStack>
+            @if (recruitBoardSpotlight is not null)
+            {
+                <MudButton Class="encounter-radar__target encounter-radar__target--spotlight"
+                           Variant="Variant.Text"
+                           FullWidth="true"
+                           data-testid="spotlight-encounter-btn"
+                           aria-label="@($"Rare sighting: {recruitBoardSpotlight.Name}")"
+                           OnClick="() => SelectEncounterAsync(recruitBoardSpotlight)">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="encounter-radar__target-inner">
+                        <span>
+                            <small class="encounter-radar__kicker">Rare sighting</small>
+                            <strong>@recruitBoardSpotlight.Name</strong>
+                            <small>@SpotlightSightingSummary(recruitBoardSpotlight)</small>
+                        </span>
+                        <span class="encounter-radar__timer">@EncounterExpiresText(recruitBoardSpotlight)</span>
+                    </MudStack>
+                </MudButton>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="encounter-radar__empty" data-testid="recruit-board-empty">
+                    No recruits are currently visible at this pitch. Refresh the map or check another pitch.
+                </MudText>
+            }
+        </MudPaper>
     }
 </div>
 
@@ -691,6 +701,11 @@
          color: #fff7d6 !important;
          font-weight: 900;
      }
+     .encounter-radar__empty {
+         margin: 0;
+         color: rgba(226,232,240,0.78);
+         line-height: 1.35;
+     }
 
      .map-overlay {
          position: absolute;
@@ -1097,6 +1112,7 @@
     private PitchHubDto? _pitchHub;
     private bool _isLoadingPitchHub;
     private int _pitchHubRequestPitchId = -1;
+    private PitchModel? _recruitBoardPitch;
     private PlayerEncounterDto? _selectedEncounter;
     private PitchCandidatePlaceDto? _selectedCandidatePlace;
     private string _candidatePitchName = string.Empty;
@@ -1135,7 +1151,28 @@
 
     private bool HasRecruitUi =>
         (_selectedEncounter is not null && _showRecruitBoard)
-        || (_isAuthenticated && MapState.Value.VisibleEncounters.Count > 0);
+        || ShouldShowRecruitBoard;
+
+    private bool ShouldShowRecruitBoard =>
+        _isAuthenticated
+        && _selectedPitch is null
+        && _selectedEncounter is null
+        && _recruitBoardPitch is not null;
+
+    private string RecruitBoardPitchName => _recruitBoardPitch?.Name ?? "selected pitch";
+
+    private IReadOnlyList<PlayerEncounterDto> RecruitBoardEncounters =>
+        _recruitBoardPitch is null
+            ? Array.Empty<PlayerEncounterDto>()
+            : MapState.Value.VisibleEncounters
+                .Where(encounter => DistanceMeters(
+                    new GeoPosition { Latitude = _recruitBoardPitch.Latitude, Longitude = _recruitBoardPitch.Longitude },
+                    encounter.Latitude,
+                    encounter.Longitude) <= CaptureDistanceMeters)
+                .ToArray();
+
+    private PlayerEncounterDto? RecruitBoardSpotlightEncounter =>
+        SpotlightSightingSelector.Select(RecruitBoardEncounters, _lastKnownPosition, DateTime.UtcNow);
 
     private string MapShellModeClass => _useNativeGeoBlazorMap ? "map-shell--native-geoblazor" : "map-shell--standard";
 
@@ -1992,6 +2029,7 @@
         }
 
         ClearCandidateSelection();
+        _recruitBoardPitch = null;
         Dispatcher.Dispatch(new SelectPitchAction(pitchId.Value));
         _showRecruitBoard = false;
         return true;
@@ -2011,6 +2049,7 @@
         }
 
         ClearCandidateSelection();
+        _recruitBoardPitch = null;
         _selectedEncounter = encounter;
         _showRecruitBoard = !_useNativeGeoBlazorMap;
         UpdateRecruitEligibility();
@@ -2026,6 +2065,7 @@
             SelectCandidatePlace(placeId);
         }
 
+        _recruitBoardPitch = null;
         _showRecruitBoard = false;
         var name = selection.CandidateName ?? _selectedCandidatePlace?.Name ?? "Candidate place";
         var recommendedType = selection.CandidateRecommendedPitchType ?? _selectedCandidatePlace?.RecommendedPitchType ?? "Pitch";
@@ -2040,6 +2080,7 @@
 
     private void ClearSelection()
     {
+        _recruitBoardPitch = null;
         _showRecruitBoard = false;
         Dispatcher.Dispatch(new ClearSelectionAction());
     }
@@ -2166,16 +2207,19 @@
 
     private void OpenPitchRecruitBoard()
     {
-        if (!CanRecruitAtSelectedPitch)
+        var pitch = _selectedPitch;
+        if (!CanRecruitAtSelectedPitch || pitch is null)
         {
             return;
         }
 
+        _recruitBoardPitch = pitch;
         _selectedPitch = null;
         _lastSelectedPitchId = -1;
         _pitchHub = null;
+        _selectedEncounter = null;
         Dispatcher.Dispatch(new ClearSelectionAction());
-        _showRecruitBoard = true;
+        _showRecruitBoard = false;
     }
 
     private void NavigateToPitchChallenges()
@@ -2240,6 +2284,7 @@
 
         _selectedCandidatePlace = candidate;
         _selectedEncounter = null;
+        _recruitBoardPitch = null;
         _showRecruitBoard = false;
         _activeRecruitment = null;
         _candidatePitchName = candidate.Name;
@@ -2542,8 +2587,11 @@
     private PlayerEncounterDto? SpotlightEncounter =>
         SpotlightSightingSelector.Select(MapState.Value.VisibleEncounters, _lastKnownPosition, DateTime.UtcNow);
 
+    private PlayerEncounterDto? ActiveSpotlightEncounter =>
+        RecruitBoardSpotlightEncounter ?? SpotlightEncounter;
+
     private bool IsSpotlightEncounter(PlayerEncounterDto? encounter) =>
-        encounter is not null && SpotlightEncounter?.EncounterId == encounter.EncounterId;
+        encounter is not null && ActiveSpotlightEncounter?.EncounterId == encounter.EncounterId;
 
     private string SpotlightSightingSummary(PlayerEncounterDto encounter) =>
         BuildSpotlightSightingSummary(
@@ -2770,7 +2818,7 @@
                 return;
             }
 
-            if (_selectedEncounter is not null || SpotlightEncounter is not null)
+            if (_selectedEncounter is not null || ActiveSpotlightEncounter is not null || ShouldShowRecruitBoard)
             {
                 await InvokeAsync(StateHasChanged);
             }

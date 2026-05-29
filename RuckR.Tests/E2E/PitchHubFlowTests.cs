@@ -105,10 +105,14 @@ public class PitchHubFlowTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         Assert.Equal(expectedPitchTypeLabel, await mapPage.GetPitchTypeTextAsync());
         Assert.True(await mapPage.GetActiveRecruitCountAsync() > 0, "Pitch hub should report active recruits.");
+        var selectedPitchName = await mapPage.GetPitchOverlayNameAsync();
+        Assert.False(string.IsNullOrWhiteSpace(selectedPitchName), "Pitch overlay should expose the selected pitch name.");
 
         await mapPage.ClickRecruitHereAsync();
         await mapPage.WaitForRecruitBoardAsync(10_000);
         Assert.False(await mapPage.IsPitchOverlayVisibleAsync(), "Recruit here should close the pitch hub.");
+        Assert.Contains(selectedPitchName!, await mapPage.GetRecruitBoardTitleAsync(), StringComparison.OrdinalIgnoreCase);
+        Assert.True(await mapPage.GetRecruitBoardCountAsync() > 0, "Pitch-scoped recruit board should list active pitch recruits.");
 
         await mapPage.SelectSpotlightEncounterAsync();
         Assert.Contains("Recruit window", await mapPage.GetSpotlightRecruitStateAsync(), StringComparison.OrdinalIgnoreCase);

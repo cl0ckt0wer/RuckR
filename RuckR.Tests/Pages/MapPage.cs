@@ -681,6 +681,17 @@ public class MapPage : BasePage
         });
     }
 
+    /// <summary>Return the pitch-scoped recruit board title.</summary>
+    public async Task<string> GetRecruitBoardTitleAsync() =>
+        (await Page.GetByTestId("recruit-board-title").TextContentAsync())?.Trim() ?? string.Empty;
+
+    /// <summary>Return the pitch-scoped recruit board count.</summary>
+    public async Task<int> GetRecruitBoardCountAsync()
+    {
+        var text = (await Page.GetByTestId("recruit-board-count").TextContentAsync())?.Trim() ?? "0";
+        return int.TryParse(text, out var count) ? count : 0;
+    }
+
     /// <summary>Close the pitch detail overlay by clicking its close button.</summary>
     public async Task ClosePitchOverlayAsync()
     {
