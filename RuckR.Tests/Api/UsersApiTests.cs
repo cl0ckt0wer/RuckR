@@ -53,6 +53,18 @@ public class UsersApiTests : IAsyncLifetime
         var emptyUserId = await _factory.CreateTestUserAsync(emptyUsername, "TestPass123!");
         await _factory.SeedCollectionAsync(nearbyUserId, _playerId, _pitchId);
         await _factory.SeedCollectionAsync(staleUserId, _playerId, _pitchId);
+        await _factory.ExecuteInDbAsync(async db =>
+        {
+            db.UserProfiles.Add(new UserProfileModel
+            {
+                UserId = nearbyUserId,
+                Name = "Pitch Pal",
+                Biography = "Always ready for a quick rugby battle.",
+                AvatarUrl = "https://example.com/pitch-pal.png",
+                JoinedDate = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        });
 
         _factory.LocationTracker.SetPosition(_userId, 51.5074, -0.1278);
         _factory.LocationTracker.SetPosition(nearbyUserId, 51.50741, -0.12779);
@@ -67,6 +79,9 @@ public class UsersApiTests : IAsyncLifetime
         var user = Assert.Single(users);
         Assert.Equal(nearbyUserId, user.UserId);
         Assert.Equal(nearbyUsername, user.Username);
+        Assert.Equal("Pitch Pal", user.DisplayName);
+        Assert.Equal("Always ready for a quick rugby battle.", user.Biography);
+        Assert.Equal("https://example.com/pitch-pal.png", user.AvatarUrl);
         Assert.True(user.RecruitCount > 0);
         Assert.Equal(DistanceBucket.Within50m, user.DistanceBucket);
         Assert.DoesNotContain(users, u => u.UserId == _userId);

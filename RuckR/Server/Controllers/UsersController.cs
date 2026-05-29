@@ -110,6 +110,17 @@ namespace RuckR.Server.Controllers
                 .Select(user => new { user.Id, user.UserName })
                 .ToDictionaryAsync(user => user.Id, user => user.UserName ?? user.Id);
 
+            var profiles = await _db.UserProfiles.AsNoTracking()
+                .Where(profile => nearbyUserIds.Contains(profile.UserId))
+                .Select(profile => new
+                {
+                    profile.UserId,
+                    profile.Name,
+                    profile.AvatarUrl,
+                    profile.Biography
+                })
+                .ToDictionaryAsync(profile => profile.UserId);
+
             var recruitCounts = await _db.Collections
                 .Where(collection => nearbyUserIds.Contains(collection.UserId))
                 .GroupBy(collection => collection.UserId)
@@ -124,6 +135,9 @@ namespace RuckR.Server.Controllers
                 .Select(entry => new NearbyUserDto(
                     entry.UserId,
                     users[entry.UserId],
+                    ResolveDisplayName(profiles.GetValueOrDefault(entry.UserId)?.Name, users[entry.UserId]),
+                    NormalizeProfileText(profiles.GetValueOrDefault(entry.UserId)?.AvatarUrl),
+                    NormalizeProfileText(profiles.GetValueOrDefault(entry.UserId)?.Biography),
                     GeoPosition.GetDistanceBucket(entry.DistanceMeters),
                     entry.LastSeenSecondsAgo,
                     recruitCounts[entry.UserId]))
@@ -150,6 +164,25 @@ namespace RuckR.Server.Controllers
             }
 
             return _locationTracker.TryGetPosition(userId, NearbyUserPositionMaxAge)?.Position;
+        }
+
+        private static string ResolveDisplayName(string? profileName, string loginName)
+        {
+            var name = NormalizeProfileText(profileName);
+            if (string.IsNullOrWhiteSpace(name)
+                || string.Equals(name, loginName, StringComparison.OrdinalIgnoreCase)
+                || name.Contains('@', StringComparison.Ordinal))
+            {
+                return ProfileService.DefaultDisplayName;
+            }
+
+            return name;
+        }
+
+        private static string? NormalizeProfileText(string? value)
+        {
+            var normalized = value?.Trim();
+            return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
         }
     }
 }

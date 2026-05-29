@@ -90,14 +90,30 @@
                             <MudPaper Elevation="1" Class="game-panel user-card" data-testid="user-card">
                                 <MudStack Spacing="2">
                                     <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
-                                        <div>
-                                            <MudText Typo="Typo.h6" data-testid="user-name">@user.Username</MudText>
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatLastSeen(user.LastSeenSecondsAgo)</MudText>
-                                        </div>
+                                        <MudStack Row="true" AlignItems="AlignItems.Start" Spacing="2" Class="user-card__profile">
+                                            @if (!string.IsNullOrWhiteSpace(user.AvatarUrl))
+                                            {
+                                                <img class="user-card__avatar" src="@user.AvatarUrl" alt="" data-testid="user-avatar" />
+                                            }
+                                            else
+                                            {
+                                                <MudAvatar Size="Size.Medium" Color="Color.Primary" Class="user-card__avatar" data-testid="user-avatar">
+                                                    <MudIcon Icon="@Icons.Material.Filled.Person" />
+                                                </MudAvatar>
+                                            }
+                                            <div class="user-card__identity">
+                                                <MudText Typo="Typo.h6" data-testid="user-name">@DisplayName(user)</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@FormatLastSeen(user.LastSeenSecondsAgo)</MudText>
+                                            </div>
+                                        </MudStack>
                                         <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" data-testid="distance-badge">
                                             @FormatDistanceBucket(user.DistanceBucket)
                                         </MudChip>
                                     </MudStack>
+
+                                    <MudText Typo="Typo.body2" Class="user-card__bio" data-testid="user-bio">
+                                        @BioText(user)
+                                    </MudText>
 
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                                         <MudIcon Icon="@Icons.Material.Filled.Inventory2" Size="Size.Small" Color="Color.Secondary" />
@@ -279,6 +295,12 @@
         if (secondsAgo < 60) return $"{secondsAgo}s ago";
         return "stale";
     }
+
+    private static string DisplayName(NearbyUserDto user) =>
+        string.IsNullOrWhiteSpace(user.DisplayName) ? "RuckR Player" : user.DisplayName;
+
+    private static string BioText(NearbyUserDto user) =>
+        string.IsNullOrWhiteSpace(user.Biography) ? "No bio yet." : user.Biography;
 }
 
 <style>
@@ -306,7 +328,33 @@
     }
 
     .user-card {
-        min-height: 12rem;
+        min-height: 14rem;
+    }
+
+    .user-card__profile {
+        min-width: 0;
+    }
+
+    .user-card__avatar {
+        width: 3rem;
+        height: 3rem;
+        flex: 0 0 auto;
+        border-radius: 8px;
+        object-fit: cover;
+    }
+
+    .user-card__identity {
+        min-width: 0;
+    }
+
+    .user-card__identity .mud-typography {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .user-card__bio {
+        min-height: 2.6rem;
+        color: #475569;
     }
 
     .radius-select {

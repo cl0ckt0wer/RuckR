@@ -191,6 +191,9 @@ namespace RuckR.Shared.Models
     public sealed record NearbyUserDto(
         string UserId,
         string Username,
+        string DisplayName,
+        string? AvatarUrl,
+        string? Biography,
         DistanceBucket DistanceBucket,
         int LastSeenSecondsAgo,
         int RecruitCount);

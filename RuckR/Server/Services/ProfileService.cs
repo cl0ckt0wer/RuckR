@@ -7,6 +7,9 @@ namespace RuckR.Server.Services;
 /// <summary>Defines the server-side class ProfileService.</summary>
 public class ProfileService : IProfileService
 {
+    /// <summary>Default display name used before a player configures their profile.</summary>
+    public const string DefaultDisplayName = "RuckR Player";
+
     private readonly RuckRDbContext _db;
     private readonly UserManager<IdentityUser> _userManager;
     /// <summary>Initializes a new instance of ProfileService.</summary>
@@ -22,11 +25,20 @@ public class ProfileService : IProfileService
     /// <returns>The operation result.</returns>
     public async Task<UserProfileModel?> GetProfileAsync(string userId)
     {
-        var profile = await _db.UserProfiles.AsNoTracking()
+        var profile = await _db.UserProfiles
             .FirstOrDefaultAsync(p => p.UserId == userId);
 
         if (profile is not null)
+        {
+            var existingUser = await _userManager.FindByIdAsync(userId);
+            if (IsLoginIdentifier(profile.Name, existingUser?.UserName))
+            {
+                profile.Name = DefaultDisplayName;
+                await _db.SaveChangesAsync();
+            }
+
             return profile;
+        }
 
         var user = await _userManager.FindByIdAsync(userId);
         if (user is null)
@@ -35,7 +47,7 @@ public class ProfileService : IProfileService
         profile = new UserProfileModel
         {
             UserId = userId,
-            Name = user.UserName,
+            Name = DefaultDisplayName,
             JoinedDate = DateTime.UtcNow
         };
 
@@ -48,27 +60,53 @@ public class ProfileService : IProfileService
     /// <param name="userId">The user identifier.</param>
     /// <param name="profile">The profile.</param>
     /// <returns>The saved profile.</returns>
-    public async Task<UserProfileModel> CreateOrUpdateProfileAsync(string userId, UserProfileModel profile)
+    public async Task<UserProfileModel> CreateOrUpdateProfileAsync(string userId, UserProfileUpdateRequest profile)
     {
+        var displayName = NormalizeText(profile.Name) ?? DefaultDisplayName;
+        var biography = NormalizeText(profile.Biography);
+        var location = NormalizeText(profile.Location);
+        var avatarUrl = NormalizeText(profile.AvatarUrl);
         var existing = await _db.UserProfiles
             .FirstOrDefaultAsync(p => p.UserId == userId);
 
         if (existing is null)
         {
-            profile.UserId = userId;
-            _db.UserProfiles.Add(profile);
+            existing = new UserProfileModel
+            {
+                UserId = userId,
+                JoinedDate = DateTime.UtcNow
+            };
+            _db.UserProfiles.Add(existing);
         }
-        else
-        {
-            existing.Name = profile.Name;
-            existing.Biography = profile.Biography;
-            existing.Location = profile.Location;
-            existing.AvatarUrl = profile.AvatarUrl;
-        }
+
+        existing.Name = displayName;
+        existing.Biography = biography;
+        existing.Location = location;
+        existing.AvatarUrl = avatarUrl;
 
         await _db.SaveChangesAsync();
 
         return await _db.UserProfiles.AsNoTracking()
             .FirstAsync(p => p.UserId == userId);
+    }
+
+    private static string? NormalizeText(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static bool IsLoginIdentifier(string? displayName, string? loginName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(loginName)
+            && string.Equals(displayName.Trim(), loginName.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return displayName.Contains('@', StringComparison.Ordinal);
     }
 }

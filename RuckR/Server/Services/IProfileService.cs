@@ -11,8 +11,8 @@ namespace RuckR.Server.Services
         Task<UserProfileModel?> GetProfileAsync(string userId);
         /// <summary>Creates a profile or updates an existing profile for a user.</summary>
         /// <param name="userId">User identifier.</param>
-        /// <param name="profile">Profile payload to persist.</param>
+        /// <param name="profile">Editable profile payload to persist.</param>
         /// <returns>Saved profile model.</returns>
-        Task<UserProfileModel> CreateOrUpdateProfileAsync(string userId, UserProfileModel profile);
+        Task<UserProfileModel> CreateOrUpdateProfileAsync(string userId, UserProfileUpdateRequest profile);
     }
 }

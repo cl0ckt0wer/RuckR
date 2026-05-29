@@ -36,7 +36,7 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         _page = await _context.NewPageAsync();
         _baseUrl = _factory.ServerBaseUrl;
 
-        // Register a test user so auth-required pages (Collection, Battles, History, Create Pitch)
+        // Register a test user so auth-required pages (Collection, Battles, History, Profile)
         // load their content rather than redirecting to login.
         var username = $"navtest_{Guid.NewGuid():N}@test.com";
         var password = "TestPass123!";
@@ -98,9 +98,9 @@ public class NavMenuTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await nav.NavigateToBattleHistoryAsync();
         Assert.True(await _page.QuerySelectorAsync(".navbar-brand") != null, "Navbar brand should be visible on Battle History");
 
-        // 7. Create Pitch
-        await nav.NavigateToCreatePitchAsync();
-        Assert.True(await _page.QuerySelectorAsync(".navbar-brand") != null, "Navbar brand should be visible on Create Pitch");
+        // 7. Profile
+        await nav.NavigateToProfileAsync();
+        Assert.True(await _page.QuerySelectorAsync(".navbar-brand") != null, "Navbar brand should be visible on Profile");
     }
 }
 

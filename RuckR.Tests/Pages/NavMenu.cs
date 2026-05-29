@@ -97,12 +97,12 @@ public class NavMenu : BasePage
     }
 
     /// <summary>
-    /// Verifies navigate To Create Pitch Async.
+    /// Verifies navigate To Profile Async.
     /// </summary>
-    public async Task NavigateToCreatePitchAsync()
+    public async Task NavigateToProfileAsync()
     {
         await EnsureNavExpandedAsync();
-        await Page.GetByTestId("nav-create-pitch").ClickAsync();
+        await Page.GetByTestId("nav-profile").ClickAsync();
         await WaitForBlazorAsync();
     }
 

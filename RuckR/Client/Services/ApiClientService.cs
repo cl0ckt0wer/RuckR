@@ -388,6 +388,35 @@ public class ApiClientService
         }
     }
 
+    /// <summary>
+    /// Gets the current user's public game profile.
+    /// </summary>
+    /// <returns>Current user profile, or null when unavailable.</returns>
+    public async Task<UserProfileModel?> GetUserProfileAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync<UserProfileModel>("api/profile");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch user profile");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves the current user's public game profile.
+    /// </summary>
+    /// <param name="profile">Editable profile fields.</param>
+    /// <returns>Saved user profile.</returns>
+    public async Task<UserProfileModel?> SaveUserProfileAsync(UserProfileUpdateRequest profile)
+    {
+        var response = await _http.PutAsJsonAsync("api/profile", profile);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<UserProfileModel>();
+    }
+
     // Battles
     /// <summary>
     /// Sends a new battle challenge.

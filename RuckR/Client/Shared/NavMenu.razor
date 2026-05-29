@@ -29,17 +29,17 @@
     <MudNavLink Href="battles/history" Icon="@Icons.Material.Filled.History" OnClick="HandleNavigate" data-testid="nav-history">
         History
     </MudNavLink>
-    <MudNavLink Href="pitches/create" Icon="@Icons.Material.Filled.AddLocationAlt" OnClick="HandleNavigate" data-testid="nav-create-pitch">
-        Create Pitch
-    </MudNavLink>
 
     <MudDivider Class="my-3" />
     <MudText Typo="Typo.overline" Class="ruckr-nav-section">Account</MudText>
     <AuthorizeView>
         <Authorized>
             <MudText Typo="Typo.body2" Class="ruckr-user-name">
-                @context.User.Identity?.Name
+                Signed in
             </MudText>
+            <MudNavLink Href="profile" Icon="@Icons.Material.Filled.AccountCircle" OnClick="HandleNavigate" data-testid="nav-profile">
+                Profile
+            </MudNavLink>
             <MudNavLink Href="/Identity/Account/LogOut" Target="_top" Icon="@Icons.Material.Filled.Logout" data-testid="nav-logout">
                 Logout
             </MudNavLink>

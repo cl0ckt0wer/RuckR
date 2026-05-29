@@ -52,7 +52,7 @@ namespace RuckR.Server.Controllers
     /// <param name="updatedProfile">The profile values to persist.</param>
     /// <returns>The operation result.</returns>
         [HttpPut]
-    public async Task<IActionResult> Put([FromBody] UserProfileModel updatedProfile)
+    public async Task<IActionResult> Put([FromBody] UserProfileUpdateRequest updatedProfile)
         {
             var userId = _userManager.GetUserId(User);
             if (string.IsNullOrWhiteSpace(userId))
@@ -60,7 +60,6 @@ namespace RuckR.Server.Controllers
 
             _logger.LogInformation("PUT /Profile called for user {UserId}", userId);
 
-            updatedProfile.UserId = userId;
             var result = await _profileService.CreateOrUpdateProfileAsync(userId, updatedProfile);
             return Ok(result);
         }

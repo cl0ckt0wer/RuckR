@@ -13,7 +13,7 @@ namespace RuckR.Shared.Models
         [MaxLength(450)]
         public string UserId { get; set; } = string.Empty;
 
-        /// <summary>Display name.</summary>
+        /// <summary>Player-facing display name shown in game UI.</summary>
         [MaxLength(200)]
         public string? Name { get; set; }
 

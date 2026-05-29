@@ -68,7 +68,8 @@ public class NavMenuTests : TestContext
         Assert.Contains("Logout", logoutLink.TextContent);
 
         var usernameSpan = cut.Find(".ruckr-user-name");
-        Assert.Contains("TestPlayer", usernameSpan.TextContent);
+        Assert.Contains("Signed in", usernameSpan.TextContent);
+        Assert.DoesNotContain("TestPlayer", usernameSpan.TextContent);
     }
 
     /// <summary>
@@ -85,7 +86,7 @@ public class NavMenuTests : TestContext
         string[] expectedTestIds =
         {
             "nav-map", "nav-catalog", "nav-collection",
-            "nav-nearby", "nav-battles", "nav-history", "nav-create-pitch"
+            "nav-nearby", "nav-battles", "nav-history", "nav-profile"
         };
 
         foreach (var testId in expectedTestIds)
@@ -93,6 +94,8 @@ public class NavMenuTests : TestContext
             var element = cut.Find($"[data-testid='{testId}']");
             Assert.NotNull(element);
         }
+
+        Assert.Empty(cut.FindAll("[data-testid='nav-create-pitch']"));
     }
 }
 

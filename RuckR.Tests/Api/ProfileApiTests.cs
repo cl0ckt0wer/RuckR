@@ -12,6 +12,7 @@ public class ProfileApiTests : IAsyncLifetime
 {
     private readonly CustomWebApplicationFactory _factory;
     private HttpClient _client = null!;
+    private string _username = null!;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="""ProfileApiTests"""/> class.
@@ -27,9 +28,9 @@ public class ProfileApiTests : IAsyncLifetime
     /// </summary>
     public async Task InitializeAsync()
     {
-        var username = $"profileapi_{Guid.NewGuid():N}";
-        var userId = await _factory.CreateTestUserAsync(username, "TestPass123!");
-        _client = _factory.CreateAuthenticatedClient(userId, username);
+        _username = $"profileapi_{Guid.NewGuid():N}@test.com";
+        var userId = await _factory.CreateTestUserAsync(_username, "TestPass123!");
+        _client = _factory.CreateAuthenticatedClient(userId, _username);
     }
 
     /// <summary>
@@ -51,6 +52,7 @@ public class ProfileApiTests : IAsyncLifetime
 
         Assert.NotNull(profile);
         Assert.False(string.IsNullOrWhiteSpace(profile.Name));
+        Assert.NotEqual(_username, profile!.Name);
     }
 
     /// <summary>
@@ -59,13 +61,11 @@ public class ProfileApiTests : IAsyncLifetime
     [Fact]
     public async Task PutProfile_UpdatesCurrentProfile()
     {
-        var updated = new UserProfileModel
+        var updated = new UserProfileUpdateRequest
         {
-            UserId = "client-value-is-overwritten-by-controller",
             Name = "Test Scrum Half",
             Biography = "Runs support lines and logs test coverage.",
             Location = "Twickenham",
-            JoinedDate = DateTime.UtcNow.Date,
             AvatarUrl = "https://example.com/avatar.png"
         };
 
@@ -79,6 +79,22 @@ public class ProfileApiTests : IAsyncLifetime
         Assert.Equal(updated.Biography, profile.Biography);
         Assert.Equal(updated.Location, profile.Location);
         Assert.Equal(updated.AvatarUrl, profile.AvatarUrl);
+    }
+
+    /// <summary>
+    /// Verifies profile updates require a public display name.
+    /// </summary>
+    [Fact]
+    public async Task PutProfile_WithoutDisplayName_ReturnsBadRequest()
+    {
+        var updateResponse = await _client.PutAsJsonAsync("/api/profile", new UserProfileUpdateRequest
+        {
+            Name = "",
+            Biography = "No display name",
+            AvatarUrl = "https://example.com/avatar.png"
+        });
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, updateResponse.StatusCode);
     }
 }
 
