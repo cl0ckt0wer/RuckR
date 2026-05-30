@@ -17,6 +17,14 @@ namespace RuckR.Tests.ComponentTests;
 /// </summary>
 public class ProfilePageTests : TestContext
 {
+    private static readonly byte[] ProcessedWebpBytes =
+    [
+        0x52, 0x49, 0x46, 0x46,
+        0x0A, 0x00, 0x00, 0x00,
+        0x57, 0x45, 0x42, 0x50,
+        0x56, 0x50, 0x38, 0x20
+    ];
+
     private readonly ProfileHttpHandler _handler = new();
 
     /// <summary>
@@ -25,6 +33,21 @@ public class ProfilePageTests : TestContext
     public ProfilePageTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
+        var module = JSInterop.SetupModule("./js/profile-avatar.module.js");
+        module.Setup<ProcessedProfileAvatar>("resizeSelectedProfileAvatar", _ => true)
+            .SetResult(new ProcessedProfileAvatar
+            {
+                DataUrl = $"data:image/webp;base64,{Convert.ToBase64String(ProcessedWebpBytes)}",
+                ContentType = "image/webp",
+                FileName = "avatar.webp",
+                OriginalSize = ValidPngBytes().Length,
+                OutputSize = ProcessedWebpBytes.Length,
+                OriginalWidth = 1600,
+                OriginalHeight = 1200,
+                Width = 768,
+                Height = 576,
+                WasResized = true
+            });
         Services.AddMudServices();
         Services.AddSingleton(new ApiClientService(
             new HttpClient(_handler) { BaseAddress = new Uri("https://example.test/") },
@@ -65,7 +88,8 @@ public class ProfilePageTests : TestContext
         cut.WaitForAssertion(() =>
         {
             Assert.NotNull(cut.Find("[data-testid='profile-avatar-upload-btn']"));
-            Assert.StartsWith("data:image/png;base64,", cut.Find("[data-testid='profile-avatar-preview']").GetAttribute("src"));
+            Assert.Equal($"data:image/webp;base64,{Convert.ToBase64String(ProcessedWebpBytes)}", cut.Find("[data-testid='profile-avatar-preview']").GetAttribute("src"));
+            Assert.Contains("768 x 576", cut.Find("[data-testid='profile-avatar-processing-summary']").TextContent);
         });
 
         cut.Find("[data-testid='profile-avatar-upload-btn']").Click();
@@ -73,6 +97,8 @@ public class ProfilePageTests : TestContext
         cut.WaitForAssertion(() =>
         {
             Assert.True(_handler.SawAvatarUpload);
+            Assert.Contains("filename=avatar.webp", _handler.LastAvatarUploadBody);
+            Assert.Contains("Content-Type: image/webp", _handler.LastAvatarUploadBody);
             Assert.Equal("/uploads/profile-images/test/avatar.png", cut.Find("[data-testid='profile-avatar-preview']").GetAttribute("src"));
             Assert.Contains("Profile picture uploaded.", cut.Find("[data-testid='profile-save-message']").TextContent);
         });
@@ -97,16 +123,20 @@ public class ProfilePageTests : TestContext
         };
 
         public bool SawAvatarUpload { get; private set; }
+        public string LastAvatarUploadBody { get; private set; } = string.Empty;
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             if (request.Method == HttpMethod.Get && path == "/api/profile")
-                return JsonResponse(_profile);
+                return await JsonResponse(_profile);
 
             if (request.Method == HttpMethod.Post && path == "/api/profile/avatar")
             {
                 SawAvatarUpload = true;
+                LastAvatarUploadBody = request.Content is null
+                    ? string.Empty
+                    : await request.Content.ReadAsStringAsync(cancellationToken);
                 _profile = new UserProfileModel
                 {
                     UserId = _profile.UserId,
@@ -117,13 +147,13 @@ public class ProfilePageTests : TestContext
                     JoinedDate = _profile.JoinedDate
                 };
 
-                return JsonResponse(_profile);
+                return await JsonResponse(_profile);
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+            return new HttpResponseMessage(HttpStatusCode.NotFound)
             {
                 RequestMessage = request
-            });
+            };
         }
 
         private Task<HttpResponseMessage> JsonResponse(UserProfileModel profile)

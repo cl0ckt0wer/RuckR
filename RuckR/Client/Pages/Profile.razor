@@ -3,6 +3,8 @@
 @using RuckR.Shared.Models
 @attribute [Authorize]
 @inject ApiClientService ApiClient
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>Profile</PageTitle>
 
@@ -98,12 +100,22 @@
                                                    accept="image/jpeg,image/png,image/webp"
                                                    class="form-control"
                                                    data-testid="profile-avatar-file-input" />
-                                        <div class="field-hint">JPEG, PNG, or WebP. Max 2 MB.</div>
+                                        <div class="field-hint">JPEG, PNG, or WebP. Max 10 MB.</div>
                                     </div>
+
+                                    @if (_isProcessingAvatar)
+                                    {
+                                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" data-testid="profile-avatar-processing" />
+                                    }
 
                                     @if (!string.IsNullOrWhiteSpace(_avatarUploadError))
                                     {
                                         <MudAlert Severity="Severity.Error" Dense="true" data-testid="profile-avatar-error">@_avatarUploadError</MudAlert>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(_selectedAvatarSummary))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="profile-avatar-processing-summary">@_selectedAvatarSummary</MudText>
                                     }
 
                                     @if (_selectedAvatarBytes is not null)
@@ -112,7 +124,7 @@
                                                    Variant="Variant.Filled"
                                                    Color="Color.Primary"
                                                    StartIcon="@Icons.Material.Filled.CloudUpload"
-                                                   Disabled="@_isUploadingAvatar"
+                                                   Disabled="@(_isUploadingAvatar || _isProcessingAvatar)"
                                                    OnClick="UploadSelectedAvatarAsync"
                                                    data-testid="profile-avatar-upload-btn">
                                             @(_isUploadingAvatar ? "Uploading" : "Upload photo")
@@ -164,7 +176,11 @@
 </MudContainer>
 
 @code {
-    private const long MaxAvatarBytes = 2 * 1024 * 1024;
+    private const string AvatarInputId = "profile-avatar-file-input";
+    private const long MaxAvatarUploadBytes = 2 * 1024 * 1024;
+    private const long MaxAvatarSourceBytes = 10 * 1024 * 1024;
+    private const int AvatarMaxEdgePixels = 768;
+    private const double AvatarQuality = 0.82;
     private static readonly HashSet<string> AllowedAvatarContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "image/jpeg",
@@ -178,13 +194,16 @@
     private bool _isEditing;
     private bool _isSaving;
     private bool _isUploadingAvatar;
+    private bool _isProcessingAvatar;
     private byte[]? _selectedAvatarBytes;
     private string? _selectedAvatarFileName;
     private string? _selectedAvatarContentType;
     private string? _selectedAvatarPreviewDataUrl;
+    private string? _selectedAvatarSummary;
     private string? _avatarUploadError;
     private string? _errorMessage;
     private string? _saveMessage;
+    private IJSObjectReference? _avatarModule;
 
     private string DisplayName => string.IsNullOrWhiteSpace(_profile?.Name) ? "RuckR Player" : _profile!.Name!;
 
@@ -287,9 +306,9 @@
             return;
         }
 
-        if (file.Size > MaxAvatarBytes)
+        if (file.Size > MaxAvatarSourceBytes)
         {
-            _avatarUploadError = "Profile picture must be 2 MB or smaller.";
+            _avatarUploadError = "Profile picture source must be 10 MB or smaller.";
             return;
         }
 
@@ -301,17 +320,54 @@
 
         try
         {
-            await using var stream = file.OpenReadStream(MaxAvatarBytes);
-            using var memory = new MemoryStream((int)file.Size);
-            await stream.CopyToAsync(memory);
-            _selectedAvatarBytes = memory.ToArray();
-            _selectedAvatarFileName = file.Name;
-            _selectedAvatarContentType = file.ContentType;
-            _selectedAvatarPreviewDataUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(_selectedAvatarBytes)}";
+            _isProcessingAvatar = true;
+            var module = await GetAvatarModuleAsync();
+            var processed = await module.InvokeAsync<ProcessedProfileAvatar>(
+                "resizeSelectedProfileAvatar",
+                AvatarInputId,
+                new
+                {
+                    maxSourceBytes = MaxAvatarSourceBytes,
+                    maxOutputBytes = MaxAvatarUploadBytes,
+                    maxEdgePixels = AvatarMaxEdgePixels,
+                    quality = AvatarQuality
+                });
+
+            if (processed is null
+                || string.IsNullOrWhiteSpace(processed.DataUrl)
+                || string.IsNullOrWhiteSpace(processed.ContentType)
+                || string.IsNullOrWhiteSpace(processed.FileName))
+            {
+                _avatarUploadError = "Profile picture could not be processed.";
+                return;
+            }
+
+            if (!AllowedAvatarContentTypes.Contains(processed.ContentType))
+            {
+                _avatarUploadError = "Processed profile picture must be a JPEG, PNG, or WebP image.";
+                return;
+            }
+
+            var processedBytes = DecodeDataUrl(processed.DataUrl);
+            if (processedBytes.Length > MaxAvatarUploadBytes)
+            {
+                _avatarUploadError = "Profile picture must be 2 MB or smaller after processing.";
+                return;
+            }
+
+            _selectedAvatarBytes = processedBytes;
+            _selectedAvatarFileName = processed.FileName;
+            _selectedAvatarContentType = processed.ContentType;
+            _selectedAvatarPreviewDataUrl = processed.DataUrl;
+            _selectedAvatarSummary = $"{processed.Width} x {processed.Height}, {FormatBytes(processed.OutputSize)}";
         }
         catch (Exception ex)
         {
-            _avatarUploadError = $"Profile picture could not be read: {ex.Message}";
+            _avatarUploadError = $"Profile picture could not be processed: {ex.Message}";
+        }
+        finally
+        {
+            _isProcessingAvatar = false;
         }
     }
 
@@ -360,6 +416,7 @@
         _selectedAvatarFileName = null;
         _selectedAvatarContentType = null;
         _selectedAvatarPreviewDataUrl = null;
+        _selectedAvatarSummary = null;
         _avatarUploadError = null;
     }
 
@@ -372,6 +429,37 @@
             Location = _profile?.Location,
             AvatarUrl = _profile?.AvatarUrl
         };
+    }
+
+    private async Task<IJSObjectReference> GetAvatarModuleAsync()
+    {
+        _avatarModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/profile-avatar.module.js");
+        return _avatarModule;
+    }
+
+    private static byte[] DecodeDataUrl(string dataUrl)
+    {
+        var separatorIndex = dataUrl.IndexOf(',', StringComparison.Ordinal);
+        if (separatorIndex < 0 || !dataUrl[..separatorIndex].Contains(";base64", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Processed profile picture data is invalid.");
+
+        return Convert.FromBase64String(dataUrl[(separatorIndex + 1)..]);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1024 * 1024)
+            return $"{Math.Round(bytes / 1024d / 1024d, 1)} MB";
+
+        return $"{Math.Max(1, (int)Math.Ceiling(bytes / 1024d))} KB";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_avatarModule is not null)
+        {
+            await _avatarModule.DisposeAsync();
+        }
     }
 }
 
