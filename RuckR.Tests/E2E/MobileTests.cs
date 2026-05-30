@@ -93,6 +93,49 @@ public class MobileTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         Assert.True(count >= 0 || isEmpty,
             "Player grid on mobile should either show cards or empty-state message");
     }
+
+    /// <summary>
+    /// Verifies logout returns a mobile user to the login navigation state.
+    /// </summary>
+    [Fact]
+    public async Task LogoutThenLogin_OnPixel5_UsesMobileNavigation()
+    {
+        var userEmail = $"mobile_logout_{Guid.NewGuid():N}@test.com";
+        const string password = "TestPass123!";
+
+        var registerPage = new RegisterPage(_page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync(userEmail, password);
+
+        var nav = new NavMenu(_page, _baseUrl);
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await nav.WaitForBlazorReadyAsync();
+
+        var (isLoggedIn, _) = await nav.GetAuthStateAsync();
+        Assert.True(isLoggedIn, "Mobile user should be logged in after registration.");
+
+        await nav.FullLogoutAsync();
+
+        var (isLoggedOut, _) = await nav.GetAuthStateAsync();
+        Assert.False(isLoggedOut, "Mobile user should be logged out after completing logout.");
+
+        var loginLink = _page.GetByRole(AriaRole.Link, new() { Name = "Login", Exact = true });
+        await loginLink.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 10_000
+        });
+        await loginLink.ClickAsync();
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+
+        Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
+
+        var loginPage = new LoginPage(_page, _baseUrl);
+        await loginPage.LoginAsync(userEmail, password);
+
+        var (loggedInAgain, _) = await nav.GetAuthStateAsync();
+        Assert.True(loggedInAgain, "Mobile user should be logged in again after using the login nav link.");
+    }
 }
 
 

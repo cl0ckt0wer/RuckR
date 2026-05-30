@@ -35,6 +35,18 @@ a, .btn-link {
     outline: 1px solid red;
 }
 
+.identity-navbar-links {
+    min-width: min(100%, 18rem);
+}
+
+.identity-navbar-links,
+.identity-navbar-links .navbar-nav {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
 .validation-message {
     color: red;
 }

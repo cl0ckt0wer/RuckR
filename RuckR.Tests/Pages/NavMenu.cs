@@ -15,11 +15,29 @@ public class NavMenu : BasePage
     public NavMenu(IPage page, string baseUrl) : base(page, baseUrl) { }
 
     /// <summary>
-    /// Ensure the Bootstrap navbar is expanded before clicking a nav link.
-    /// On mobile/small viewports, the navbar is collapsed by default.
+    /// Ensure the navigation surface is expanded before clicking a nav link.
+    /// On mobile/small viewports, the drawer can be collapsed by default.
     /// </summary>
     private async Task EnsureNavExpandedAsync()
     {
+        var drawer = await Page.QuerySelectorAsync(".ruckr-drawer");
+        if (drawer != null && await drawer.IsVisibleAsync())
+        {
+            return;
+        }
+
+        var mudMenuButton = await Page.QuerySelectorAsync("button[aria-label='Open navigation']");
+        if (mudMenuButton != null && await mudMenuButton.IsVisibleAsync())
+        {
+            await mudMenuButton.ClickAsync();
+            await Page.WaitForSelectorAsync(".ruckr-drawer", new PageWaitForSelectorOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 3000
+            });
+            return;
+        }
+
         var toggler = await Page.QuerySelectorAsync(".navbar-toggler");
         if (toggler != null && await toggler.IsVisibleAsync())
         {

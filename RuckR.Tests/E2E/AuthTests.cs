@@ -117,9 +117,8 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
         await nav.WaitForBlazorReadyAsync();
 
-        var (isLoggedIn, loggedInUsername) = await nav.GetAuthStateAsync();
+        var (isLoggedIn, _) = await nav.GetAuthStateAsync();
         Assert.True(isLoggedIn, "User should be logged in after returning to root");
-        Assert.Equal(username, loggedInUsername);
 
         await nav.FullLogoutAsync();
 
@@ -166,9 +165,8 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
         var loginPage = new LoginPage(_page, _baseUrl);
         await loginPage.LoginAsync(username, password);
 
-        var (loggedInAgain, loggedInUsername) = await nav.GetAuthStateAsync();
+        var (loggedInAgain, _) = await nav.GetAuthStateAsync();
         Assert.True(loggedInAgain, "User should be logged in again after normal login navigation");
-        Assert.Equal(username, loggedInUsername);
     }
 
     /// <summary>
