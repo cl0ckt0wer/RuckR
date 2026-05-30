@@ -36,7 +36,7 @@ export function playBattleResolution(root, options = {}) {
 
         const timeline = createTimeline({
             defaults: {
-                duration: 520,
+                duration: 700,
                 ease: 'out(3)'
             },
             onComplete: () => {
@@ -45,19 +45,20 @@ export function playBattleResolution(root, options = {}) {
             }
         });
 
+        // Broadcast-style pacing: the full bumper runs a little over four seconds.
         timeline
-            .add(root, { opacity: [0, 1], duration: 180, ease: 'out(1)' }, 0)
-            .add(fieldLines, { opacity: [0, 0.75], scaleX: [0.25, 1], delay: stagger(90), duration: 460 }, 40)
-            .add(yourSide, { opacity: [0, 1], x: ['-28vw', '0vw'], scale: [0.96, 1] }, 140)
-            .add(opponentSide, { opacity: [0, 1], x: ['28vw', '0vw'], scale: [0.96, 1] }, 220)
-            .add(moveBadges, { opacity: [0, 1], y: ['0.85rem', '0rem'], scale: [0.9, 1], delay: stagger(110), duration: 380 }, 520)
-            .add(winningMove, { scale: [1, 1.08, 1], duration: 420, ease: 'out(2)' }, 720)
-            .add(impact, { opacity: [0, 1], scale: [0.7, 1.08, 1], rotate: ['-8deg', '0deg'], duration: 540 }, 820)
-            .add(shockwave, { opacity: [0.55, 0], scale: [0.5, 2.35], duration: 620, ease: 'out(2)' }, 880)
-            .add(winningPlay, { opacity: [0, 1], y: ['0.8rem', '0rem'], scale: [0.88, 1], duration: 440 }, 1120)
-            .add(method, { opacity: [0, 1], y: ['1.1rem', '0rem'], duration: 440 }, 1280)
-            .add(outcome, { opacity: [0, 1], y: ['1.2rem', '0rem'], scale: [0.94, 1], duration: 520 }, 1480)
-            .add(actions, { opacity: [0, 1], y: ['0.7rem', '0rem'], duration: 320 }, 1680);
+            .add(root, { opacity: [0, 1], duration: 260, ease: 'out(1)' }, 0)
+            .add(fieldLines, { opacity: [0, 0.75], scaleX: [0.18, 1], delay: stagger(140), duration: 760 }, 120)
+            .add(yourSide, { opacity: [0, 1], x: ['-34vw', '0vw'], scale: [0.94, 1], duration: 820 }, 560)
+            .add(opponentSide, { opacity: [0, 1], x: ['34vw', '0vw'], scale: [0.94, 1], duration: 820 }, 720)
+            .add(moveBadges, { opacity: [0, 1], y: ['0.95rem', '0rem'], scale: [0.88, 1], delay: stagger(160), duration: 620 }, 1400)
+            .add(winningMove, { scale: [1, 1.12, 1.02, 1.08, 1], filter: ['brightness(1)', 'brightness(1.45)', 'brightness(1.08)', 'brightness(1.32)', 'brightness(1)'], duration: 980, ease: 'out(2)' }, 2140)
+            .add(impact, { opacity: [0, 1], scale: [0.66, 1.16, 1], rotate: ['-10deg', '3deg', '0deg'], duration: 820 }, 2660)
+            .add(shockwave, { opacity: [0.62, 0], scale: [0.42, 2.65], duration: 900, ease: 'out(2)' }, 2760)
+            .add(winningPlay, { opacity: [0, 1], y: ['0.9rem', '0rem'], scale: [0.84, 1.04, 1], filter: ['brightness(1.25)', 'brightness(1)'], duration: 720 }, 3200)
+            .add(method, { opacity: [0, 1], y: ['1.1rem', '0rem'], duration: 620 }, 3520)
+            .add(outcome, { opacity: [0, 1], y: ['1.2rem', '0rem'], scale: [0.92, 1.04, 1], filter: ['brightness(1.2)', 'brightness(1)'], duration: 760 }, 3860)
+            .add(actions, { opacity: [0, 1], y: ['0.7rem', '0rem'], duration: 420 }, 4300);
 
         activeTimelines.set(root, timeline);
     } catch (error) {
@@ -112,7 +113,7 @@ function setInitialState(root) {
     });
     setStyles(root.querySelector('.battle-resolution__winning-play'), {
         opacity: '0',
-        transform: 'translate3d(0, 0.8rem, 0) scale(0.88)'
+        transform: 'translate3d(0, 0.9rem, 0) scale(0.84)'
     });
     setStyles(root.querySelector('.battle-resolution__method'), {
         opacity: '0',
@@ -138,7 +139,8 @@ function setFinalState(root) {
     });
     setStyles(root.querySelectorAll('.battle-resolution__side, .battle-resolution__move, .battle-resolution__impact, .battle-resolution__shockwave, .battle-resolution__winning-play, .battle-resolution__method, .battle-resolution__outcome, .battle-resolution__actions'), {
         opacity: '',
-        transform: ''
+        transform: '',
+        filter: ''
     });
 }
 

@@ -16,7 +16,7 @@ namespace RuckR.Server.Controllers
     public class CollectionController : ControllerBase
     {
         private const double CaptureProximityMeters = 5000.0;
-        private const double MaxCaptureAccuracyMeters = 50.0;
+        private const double MaxCaptureAccuracyMeters = 200.0;
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;

@@ -16,9 +16,9 @@ public class MapGraphicFactoryTests
     [Theory]
     [InlineData(null, "unknown")]
     [InlineData(12.0, "ready")]
-    [InlineData(50.0, "ready")]
-    [InlineData(50.1, "weak")]
-    [InlineData(120.0, "weak")]
+    [InlineData(200.0, "ready")]
+    [InlineData(200.1, "weak")]
+    [InlineData(250.0, "weak")]
     public void ResolvePlayerLocationQuality_ReturnsExpectedBucket(double? accuracyMeters, string expected)
     {
         Assert.Equal(expected, MapGraphicFactory.ResolvePlayerLocationQuality(accuracyMeters));
@@ -35,7 +35,7 @@ public class MapGraphicFactoryTests
         {
             Latitude = 51.5074,
             Longitude = -0.1278,
-            Accuracy = 82,
+            Accuracy = 150,
             Timestamp = timestamp
         };
 
@@ -50,10 +50,10 @@ public class MapGraphicFactoryTests
 
         AssertGraphicAttribute(graphics[0].Attributes, "_ruckrType", "player-location-accuracy");
         AssertGraphicAttribute(graphics[1].Attributes, "_ruckrType", "player-location");
-        AssertGraphicAttribute(graphics[0].Attributes, "gpsQuality", "weak");
-        AssertGraphicAttribute(graphics[1].Attributes, "gpsQuality", "weak");
-        AssertGraphicAttribute(graphics[0].Attributes, "accuracyMeters", 82d);
-        AssertGraphicAttribute(graphics[1].Attributes, "accuracyMeters", 82d);
+        AssertGraphicAttribute(graphics[0].Attributes, "gpsQuality", "ready");
+        AssertGraphicAttribute(graphics[1].Attributes, "gpsQuality", "ready");
+        AssertGraphicAttribute(graphics[0].Attributes, "accuracyMeters", 150d);
+        AssertGraphicAttribute(graphics[1].Attributes, "accuracyMeters", 150d);
         AssertGraphicAttribute(graphics[0].Attributes, "positionTimestampUtc", timestamp);
         AssertGraphicAttribute(graphics[1].Attributes, "positionTimestampUtc", timestamp);
     }

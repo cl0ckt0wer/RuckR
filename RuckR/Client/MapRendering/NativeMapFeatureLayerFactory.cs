@@ -15,7 +15,7 @@ namespace RuckR.Client.MapRendering;
 public static class NativeMapFeatureLayerFactory
 {
     private const double EarthRadiusMeters = 6378137;
-    private const double ReadyAccuracyMeters = 50;
+    private const double ReadyAccuracyMeters = 200;
 
     /// <summary>Object id field for the client-side candidate-place FeatureLayer.</summary>
     public const string CandidateObjectIdField = "candidateObjectId";

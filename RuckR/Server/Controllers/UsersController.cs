@@ -16,7 +16,7 @@ namespace RuckR.Server.Controllers
     {
         private static readonly TimeSpan NearbyUserPositionMaxAge = TimeSpan.FromSeconds(60);
         private const double PitchInteractionMeters = 5000.0;
-        private const double MaxPitchInteractionAccuracyMeters = 100.0;
+        private const double MaxPitchInteractionAccuracyMeters = 200.0;
 
         private readonly RuckRDbContext _db;
         private readonly UserManager<IdentityUser> _userManager;

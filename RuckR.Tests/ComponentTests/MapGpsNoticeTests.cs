@@ -99,7 +99,7 @@ public class MapGpsNoticeTests
             isWatching: true,
             errorMessage: null,
             lastKnownPosition: null,
-            maxActionAccuracyMeters: 50);
+            maxActionAccuracyMeters: 200);
 
         Assert.Equal(MapPage.GpsStatusKind.Searching, status.Kind);
         Assert.Equal("Searching", status.Label);
@@ -120,14 +120,14 @@ public class MapGpsNoticeTests
             {
                 Latitude = 51.5074,
                 Longitude = -0.1278,
-                Accuracy = 18
+                Accuracy = 150
             },
-            maxActionAccuracyMeters: 50);
+            maxActionAccuracyMeters: 200);
 
         Assert.Equal(MapPage.GpsStatusKind.Ready, status.Kind);
         Assert.Equal("GPS on", status.Label);
-        Assert.Equal("18m", status.AccuracyText);
-        Assert.Null(MapPage.BuildGpsActionHint(status, 50));
+        Assert.Equal("150m", status.AccuracyText);
+        Assert.Null(MapPage.BuildGpsActionHint(status, 200));
     }
 
     /// <summary>
@@ -144,14 +144,14 @@ public class MapGpsNoticeTests
             {
                 Latitude = 51.5074,
                 Longitude = -0.1278,
-                Accuracy = 82
+                Accuracy = 250
             },
-            maxActionAccuracyMeters: 50);
+            maxActionAccuracyMeters: 200);
 
         Assert.Equal(MapPage.GpsStatusKind.Weak, status.Kind);
         Assert.Equal("Weak GPS", status.Label);
-        Assert.Equal("82m", status.AccuracyText);
-        Assert.Contains("50m", MapPage.BuildGpsActionHint(status, 50));
+        Assert.Equal("250m", status.AccuracyText);
+        Assert.Contains("200m", MapPage.BuildGpsActionHint(status, 200));
     }
 
     /// <summary>

@@ -152,7 +152,7 @@ public class UsersApiTests : IAsyncLifetime
     [Fact]
     public async Task GetNearbyUsers_WithPitchId_RejectsInaccurateCaller()
     {
-        var response = await _client.GetAsync($"/api/users/nearby?lat=51.5074&lng=-0.1278&accuracy=150&radius=5000&pitchId={_pitchId}");
+        var response = await _client.GetAsync($"/api/users/nearby?lat=51.5074&lng=-0.1278&accuracy=250&radius=5000&pitchId={_pitchId}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();

@@ -405,7 +405,7 @@ public class PitchesApiTests : IAsyncLifetime
 
     [Theory]
     [InlineData(null, null, null, "GPS_REQUIRED")]
-    [InlineData(51.5074, -0.1278, 150.0, "GPS_INACCURATE")]
+    [InlineData(51.5074, -0.1278, 250.0, "GPS_INACCURATE")]
     [InlineData(52.5074, -0.1278, 20.0, "TOO_FAR")]
     [InlineData(51.5074, -0.1278, 20.0, "ELIGIBLE")]
     public async Task GetPitchHub_ReturnsGpsAndRangeReason(

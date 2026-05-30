@@ -283,6 +283,41 @@ public class CollectionApiTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies capture eligibility accepts GPS accuracy up to 200 meters.
+    /// </summary>
+    [Fact]
+    public async Task CaptureEligibility_WhenAccuracyIsWithinTwoHundredMeters_DoesNotReturnGpsInaccurate()
+    {
+        var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat, pitchLng, accuracy: 150);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.NotEqual("GPS_INACCURATE", eligibility.Reason);
+    }
+
+    /// <summary>
+    /// Verifies capture eligibility still rejects very poor GPS accuracy.
+    /// </summary>
+    [Fact]
+    public async Task CaptureEligibility_WhenAccuracyIsAboveTwoHundredMeters_ReturnsGpsInaccurate()
+    {
+        var (_, pitchId, pitchLat, pitchLng) = await GetTestPlayerAndPitchAsync();
+        _factory.LocationTracker.SetPosition(_userId, pitchLat, pitchLng, accuracy: 250);
+
+        var response = await _client.GetAsync($"/api/collection/capture-eligibility/{pitchId}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var eligibility = await response.Content.ReadFromJsonAsync<CaptureEligibilityDto>();
+        Assert.NotNull(eligibility);
+        Assert.False(eligibility.CanCapture);
+        Assert.Equal("GPS_INACCURATE", eligibility.Reason);
+    }
+
+    /// <summary>
     /// Verifies capture Eligibility Within Five Kilometers Is Not Too Far.
     /// </summary>
     [Fact]

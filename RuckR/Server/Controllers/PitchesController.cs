@@ -18,7 +18,7 @@ namespace RuckR.Server.Controllers
         private const double CandidateDuplicateDistanceMeters = 100.0;
         private const int AutoPromoteConfidenceThreshold = 74;
         private const double PitchInteractionMeters = 5000.0;
-        private const double MaxPitchInteractionAccuracyMeters = 100.0;
+        private const double MaxPitchInteractionAccuracyMeters = 200.0;
 
         private static readonly TimeSpan RecentPositionMaxAge = TimeSpan.FromSeconds(60);
 

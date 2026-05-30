@@ -409,7 +409,7 @@ public class RecruitmentApiTests : IAsyncLifetime
                 encounter.PlayerId,
                 Latitude: encounter.Latitude,
                 Longitude: encounter.Longitude,
-                Accuracy: 125));
+                Accuracy: 250));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
@@ -427,7 +427,7 @@ public class RecruitmentApiTests : IAsyncLifetime
         {
             Latitude = encounter.Latitude,
             Longitude = encounter.Longitude,
-            Accuracy = 125,
+            Accuracy = 250,
             Timestamp = DateTime.UtcNow
         });
 

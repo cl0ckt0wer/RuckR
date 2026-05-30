@@ -15,7 +15,7 @@ namespace RuckR.Server.Controllers;
 [Authorize]
 public class RecruitmentController : ControllerBase
 {
-    private const double MaxRecruitAccuracyMeters = 100.0;
+    private const double MaxRecruitAccuracyMeters = 200.0;
 
     private readonly IRecruitmentService _recruitmentService;
     private readonly ILocationTracker _locationTracker;
@@ -123,7 +123,7 @@ public class RecruitmentController : ControllerBase
             return BadRequest("GPS position required. Please enable location services.");
 
         if (userPosition.Accuracy.HasValue && userPosition.Accuracy.Value > MaxRecruitAccuracyMeters)
-            return BadRequest("Improve GPS accuracy (<= 100m) before recruiting.");
+            return BadRequest($"Improve GPS accuracy (<= {MaxRecruitAccuracyMeters:0}m) before recruiting.");
 
         var result = await _recruitmentService.AttemptRecruitmentAsync(userId, request, userPosition);
         return Ok(result);

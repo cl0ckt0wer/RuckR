@@ -13,7 +13,7 @@ namespace RuckR.Client.MapRendering;
 public static class MapGraphicFactory
 {
     private const double EarthRadiusMeters = 6378137;
-    private const double ReadyAccuracyMeters = 50;
+    private const double ReadyAccuracyMeters = 200;
 
     /// <summary>Create a pitch marker graphic.</summary>
     /// <param name="pitch">Pitch model to render.</param>
