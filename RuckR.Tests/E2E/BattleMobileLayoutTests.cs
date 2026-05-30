@@ -35,6 +35,7 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
 
         await using var context = await _playwright.NewContextAsync(isMobile: true);
         var page = await context.NewPageAsync();
+        await page.SetViewportSizeAsync(360, 800);
 
         var registerPage = new RegisterPage(page, _baseUrl);
         await registerPage.GoToAsync();
@@ -52,18 +53,22 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
 
         await battlePage.GoToAsync();
         await battlePage.WaitForBattlePageLoadedAsync();
+        await AssertMobileTabSelectorFitsAsync(page, "battle arena new tab");
         await AssertNoHorizontalOverflowAsync(page, "battle arena new tab", "[data-testid='battle-tabs']");
 
         await SelectBattleTabAsync(page, "Incoming");
         await page.WaitForSelectorAsync("[data-testid='incoming-challenges'] [data-testid='pending-card']");
+        await AssertMobileTabSelectorFitsAsync(page, "incoming challenge tab");
         await AssertNoHorizontalOverflowAsync(page, "incoming challenge tab", "[data-testid='battle-tabs']");
 
         await SelectBattleTabAsync(page, "Outgoing");
         await page.WaitForSelectorAsync("[data-testid='outgoing-challenges'] [data-testid='pending-card']");
+        await AssertMobileTabSelectorFitsAsync(page, "outgoing challenge tab");
         await AssertNoHorizontalOverflowAsync(page, "outgoing challenge tab", "[data-testid='battle-tabs']");
 
         await SelectBattleTabAsync(page, "Pick");
         await page.WaitForSelectorAsync("[data-testid='selection-challenges'] [data-testid='accepted-card']");
+        await AssertMobileTabSelectorFitsAsync(page, "pick challenge tab");
         await AssertNoHorizontalOverflowAsync(page, "pick challenge tab", "[data-testid='battle-tabs']");
 
         await page.GetByTestId("pick-selection-btn").ClickAsync();
@@ -173,7 +178,62 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
 
     private static async Task SelectBattleTabAsync(IPage page, string label)
     {
-        await page.Locator($".battle-tabs .mud-tab:has-text('{label}')").First.ClickAsync();
+        var testId = label switch
+        {
+            "Incoming" => "battle-tab-incoming",
+            "Outgoing" => "battle-tab-outgoing",
+            "Pick" => "battle-tab-pick",
+            _ => "battle-tab-new"
+        };
+
+        await page.GetByTestId(testId).ClickAsync();
+    }
+
+    private static async Task AssertMobileTabSelectorFitsAsync(IPage page, string state)
+    {
+        await page.WaitForSelectorAsync("[data-testid='battle-tab-selector']");
+
+        var metrics = await page.EvaluateAsync<TabSelectorMetrics>(
+            @"() => {
+                const selector = document.querySelector('[data-testid=""battle-tab-selector""]');
+                const selectorRect = selector
+                    ? selector.getBoundingClientRect()
+                    : { left: 0, right: 0, width: 0 };
+                const buttons = selector ? Array.from(selector.querySelectorAll('button')) : [];
+                const overflowingButtons = buttons.filter(button => {
+                    const rect = button.getBoundingClientRect();
+                    return rect.left < selectorRect.left - 1
+                        || rect.right > selectorRect.right + 1
+                        || rect.left < -1
+                        || rect.right > window.innerWidth + 1
+                        || button.scrollWidth > button.clientWidth + 1;
+                });
+                const clippedLabels = buttons.filter(button => {
+                    const label = button.querySelector('span:first-child');
+                    return label && label.scrollWidth > label.clientWidth + 1;
+                });
+                const mudTabbar = document.querySelector('.battle-tabs .mud-tabs-tabbar, .battle-tabs .mud-tabs-toolbar');
+
+                return {
+                    viewportWidth: window.innerWidth,
+                    selectorDisplay: selector ? getComputedStyle(selector).display : '',
+                    selectorLeft: selectorRect.left,
+                    selectorRight: selectorRect.right,
+                    selectorWidth: selectorRect.width,
+                    buttonCount: buttons.length,
+                    overflowingButtonCount: overflowingButtons.length,
+                    clippedLabelCount: clippedLabels.length,
+                    mudTabbarDisplay: mudTabbar ? getComputedStyle(mudTabbar).display : 'missing'
+                };
+            }");
+
+        Assert.Equal(4, metrics.ButtonCount);
+        Assert.NotEqual("none", metrics.SelectorDisplay);
+        Assert.True(metrics.SelectorLeft >= -1 && metrics.SelectorRight <= metrics.ViewportWidth + 1,
+            $"{state} mobile tab selector should stay inside the viewport. viewport={metrics.ViewportWidth}, left={metrics.SelectorLeft}, right={metrics.SelectorRight}, width={metrics.SelectorWidth}.");
+        Assert.Equal(0, metrics.OverflowingButtonCount);
+        Assert.Equal(0, metrics.ClippedLabelCount);
+        Assert.Equal("none", metrics.MudTabbarDisplay);
     }
 
     private sealed class LayoutMetrics
@@ -184,5 +244,18 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
         public double TargetLeft { get; set; }
         public double TargetRight { get; set; }
         public double TargetWidth { get; set; }
+    }
+
+    private sealed class TabSelectorMetrics
+    {
+        public double ViewportWidth { get; set; }
+        public string SelectorDisplay { get; set; } = string.Empty;
+        public double SelectorLeft { get; set; }
+        public double SelectorRight { get; set; }
+        public double SelectorWidth { get; set; }
+        public int ButtonCount { get; set; }
+        public int OverflowingButtonCount { get; set; }
+        public int ClippedLabelCount { get; set; }
+        public string MudTabbarDisplay { get; set; } = string.Empty;
     }
 }

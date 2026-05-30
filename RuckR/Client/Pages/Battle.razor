@@ -68,6 +68,53 @@
                 </MudAlert>
             }
 
+            <div class="battle-tab-selector" role="tablist" aria-label="Battle views" data-testid="battle-tab-selector">
+                <button type="button"
+                        role="tab"
+                        aria-selected="@(_activeTabIndex == 0)"
+                        class="@BattleTabButtonClass(0)"
+                        @onclick="@(() => SelectBattleTab(0))"
+                        data-testid="battle-tab-new">
+                    <span>New</span>
+                </button>
+                <button type="button"
+                        role="tab"
+                        aria-selected="@(_activeTabIndex == 1)"
+                        class="@BattleTabButtonClass(1)"
+                        @onclick="@(() => SelectBattleTab(1))"
+                        data-testid="battle-tab-incoming">
+                    <span>Incoming</span>
+                    @if (_incomingChallenges.Count > 0)
+                    {
+                        <span class="battle-tab-selector__badge">@_incomingChallenges.Count</span>
+                    }
+                </button>
+                <button type="button"
+                        role="tab"
+                        aria-selected="@(_activeTabIndex == 2)"
+                        class="@BattleTabButtonClass(2)"
+                        @onclick="@(() => SelectBattleTab(2))"
+                        data-testid="battle-tab-outgoing">
+                    <span>Outgoing</span>
+                    @if (_outgoingChallenges.Count > 0)
+                    {
+                        <span class="battle-tab-selector__badge">@_outgoingChallenges.Count</span>
+                    }
+                </button>
+                <button type="button"
+                        role="tab"
+                        aria-selected="@(_activeTabIndex == 3)"
+                        class="@BattleTabButtonClass(3)"
+                        @onclick="@(() => SelectBattleTab(3))"
+                        data-testid="battle-tab-pick">
+                    <span>Pick</span>
+                    @if (_acceptedChallenges.Count > 0)
+                    {
+                        <span class="battle-tab-selector__badge">@_acceptedChallenges.Count</span>
+                    }
+                </button>
+            </div>
+
             <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Rounded="true" Border="true" Class="battle-tabs" data-testid="battle-tabs">
                 <MudTabPanel Text="New" Icon="@Icons.Material.Filled.SportsMma" data-testid="challenge-tab">
                     <MudGrid Class="mt-3" Spacing="3">
@@ -342,6 +389,15 @@
     private string IncomingTabLabel => _incomingChallenges.Count == 0 ? "Incoming" : $"Incoming ({_incomingChallenges.Count})";
     private string OutgoingTabLabel => _outgoingChallenges.Count == 0 ? "Outgoing" : $"Outgoing ({_outgoingChallenges.Count})";
     private string SelectionTabLabel => _acceptedChallenges.Count == 0 ? "Pick" : $"Pick ({_acceptedChallenges.Count})";
+
+    private static string BattleTabButtonClass(int tabIndex, int activeTabIndex) =>
+        tabIndex == activeTabIndex
+            ? "battle-tab-selector__button battle-tab-selector__button--active"
+            : "battle-tab-selector__button";
+
+    private string BattleTabButtonClass(int tabIndex) => BattleTabButtonClass(tabIndex, _activeTabIndex);
+
+    private void SelectBattleTab(int tabIndex) => _activeTabIndex = tabIndex;
 
     protected override async Task OnInitializedAsync()
     {
@@ -829,8 +885,13 @@
         justify-content: flex-end;
     }
 
+    .battle-tab-selector {
+        display: none;
+    }
+
     .battle-tabs,
     .battle-tabs .mud-tabs-tabbar,
+    .battle-tabs .mud-tabs-toolbar,
     .battle-tabs .mud-tabs-tabbar-inner,
     .battle-tabs .mud-tabs-tabbar-content,
     .battle-tabs .mud-tabs-panels {
@@ -839,7 +900,7 @@
     }
 
     .battle-tabs {
-        overflow: hidden;
+        overflow: visible;
     }
 
     .battle-tabs .mud-tabs-tabbar-wrapper {
@@ -973,6 +1034,67 @@
             flex: 1 1 calc(50% - 0.25rem);
             min-width: 0;
             white-space: normal;
+        }
+
+        .battle-tab-selector {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.25rem;
+            width: 100%;
+            max-width: 100%;
+            padding: 0.25rem;
+            border: 1px solid rgba(15, 23, 42, 0.1);
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        .battle-tab-selector__button {
+            min-width: 0;
+            min-height: 3rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.1rem;
+            border: 0;
+            border-radius: 6px;
+            padding: 0.35rem 0.2rem;
+            background: transparent;
+            color: #475569;
+            font: inherit;
+            font-size: 0.74rem;
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: 0;
+            text-align: center;
+        }
+
+        .battle-tab-selector__button > span:first-child {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .battle-tab-selector__button--active {
+            background: #ffffff;
+            color: #0f172a;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.14);
+        }
+
+        .battle-tab-selector__badge {
+            flex: 0 0 auto;
+            min-width: 1.15rem;
+            border-radius: 999px;
+            padding: 0.02rem 0.25rem;
+            background: #0f766e;
+            color: #ffffff;
+            font-size: 0.65rem;
+            line-height: 1.2;
+        }
+
+        .battle-tabs .mud-tabs-tabbar,
+        .battle-tabs .mud-tabs-toolbar {
+            display: none !important;
         }
 
         .battle-tabs .mud-tab {
