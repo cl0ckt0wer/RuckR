@@ -38,7 +38,7 @@
                         Challenge nearby users, accept matches, then choose a recruit and hidden rugby play.
                     </MudText>
                 </div>
-                <MudStack Row="true" Spacing="1">
+                <MudStack Row="true" Spacing="1" Class="battle-header__actions">
                     <MudButton Href="/players/nearby" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Groups">
                         Nearby
                     </MudButton>
@@ -190,7 +190,7 @@
 @if (_showSelectionModal && _selectionTargetBattle is not null)
 {
     <div class="game-modal-backdrop" data-testid="selection-modal">
-        <MudPaper Elevation="8" Class="game-modal">
+        <MudPaper Elevation="8" Class="game-modal selection-modal">
             <MudStack Spacing="2">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                     <div>
@@ -222,7 +222,7 @@
                 {
                     <MudPaper Elevation="0" Class="selection-preview">
                         <MudStack Spacing="2">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="selection-preview__header">
                                 <div>
                                     <MudText Typo="Typo.overline">Selected recruit</MudText>
                                     <MudText Typo="Typo.h6">@player.Name</MudText>
@@ -234,7 +234,7 @@
                     </MudPaper>
                 }
 
-                <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="1">
+                <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="1" Class="selection-modal__actions">
                     <MudButton Variant="Variant.Text" OnClick="CloseSelectionModal">Cancel</MudButton>
                     <MudButton Variant="Variant.Filled"
                                Color="Color.Primary"
@@ -620,8 +620,8 @@
 
     private RenderFragment RenderChallengeCard(BattleSummaryDto challenge) => @<MudPaper Elevation="1" Class="game-panel challenge-card" data-testid="@ChallengeCardTestId(challenge)">
         <MudStack Spacing="2">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                <div>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="challenge-card__summary">
+                <div class="challenge-card__identity">
                     <MudText Typo="Typo.caption">@RoleLabel(challenge)</MudText>
                     <MudText Typo="Typo.h6">@OpponentName(challenge)</MudText>
                 </div>
@@ -647,7 +647,7 @@
 
             @if (IsIncoming(challenge) && challenge.Status == BattleStatus.Pending)
             {
-                <MudStack Row="true" Spacing="1">
+                <MudStack Row="true" Spacing="1" Class="challenge-card__actions">
                     <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check" Size="Size.Small" Disabled="@_isAccepting" OnClick="() => AcceptChallengeAsync(challenge)" data-testid="accept-btn">
                         Accept
                     </MudButton>
@@ -662,7 +662,7 @@
             }
             else if (challenge.Status == BattleStatus.Accepted && !CurrentUserSubmitted(challenge))
             {
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SportsKabaddi" Size="Size.Small" OnClick="() => OpenSelectionModal(challenge)" data-testid="pick-selection-btn">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.SportsKabaddi" Size="Size.Small" Class="challenge-card__primary-action" OnClick="() => OpenSelectionModal(challenge)" data-testid="pick-selection-btn">
                     Pick Recruit and Play
                 </MudButton>
             }
@@ -802,9 +802,57 @@
         padding: 1rem;
     }
 
+    .battle-page {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
     .game-page__header {
         gap: 1rem;
         flex-wrap: wrap;
+    }
+
+    .game-page__header > div:first-child,
+    .challenge-card__identity {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .game-page__header > div:first-child {
+        flex: 1 1 18rem;
+    }
+
+    .battle-header__actions {
+        flex: 0 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .battle-tabs,
+    .battle-tabs .mud-tabs-tabbar,
+    .battle-tabs .mud-tabs-tabbar-inner,
+    .battle-tabs .mud-tabs-tabbar-content,
+    .battle-tabs .mud-tabs-panels {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .battle-tabs {
+        overflow: hidden;
+    }
+
+    .battle-tabs .mud-tabs-tabbar-wrapper {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .battle-tabs .mud-tab {
+        width: auto;
+        min-width: 0;
+        flex: 1 1 0;
+        padding-inline: 0.5rem;
+        overflow-wrap: anywhere;
     }
 
     .game-panel {
@@ -823,6 +871,18 @@
 
     .challenge-card {
         min-height: 10rem;
+    }
+
+    .challenge-card__summary,
+    .challenge-card__actions {
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .challenge-card__primary-action {
+        width: fit-content;
+        max-width: 100%;
+        white-space: normal;
     }
 
     .collection-panel {
@@ -855,8 +915,27 @@
 
     .game-modal {
         width: min(560px, 100%);
+        max-width: 100%;
         border-radius: 8px;
         padding: 1rem;
+    }
+
+    .selection-modal,
+    .selection-modal .mud-input-control,
+    .selection-modal .mud-input,
+    .selection-modal .mud-input-slot {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .selection-modal .mud-input-slot {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .selection-modal__actions,
+    .selection-preview__header {
+        flex-wrap: wrap;
     }
 
     .result-side {
@@ -879,6 +958,63 @@
 
         .game-panel {
             padding: 0.85rem;
+        }
+
+        .game-page__header {
+            align-items: flex-start !important;
+        }
+
+        .battle-header__actions {
+            width: 100%;
+            justify-content: stretch;
+        }
+
+        .battle-header__actions .mud-button-root {
+            flex: 1 1 calc(50% - 0.25rem);
+            min-width: 0;
+            white-space: normal;
+        }
+
+        .battle-tabs .mud-tab {
+            min-height: 3rem;
+            padding: 0.35rem 0.25rem;
+            font-size: 0.72rem;
+            line-height: 1.15;
+            letter-spacing: 0;
+        }
+
+        .battle-tabs .mud-tab .mud-icon-root {
+            width: 1rem;
+            height: 1rem;
+            margin-inline-end: 0.15rem;
+        }
+
+        .challenge-card__summary {
+            align-items: flex-start !important;
+        }
+
+        .challenge-card__actions,
+        .selection-modal__actions {
+            width: 100%;
+        }
+
+        .challenge-card__actions .mud-button-root,
+        .challenge-card__primary-action,
+        .selection-modal__actions .mud-button-root {
+            flex: 1 1 8rem;
+            min-width: 0;
+            white-space: normal;
+        }
+
+        .game-modal-backdrop {
+            place-items: end stretch;
+            padding: 0.75rem;
+        }
+
+        .game-modal {
+            width: 100%;
+            max-height: calc(100dvh - 1.5rem);
+            overflow-y: auto;
         }
     }
 </style>

@@ -172,12 +172,13 @@ namespace RuckR.Client.Services
         /// </summary>
         /// <param name="lat">Latitude.</param>
         /// <param name="lng">Longitude.</param>
+        /// <param name="accuracyMeters">Optional GPS accuracy radius in meters.</param>
         /// <returns>A task representing the asynchronous operation.</returns>
-        public async Task UpdateLocationAsync(double lat, double lng)
+        public async Task UpdateLocationAsync(double lat, double lng, double? accuracyMeters = null)
         {
             await SendOrQueueAsync(new QueuedHubAction(
                 "UpdateLocation",
-                hub => hub.SendAsync("UpdateLocation", lat, lng),
+                hub => hub.SendAsync("UpdateLocation", lat, lng, accuracyMeters),
                 LocationQueueKey));
         }
 

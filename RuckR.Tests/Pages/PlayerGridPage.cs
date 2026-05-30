@@ -32,7 +32,8 @@ public class PlayerGridPage : BasePage
         {
             await Task.WhenAny(
                 Page.WaitForSelectorAsync("[data-testid='user-card']", new() { Timeout = timeoutMs }),
-                Page.WaitForSelectorAsync("[data-testid='empty-state']", new() { Timeout = timeoutMs })
+                Page.WaitForSelectorAsync("[data-testid='empty-state']", new() { Timeout = timeoutMs }),
+                Page.WaitForSelectorAsync("[data-testid='gps-disabled-state']", new() { Timeout = timeoutMs })
             );
         }
         catch { }

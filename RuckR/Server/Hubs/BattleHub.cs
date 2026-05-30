@@ -66,15 +66,16 @@ namespace RuckR.Server.Hubs
         /// <summary>Update the current user's location and discover nearby pitches.</summary>
         /// <param name="latitude">The latitude.</param>
         /// <param name="longitude">The longitude.</param>
+        /// <param name="accuracyMeters">Optional GPS accuracy radius in meters.</param>
         /// <returns>The operation result.</returns>
-        public async Task UpdateLocation(double latitude, double longitude)
+        public async Task UpdateLocation(double latitude, double longitude, double? accuracyMeters = null)
         {
             var userId = Context.UserIdentifier!;
             var position = new GeoPosition
             {
                 Latitude = latitude,
                 Longitude = longitude,
-                Accuracy = null,
+                Accuracy = accuracyMeters,
                 Timestamp = DateTime.UtcNow
             };
             _locationTracker.UpdatePosition(userId, position);

@@ -6,8 +6,10 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Navigation
 @inject RuckR.Client.Services.IGeolocationService GeolocationService
+@inject SignalRClientService SignalRClient
+@implements IDisposable
 
-<PageTitle>Closest Users</PageTitle>
+<PageTitle>Nearby Users</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.False" Class="game-page nearby-page">
     @if (_requiresAuth)
@@ -21,7 +23,7 @@
     {
         <MudStack AlignItems="AlignItems.Center" Class="py-8" data-testid="nearby-loading">
             <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
-            <MudText Typo="Typo.body2">Finding closest users...</MudText>
+            <MudText Typo="Typo.body2">Finding nearby users...</MudText>
         </MudStack>
     }
     else if (_gpsDisabled)
@@ -49,7 +51,7 @@
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="game-page__header">
                 <div>
                     <MudText Typo="Typo.overline">Challenge Targets</MudText>
-                    <MudText Typo="Typo.h4">@(PitchId.HasValue ? "Pitch Hub Users" : "Closest Users")</MudText>
+                    <MudText Typo="Typo.h4">@(PitchId.HasValue ? "Pitch Hub Users" : "Nearby Users")</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Secondary">
                         @_nearbyUsers.Count challengeable users within @_selectedRadiusKm km.
                     </MudText>
@@ -140,6 +142,11 @@
     private string? _errorMessage;
     private List<NearbyUserDto> _nearbyUsers = new();
     private int _selectedRadiusKm = 10;
+    private bool _isDisposed;
+    private GeoPosition? _lastNearbyRefreshPosition;
+    private DateTime? _lastNearbyRefreshUtc;
+    private static readonly TimeSpan NearbyRefreshInterval = TimeSpan.FromSeconds(15);
+    private const double NearbyRefreshDistanceMeters = 20.0;
     private static readonly int[] _radiusOptions = [1, 5, 10, 25, 50];
     private static readonly int[] _pitchRadiusOptions = [1, 5];
 
@@ -162,7 +169,7 @@
         ? "Checking GPS"
         : IsLocationPermissionDenied
             ? "Location permission is off"
-            : "Enable GPS to find closest users";
+            : "Enable GPS to find nearby users";
 
     private string GpsDisabledBody => IsLocationSearchPending
         ? "Waiting for the browser to finish location permission and GPS lock."
@@ -192,18 +199,23 @@
         }
 
         _requiresAuth = false;
+        GeolocationService.PositionChanged += OnPositionChanged;
+        SignalRClient.ConnectionStateChanged += OnSignalRConnectionStateChanged;
+
         if (PitchId.HasValue && _selectedRadiusKm > 5)
         {
             _selectedRadiusKm = 5;
         }
 
-        if (!LocationState.Value.UserLatitude.HasValue || !LocationState.Value.UserLongitude.HasValue)
+        var currentPosition = CurrentPositionFromState();
+        if (currentPosition is null)
         {
             _gpsDisabled = true;
             _isLoading = false;
             return;
         }
 
+        await EnsurePresenceStartedAsync(currentPosition);
         await LoadNearbyUsersAsync();
     }
 
@@ -224,12 +236,20 @@
             }
 
             _gpsDisabled = false;
+            var currentPosition = CurrentPositionFromState();
+            if (currentPosition is not null)
+            {
+                await SendPresenceUpdateAsync(currentPosition);
+            }
+
             _nearbyUsers = await ApiClient.GetNearbyUsersAsync(
                 lat.Value,
                 lng.Value,
                 _selectedRadiusKm * 1000,
                 PitchId,
                 LocationState.Value.AccuracyMeters);
+            _lastNearbyRefreshPosition = currentPosition;
+            _lastNearbyRefreshUtc = DateTime.UtcNow;
         }
         catch (HttpRequestException ex)
         {
@@ -251,6 +271,7 @@
         {
             _gpsDisabled = false;
             _isLoading = true;
+            await EnsurePresenceStartedAsync();
             await GeolocationService.StartWatchAsync();
             await Task.Delay(1500);
             await LoadNearbyUsersAsync();
@@ -280,6 +301,101 @@
         await LoadNearbyUsersAsync();
     }
 
+    private async void OnPositionChanged(GeoPosition position)
+    {
+        if (_isDisposed)
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            if (_isDisposed)
+                return;
+
+            _gpsDisabled = false;
+            await SendPresenceUpdateAsync(position);
+
+            if (ShouldRefreshNearbyUsers(position))
+            {
+                await LoadNearbyUsersAsync();
+            }
+            else
+            {
+                StateHasChanged();
+            }
+        });
+    }
+
+    private async void OnSignalRConnectionStateChanged(bool connected, string? _)
+    {
+        if (!connected || _isDisposed)
+            return;
+
+        await InvokeAsync(async () =>
+        {
+            var position = CurrentPositionFromState();
+            if (position is null)
+                return;
+
+            await SendPresenceUpdateAsync(position);
+            await LoadNearbyUsersAsync();
+        });
+    }
+
+    private async Task EnsurePresenceStartedAsync(GeoPosition? position = null)
+    {
+        try
+        {
+            await SignalRClient.StartAsync();
+            if (position is not null)
+            {
+                await SendPresenceUpdateAsync(position);
+            }
+        }
+        catch
+        {
+            // Nearby users can still be fetched through REST; SignalR only keeps live presence fresh.
+        }
+    }
+
+    private async Task SendPresenceUpdateAsync(GeoPosition position)
+    {
+        try
+        {
+            await SignalRClient.UpdateLocationAsync(position.Latitude, position.Longitude, position.Accuracy);
+        }
+        catch
+        {
+            // Keep the nearby page usable even if the live presence channel is reconnecting.
+        }
+    }
+
+    private GeoPosition? CurrentPositionFromState()
+    {
+        if (!LocationState.Value.UserLatitude.HasValue || !LocationState.Value.UserLongitude.HasValue)
+        {
+            return null;
+        }
+
+        return new GeoPosition
+        {
+            Latitude = LocationState.Value.UserLatitude.Value,
+            Longitude = LocationState.Value.UserLongitude.Value,
+            Accuracy = LocationState.Value.AccuracyMeters,
+            Timestamp = DateTime.UtcNow
+        };
+    }
+
+    private bool ShouldRefreshNearbyUsers(GeoPosition position)
+    {
+        if (!_lastNearbyRefreshUtc.HasValue || _lastNearbyRefreshPosition is null)
+            return true;
+
+        if (DateTime.UtcNow - _lastNearbyRefreshUtc.Value >= NearbyRefreshInterval)
+            return true;
+
+        return GeoPosition.HaversineDistance(_lastNearbyRefreshPosition, position) >= NearbyRefreshDistanceMeters;
+    }
+
     private static string FormatDistanceBucket(DistanceBucket bucket) => bucket switch
     {
         DistanceBucket.Within50m => "< 50m",
@@ -301,6 +417,13 @@
 
     private static string BioText(NearbyUserDto user) =>
         string.IsNullOrWhiteSpace(user.Biography) ? "No bio yet." : user.Biography;
+
+    public void Dispose()
+    {
+        _isDisposed = true;
+        GeolocationService.PositionChanged -= OnPositionChanged;
+        SignalRClient.ConnectionStateChanged -= OnSignalRConnectionStateChanged;
+    }
 }
 
 <style>

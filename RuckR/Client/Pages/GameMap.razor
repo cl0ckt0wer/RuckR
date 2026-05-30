@@ -1471,7 +1471,7 @@
 
             if (_isAuthenticated)
             {
-                await SignalRClient.UpdateLocationAsync(pos.Latitude, pos.Longitude);
+                await SignalRClient.UpdateLocationAsync(pos.Latitude, pos.Longitude, pos.Accuracy);
             }
 
             UpdateRecruitEligibility();
