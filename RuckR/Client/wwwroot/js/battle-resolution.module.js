@@ -23,8 +23,10 @@ export function playBattleResolution(root, options = {}) {
     const yourSide = root.querySelector('.battle-resolution__side--yours');
     const opponentSide = root.querySelector('.battle-resolution__side--opponent');
     const moveBadges = root.querySelectorAll('.battle-resolution__move');
+    const winningMove = root.querySelector('.battle-resolution__move--winner');
     const impact = root.querySelector('.battle-resolution__impact');
     const shockwave = root.querySelector('.battle-resolution__shockwave');
+    const winningPlay = root.querySelector('.battle-resolution__winning-play');
     const method = root.querySelector('.battle-resolution__method');
     const outcome = root.querySelector('.battle-resolution__outcome');
     const actions = root.querySelector('.battle-resolution__actions');
@@ -49,11 +51,13 @@ export function playBattleResolution(root, options = {}) {
             .add(yourSide, { opacity: [0, 1], x: ['-28vw', '0vw'], scale: [0.96, 1] }, 140)
             .add(opponentSide, { opacity: [0, 1], x: ['28vw', '0vw'], scale: [0.96, 1] }, 220)
             .add(moveBadges, { opacity: [0, 1], y: ['0.85rem', '0rem'], scale: [0.9, 1], delay: stagger(110), duration: 380 }, 520)
-            .add(impact, { opacity: [0, 1], scale: [0.7, 1.08, 1], rotate: ['-8deg', '0deg'], duration: 540 }, 760)
-            .add(shockwave, { opacity: [0.55, 0], scale: [0.5, 2.35], duration: 620, ease: 'out(2)' }, 820)
-            .add(method, { opacity: [0, 1], y: ['1.1rem', '0rem'], duration: 440 }, 1040)
-            .add(outcome, { opacity: [0, 1], y: ['1.2rem', '0rem'], scale: [0.94, 1], duration: 520 }, 1260)
-            .add(actions, { opacity: [0, 1], y: ['0.7rem', '0rem'], duration: 320 }, 1460);
+            .add(winningMove, { scale: [1, 1.08, 1], duration: 420, ease: 'out(2)' }, 720)
+            .add(impact, { opacity: [0, 1], scale: [0.7, 1.08, 1], rotate: ['-8deg', '0deg'], duration: 540 }, 820)
+            .add(shockwave, { opacity: [0.55, 0], scale: [0.5, 2.35], duration: 620, ease: 'out(2)' }, 880)
+            .add(winningPlay, { opacity: [0, 1], y: ['0.8rem', '0rem'], scale: [0.88, 1], duration: 440 }, 1120)
+            .add(method, { opacity: [0, 1], y: ['1.1rem', '0rem'], duration: 440 }, 1280)
+            .add(outcome, { opacity: [0, 1], y: ['1.2rem', '0rem'], scale: [0.94, 1], duration: 520 }, 1480)
+            .add(actions, { opacity: [0, 1], y: ['0.7rem', '0rem'], duration: 320 }, 1680);
 
         activeTimelines.set(root, timeline);
     } catch (error) {
@@ -106,6 +110,10 @@ function setInitialState(root) {
         opacity: '0',
         transform: 'scale(0.5)'
     });
+    setStyles(root.querySelector('.battle-resolution__winning-play'), {
+        opacity: '0',
+        transform: 'translate3d(0, 0.8rem, 0) scale(0.88)'
+    });
     setStyles(root.querySelector('.battle-resolution__method'), {
         opacity: '0',
         transform: 'translate3d(0, 1.1rem, 0)'
@@ -128,7 +136,7 @@ function setFinalState(root) {
         opacity: '',
         transform: ''
     });
-    setStyles(root.querySelectorAll('.battle-resolution__side, .battle-resolution__move, .battle-resolution__impact, .battle-resolution__shockwave, .battle-resolution__method, .battle-resolution__outcome, .battle-resolution__actions'), {
+    setStyles(root.querySelectorAll('.battle-resolution__side, .battle-resolution__move, .battle-resolution__impact, .battle-resolution__shockwave, .battle-resolution__winning-play, .battle-resolution__method, .battle-resolution__outcome, .battle-resolution__actions'), {
         opacity: '',
         transform: ''
     });

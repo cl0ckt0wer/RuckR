@@ -47,6 +47,28 @@ public class BattleResolutionOverlayTests : TestContext
     }
 
     [Fact]
+    public void WinningMove_RendersAndHighlightsWinningSideForVictory()
+    {
+        var cut = RenderOverlay(CurrentUsername: "alice@test.com");
+
+        Assert.Contains("Winning play", cut.Find("[data-testid='battle-resolution-winning-move']").TextContent);
+        Assert.Contains("Crash Ball", cut.Find("[data-testid='battle-resolution-winning-move']").TextContent);
+        Assert.Contains("battle-resolution__move--winner", cut.Find("[data-testid='battle-resolution-your-move']").GetAttribute("class"));
+        Assert.DoesNotContain("battle-resolution__move--winner", cut.Find("[data-testid='battle-resolution-opponent-move']").GetAttribute("class"));
+    }
+
+    [Fact]
+    public void WinningMove_RendersAndHighlightsWinningSideForDefeat()
+    {
+        var cut = RenderOverlay(CurrentUsername: "bob@test.com");
+
+        Assert.Contains("Winning play", cut.Find("[data-testid='battle-resolution-winning-move']").TextContent);
+        Assert.Contains("Crash Ball", cut.Find("[data-testid='battle-resolution-winning-move']").TextContent);
+        Assert.Contains("battle-resolution__move--winner", cut.Find("[data-testid='battle-resolution-opponent-move']").GetAttribute("class"));
+        Assert.DoesNotContain("battle-resolution__move--winner", cut.Find("[data-testid='battle-resolution-your-move']").GetAttribute("class"));
+    }
+
+    [Fact]
     public void CloseButton_InvokesDismissCallback()
     {
         var dismissed = false;

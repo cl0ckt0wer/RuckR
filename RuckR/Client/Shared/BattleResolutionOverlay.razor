@@ -38,23 +38,29 @@
                 <p class="battle-resolution__side-label">Your side</p>
                 <h3 data-testid="battle-resolution-your-player">@YourPlayerName</h3>
                 <p class="battle-resolution__username">@YourUsername</p>
-                <div class="battle-resolution__move" data-testid="battle-resolution-your-move">
+                <div class="@YourMoveClass" data-testid="battle-resolution-your-move">
                     <span>Play</span>
                     <strong>@MoveLabel(YourMove)</strong>
                 </div>
                 <p class="battle-resolution__score" data-testid="battle-resolution-your-score">Score @ScoreLabel(YourScore)</p>
             </article>
 
-            <div class="battle-resolution__impact" data-testid="battle-resolution-impact" aria-hidden="true">
-                <span class="battle-resolution__shockwave"></span>
-                <strong>VS</strong>
+            <div class="battle-resolution__center">
+                <div class="battle-resolution__impact" data-testid="battle-resolution-impact" aria-hidden="true">
+                    <span class="battle-resolution__shockwave"></span>
+                    <strong>VS</strong>
+                </div>
+                <div class="battle-resolution__winning-play" data-testid="battle-resolution-winning-move">
+                    <span>Winning play</span>
+                    <strong>@WinningMoveLabel</strong>
+                </div>
             </div>
 
             <article class="battle-resolution__side battle-resolution__side--opponent" data-testid="battle-resolution-opponent-side">
                 <p class="battle-resolution__side-label">Opponent</p>
                 <h3 data-testid="battle-resolution-opponent-player">@OpponentPlayerName</h3>
                 <p class="battle-resolution__username">@OpponentUsername</p>
-                <div class="battle-resolution__move" data-testid="battle-resolution-opponent-move">
+                <div class="@OpponentMoveClass" data-testid="battle-resolution-opponent-move">
                     <span>Play</span>
                     <strong>@MoveLabel(OpponentMove)</strong>
                 </div>
@@ -124,6 +130,14 @@
     private BattleMove? YourMove => CurrentUserWon ? Result.WinnerMove : Result.LoserMove;
 
     private BattleMove? OpponentMove => CurrentUserWon ? Result.LoserMove : Result.WinnerMove;
+
+    private string WinningMoveLabel => MoveLabel(Result.WinnerMove);
+
+    private string YourMoveClass =>
+        CurrentUserWon ? "battle-resolution__move battle-resolution__move--winner" : "battle-resolution__move";
+
+    private string OpponentMoveClass =>
+        CurrentUserWon ? "battle-resolution__move" : "battle-resolution__move battle-resolution__move--winner";
 
     private double? YourScore => CurrentUserWon ? Result.WinnerScore : Result.LoserScore;
 

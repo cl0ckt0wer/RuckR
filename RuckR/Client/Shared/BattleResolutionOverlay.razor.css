@@ -94,7 +94,8 @@
 
 .battle-resolution__eyebrow,
 .battle-resolution__side-label,
-.battle-resolution__move span {
+.battle-resolution__move span,
+.battle-resolution__winning-play span {
     margin: 0;
     color: rgba(248, 250, 252, 0.74);
     font-size: 0.76rem;
@@ -188,6 +189,12 @@
     background: rgba(248, 250, 252, 0.08);
 }
 
+.battle-resolution__move--winner {
+    border-color: rgba(250, 204, 21, 0.86);
+    background: rgba(250, 204, 21, 0.16);
+    box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.28);
+}
+
 .battle-resolution__move strong {
     color: #fef08a;
     font-size: 1rem;
@@ -201,6 +208,13 @@
     font-size: 1.05rem;
     font-weight: 900;
     line-height: 1.2;
+}
+
+.battle-resolution__center {
+    display: grid;
+    justify-items: center;
+    gap: 0.75rem;
+    min-width: 8rem;
 }
 
 .battle-resolution__impact {
@@ -230,6 +244,26 @@
     inset: 0;
     border: 2px solid rgba(250, 204, 21, 0.8);
     border-radius: 999px;
+}
+
+.battle-resolution__winning-play {
+    display: grid;
+    gap: 0.2rem;
+    width: min(10rem, 100%);
+    border: 1px solid rgba(250, 204, 21, 0.74);
+    border-radius: 8px;
+    padding: 0.6rem 0.7rem;
+    background: rgba(15, 23, 42, 0.78);
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.24);
+    text-align: center;
+}
+
+.battle-resolution__winning-play strong {
+    color: #fef08a;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: 0;
 }
 
 .battle-resolution__summary {
@@ -350,8 +384,17 @@
         justify-self: center;
     }
 
+    .battle-resolution__center {
+        gap: 0.45rem;
+    }
+
     .battle-resolution__move {
         padding: 0.55rem;
+    }
+
+    .battle-resolution__winning-play {
+        width: min(14rem, 100%);
+        padding: 0.5rem 0.6rem;
     }
 
     .battle-resolution__method,
