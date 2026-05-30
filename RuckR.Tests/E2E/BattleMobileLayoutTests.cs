@@ -47,7 +47,7 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
         var (playerAId, playerBId, pitchId) = await GetBattleSeedIdsAsync();
         await _factory.SeedCollectionAsync(userAId, playerAId, pitchId);
         await _factory.SeedCollectionAsync(userBId, playerBId, pitchId);
-        await SeedBattleStatesAsync(userAId, userBId);
+        await SeedBattleStatesAsync(userAId, userBId, playerBId);
 
         var battlePage = new BattlePage(page, _baseUrl);
 
@@ -74,6 +74,16 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
         await page.GetByTestId("pick-selection-btn").ClickAsync();
         await page.WaitForSelectorAsync("[data-testid='selection-modal']");
         await AssertNoHorizontalOverflowAsync(page, "pick selector modal", "[data-testid='selection-modal'] .game-modal");
+
+        await battlePage.SubmitFirstSelectionAsync();
+        await battlePage.WaitForBattleResolutionOverlayAsync();
+        await AssertNoHorizontalOverflowAsync(page, "battle resolution overlay", "[data-testid='battle-resolution-overlay']");
+        await AssertBattleResolutionActionsVisibleAsync(page);
+
+        await battlePage.ViewBattleHistoryFromResolutionAsync();
+        await page.WaitForURLAsync(
+            url => url.Contains("/battles/history", StringComparison.OrdinalIgnoreCase),
+            new PageWaitForURLOptions { Timeout = 10_000 });
 
         await page.CloseAsync();
     }
@@ -114,11 +124,12 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
         return (playerAId, playerBId, pitchId);
     }
 
-    private async Task SeedBattleStatesAsync(string userAId, string userBId)
+    private async Task SeedBattleStatesAsync(string userAId, string userBId, int opponentPlayerId)
     {
         await _factory.ExecuteInDbAsync(async db =>
         {
             var createdAt = DateTime.UtcNow.AddMinutes(-3);
+            var acceptedAt = createdAt.AddSeconds(40);
             db.Battles.AddRange(
                 new BattleModel
                 {
@@ -140,11 +151,43 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
                     OpponentId = userBId,
                     Status = BattleStatus.Accepted,
                     CreatedAt = createdAt.AddSeconds(20),
-                    AcceptedAt = createdAt.AddSeconds(40)
+                    AcceptedAt = acceptedAt,
+                    OpponentPlayerId = opponentPlayerId,
+                    OpponentMove = BattleMove.Scissors,
+                    OpponentSubmittedAt = acceptedAt.AddSeconds(15)
                 });
 
             await db.SaveChangesAsync();
         });
+    }
+
+    private static async Task AssertBattleResolutionActionsVisibleAsync(IPage page)
+    {
+        var metrics = await page.EvaluateAsync<ActionMetrics>(
+            @"() => {
+                const close = document.querySelector('[data-testid=""battle-resolution-close""]');
+                const history = document.querySelector('[data-testid=""battle-resolution-history""]');
+                const closeRect = close ? close.getBoundingClientRect() : { left: -1, right: -1, top: -1, bottom: -1 };
+                const historyRect = history ? history.getBoundingClientRect() : { left: -1, right: -1, top: -1, bottom: -1 };
+                return {
+                    viewportWidth: window.innerWidth,
+                    viewportHeight: window.innerHeight,
+                    closeVisible: !!close && closeRect.width > 0 && closeRect.height > 0,
+                    historyVisible: !!history && historyRect.width > 0 && historyRect.height > 0,
+                    closeRight: closeRect.right,
+                    historyRight: historyRect.right,
+                    historyBottom: historyRect.bottom
+                };
+            }");
+
+        Assert.True(metrics.CloseVisible, "battle resolution close action should be visible.");
+        Assert.True(metrics.HistoryVisible, "battle resolution history action should be visible.");
+        Assert.True(metrics.CloseRight <= metrics.ViewportWidth + 1,
+            $"battle resolution close action should stay within viewport. right={metrics.CloseRight}, viewport={metrics.ViewportWidth}.");
+        Assert.True(metrics.HistoryRight <= metrics.ViewportWidth + 1,
+            $"battle resolution history action should stay within viewport. right={metrics.HistoryRight}, viewport={metrics.ViewportWidth}.");
+        Assert.True(metrics.HistoryBottom <= metrics.ViewportHeight + 1,
+            $"battle resolution history action should stay visible without vertical clipping. bottom={metrics.HistoryBottom}, viewport={metrics.ViewportHeight}.");
     }
 
     private static async Task AssertNoHorizontalOverflowAsync(IPage page, string state, string targetSelector)
@@ -257,5 +300,16 @@ public class BattleMobileLayoutTests : IClassFixture<PlaywrightFixture>, IAsyncL
         public int OverflowingButtonCount { get; set; }
         public int ClippedLabelCount { get; set; }
         public string MudTabbarDisplay { get; set; } = string.Empty;
+    }
+
+    private sealed class ActionMetrics
+    {
+        public double ViewportWidth { get; set; }
+        public double ViewportHeight { get; set; }
+        public bool CloseVisible { get; set; }
+        public bool HistoryVisible { get; set; }
+        public double CloseRight { get; set; }
+        public double HistoryRight { get; set; }
+        public double HistoryBottom { get; set; }
     }
 }

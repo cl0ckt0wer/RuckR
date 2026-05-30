@@ -115,7 +115,7 @@
                 </button>
             </div>
 
-            <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Rounded="true" Border="true" Class="battle-tabs" data-testid="battle-tabs">
+            <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Rounded="true" Border="true" Centered="true" Class="battle-tabs" data-testid="battle-tabs">
                 <MudTabPanel Text="New" Icon="@Icons.Material.Filled.SportsMma" data-testid="challenge-tab">
                     <MudGrid Class="mt-3" Spacing="3">
                         <MudItem xs="12" lg="5">
@@ -299,46 +299,10 @@
 
 @if (_showResultModal && _resultToShow is { } result)
 {
-    var isWinner = string.Equals(result.WinnerUsername, _currentUsername, StringComparison.OrdinalIgnoreCase);
-    <div class="game-modal-backdrop" data-testid="result-modal">
-        <MudPaper Elevation="8" Class="game-modal result-modal">
-            <MudStack Spacing="3">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                    <div>
-                        <MudText Typo="Typo.overline">Battle result</MudText>
-                        <MudText Typo="Typo.h5" Color="@(isWinner ? Color.Success : Color.Error)" data-testid="result-header">
-                            @(isWinner ? "Victory" : "Defeat")
-                        </MudText>
-                    </div>
-                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="DismissResultModal" data-testid="result-close-btn" />
-                </MudStack>
-                <MudGrid Spacing="2">
-                    <MudItem xs="12" sm="6">
-                        <div class="result-side result-side--winner">
-                            <MudText Typo="Typo.caption">Winner</MudText>
-                            <MudText Typo="Typo.h6">@result.WinnerUsername</MudText>
-                            <MudText Typo="Typo.body2">@result.WinnerPlayerName</MudText>
-                            <MudText Typo="Typo.caption">@MoveScoreDisplay(result.WinnerMove, result.WinnerScore)</MudText>
-                        </div>
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <div class="result-side">
-                            <MudText Typo="Typo.caption">Defeated</MudText>
-                            <MudText Typo="Typo.h6">@result.LoserUsername</MudText>
-                            <MudText Typo="Typo.body2">@result.LoserPlayerName</MudText>
-                            <MudText Typo="Typo.caption">@MoveScoreDisplay(result.LoserMove, result.LoserScore)</MudText>
-                        </div>
-                    </MudItem>
-                </MudGrid>
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-                    Method: @result.Method
-                </MudAlert>
-                <MudButton Href="/battles/history" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.History">
-                    View History
-                </MudButton>
-            </MudStack>
-        </MudPaper>
-    </div>
+    <BattleResolutionOverlay Result="result"
+                             CurrentUsername="@_currentUsername"
+                             OnDismiss="DismissResultModal"
+                             OnViewHistory="ViewBattleHistory" />
 }
 
 @code {
@@ -602,8 +566,7 @@
                 Dispatcher.Dispatch(new BattleUpdatedAction(battle));
                 if (battle.Result is not null)
                 {
-                    _resultToShow = battle.Result;
-                    _showResultModal = true;
+                    ShowBattleResult(battle.Result);
                     _successMessage = "Battle resolved.";
                 }
                 else
@@ -634,8 +597,7 @@
     {
         if (battle.Result is not null)
         {
-            _resultToShow = battle.Result;
-            _showResultModal = true;
+            ShowBattleResult(battle.Result);
         }
 
         _ = InvokeAsync(StateHasChanged);
@@ -643,10 +605,17 @@
 
     private void OnBattleResolved(BattleResult result)
     {
+        ShowBattleResult(result);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ShowBattleResult(BattleResult result)
+    {
         if (_lastShownResult is { } last &&
             last.WinnerUsername == result.WinnerUsername &&
             last.LoserUsername == result.LoserUsername &&
-            last.CreatedAt == result.CreatedAt)
+            last.CreatedAt == result.CreatedAt &&
+            last.Method == result.Method)
         {
             return;
         }
@@ -654,7 +623,6 @@
         _lastShownResult = result;
         _resultToShow = result;
         _showResultModal = true;
-        _ = InvokeAsync(StateHasChanged);
     }
 
     private void OnChallengeReceived(ChallengeNotification notification)
@@ -672,6 +640,12 @@
     {
         _showResultModal = false;
         _resultToShow = null;
+    }
+
+    private void ViewBattleHistory()
+    {
+        DismissResultModal();
+        Navigation.NavigateTo("/battles/history");
     }
 
     private RenderFragment RenderChallengeCard(BattleSummaryDto challenge) => @<MudPaper Elevation="1" Class="game-panel challenge-card" data-testid="@ChallengeCardTestId(challenge)">
@@ -809,11 +783,6 @@
         return utcTime.ToString("MMM d");
     }
 
-    private static string MoveScoreDisplay(BattleMove? move, double? score)
-    {
-        return BattleMoveDisplay.Score(move, score, string.Empty);
-    }
-
     private static Color StatusColor(BattleStatus status) => status switch
     {
         BattleStatus.Pending => Color.Warning,
@@ -903,19 +872,6 @@
         overflow: visible;
     }
 
-    .battle-tabs .mud-tabs-tabbar-wrapper {
-        width: 100%;
-        min-width: 0;
-    }
-
-    .battle-tabs .mud-tab {
-        width: auto;
-        min-width: 0;
-        flex: 1 1 0;
-        padding-inline: 0.5rem;
-        overflow-wrap: anywhere;
-    }
-
     .game-panel {
         border: 1px solid rgba(15, 23, 42, 0.08);
         border-radius: 8px;
@@ -997,19 +953,6 @@
     .selection-modal__actions,
     .selection-preview__header {
         flex-wrap: wrap;
-    }
-
-    .result-side {
-        min-height: 7.5rem;
-        border: 1px solid rgba(15, 23, 42, 0.12);
-        border-radius: 8px;
-        padding: 0.9rem;
-        background: #f8fafc;
-    }
-
-    .result-side--winner {
-        border-color: rgba(15, 118, 110, 0.35);
-        background: #ecfdf5;
     }
 
     @@media (max-width: 720px) {

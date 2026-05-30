@@ -127,13 +127,19 @@ public class BattlePage : BasePage
                 State = WaitForSelectorState.Visible,
                 Timeout = 5000
             });
-            var modalSelect = Page.GetByTestId("selection-player-select");
-            await modalSelect.SelectOptionAsync(new SelectOptionValue { Index = 1 });
-            var moveSelect = Page.GetByTestId("selection-move-select");
-            await moveSelect.SelectOptionAsync(new SelectOptionValue { Index = 1 });
-            await Page.GetByTestId("selection-submit-btn").ClickAsync();
-            await Page.WaitForTimeoutAsync(500);
+            await SubmitFirstSelectionAsync();
         }
+    }
+
+    /// <summary>
+    /// Submit the first recruit and first move in the open selection modal.
+    /// </summary>
+    public async Task SubmitFirstSelectionAsync()
+    {
+        await SelectMudOptionAsync("selection-player-select", 1);
+        await SelectMudOptionAsync("selection-move-select", 1);
+        await Page.GetByTestId("selection-submit-btn").ClickAsync();
+        await Page.WaitForTimeoutAsync(500);
     }
 
     /// <summary>
@@ -150,32 +156,62 @@ public class BattlePage : BasePage
         }
     }
 
-    // ── Battle Result Modal ────────────────────────────────────────────
+    // ── Battle Result Overlay ──────────────────────────────────────────
 
     /// <summary>
-    /// Wait for the battle result modal ("Victory!" or "Defeat") to appear.
+    /// Wait for the animated battle result overlay to appear.
     /// </summary>
-    public async Task WaitForBattleResultModalAsync(int timeoutMs = 10000)
+    public async Task WaitForBattleResolutionOverlayAsync(int timeoutMs = 10000)
     {
-        await Page.WaitForSelectorAsync("[data-testid='result-modal']", new PageWaitForSelectorOptions
+        await Page.WaitForSelectorAsync("[data-testid='battle-resolution-overlay']", new PageWaitForSelectorOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = timeoutMs
         });
     }
 
-    /// <summary>Get the full text content from the battle result modal.</summary>
-    public async Task<string?> GetBattleResultTextAsync()
+    /// <summary>Get the full text content from the battle result overlay.</summary>
+    public async Task<string?> GetBattleResolutionTextAsync()
     {
-        var modal = await Page.QuerySelectorAsync("[data-testid='result-modal']");
-        return modal is not null ? await modal.TextContentAsync() : null;
+        var overlay = await Page.QuerySelectorAsync("[data-testid='battle-resolution-overlay']");
+        return overlay is not null ? await overlay.TextContentAsync() : null;
     }
 
-    /// <summary>Close the battle result modal by clicking the Close button.</summary>
+    /// <summary>Close the battle result overlay by clicking the Close button.</summary>
+    public async Task CloseBattleResolutionOverlayAsync()
+    {
+        await Page.GetByTestId("battle-resolution-close").ClickAsync();
+        await Page.WaitForSelectorAsync("[data-testid='battle-resolution-overlay']", new PageWaitForSelectorOptions
+        {
+            State = WaitForSelectorState.Detached,
+            Timeout = 5000
+        });
+    }
+
+    /// <summary>Navigate to battle history from the battle result overlay.</summary>
+    public async Task ViewBattleHistoryFromResolutionAsync()
+    {
+        await Page.GetByTestId("battle-resolution-history").ClickAsync();
+    }
+
+    /// <summary>
+    /// Wait for the battle result modal/overlay ("Victory" or "Defeat") to appear.
+    /// </summary>
+    public async Task WaitForBattleResultModalAsync(int timeoutMs = 10000)
+    {
+        await WaitForBattleResolutionOverlayAsync(timeoutMs);
+    }
+
+    /// <summary>Get the full text content from the battle result modal/overlay.</summary>
+    public async Task<string?> GetBattleResultTextAsync()
+    {
+        return await GetBattleResolutionTextAsync();
+    }
+
+    /// <summary>Close the battle result modal/overlay by clicking the Close button.</summary>
     public async Task CloseBattleResultModalAsync()
     {
-        await Page.GetByTestId("result-close-btn").ClickAsync();
-        await Page.WaitForTimeoutAsync(300);
+        await CloseBattleResolutionOverlayAsync();
     }
 
     // ── State checks ───────────────────────────────────────────────────
@@ -196,6 +232,17 @@ public class BattlePage : BasePage
     public async Task<bool> IsErrorVisibleAsync()
     {
         return await ExistsAsync("[data-testid='battle-error']");
+    }
+
+    private async Task SelectMudOptionAsync(string testId, int optionIndex)
+    {
+        var selectRoot = Page
+            .GetByTestId(testId)
+            .Locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' mud-input-control ')][1]");
+
+        await selectRoot.Locator(".mud-input").First.ClickAsync();
+        var options = Page.Locator(".mud-popover [role='option'], .mud-popover .mud-list-item, .mud-list .mud-list-item");
+        await options.Nth(optionIndex).ClickAsync(new LocatorClickOptions { Timeout = 5000 });
     }
 }
 

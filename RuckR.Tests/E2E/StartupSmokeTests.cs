@@ -136,6 +136,8 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     public async Task WASM_Startup_LoadsWithoutErrors()
     {
         var page = await _context.NewPageAsync();
+        await SignInClientSmokeUserAsync(page, "startup");
+
         var consoleErrors = new List<IConsoleMessage>();
         var pageErrors = new List<string>();
         var framework404s = new List<IResponse>();
@@ -208,6 +210,7 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     public async Task WASM_Startup_BlazorRendersContent()
     {
         var page = await _context.NewPageAsync();
+        await SignInClientSmokeUserAsync(page, "render");
 
         try
         {
@@ -256,6 +259,7 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
     public async Task WASM_Startup_TelemetryBridgeIsActive()
     {
         var page = await _context.NewPageAsync();
+        await SignInClientSmokeUserAsync(page, "telemetry");
 
         try
         {
@@ -301,6 +305,8 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         // 2.  WASM level: error-free page load + content rendering
         var page = await _context.NewPageAsync();
+        await SignInClientSmokeUserAsync(page, "fullstartup");
+
         var consoleErrors = new List<IConsoleMessage>();
         var pageErrors = new List<string>();
         var framework404s = new List<IResponse>();
@@ -419,6 +425,15 @@ public class StartupSmokeTests : IClassFixture<PlaywrightFixture>, IAsyncLifetim
 
         await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
             new PageWaitForLoadStateOptions { Timeout = 30000 });
+    }
+
+    private async Task SignInClientSmokeUserAsync(IPage page, string prefix)
+    {
+        var registerPage = new RegisterPage(page, _baseUrl);
+        await registerPage.GoToAsync();
+        await registerPage.RegisterAsync($"{prefix}_{Guid.NewGuid():N}@test.com", "TestPass123!");
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForAppPageLoadedAsync(page);
     }
 }
 

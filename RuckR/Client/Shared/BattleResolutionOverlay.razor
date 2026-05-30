@@ -1,0 +1,175 @@
+@using RuckR.Shared.Models
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="_root"
+     class="@OverlayClass"
+     data-testid="battle-resolution-overlay"
+     data-outcome="@Outcome"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="battle-resolution-title"
+     tabindex="-1">
+    <div class="battle-resolution__field" aria-hidden="true">
+        <span class="battle-resolution__field-line battle-resolution__field-line--try-left"></span>
+        <span class="battle-resolution__field-line battle-resolution__field-line--halfway"></span>
+        <span class="battle-resolution__field-line battle-resolution__field-line--try-right"></span>
+        <span class="battle-resolution__field-mark battle-resolution__field-mark--left">22</span>
+        <span class="battle-resolution__field-mark battle-resolution__field-mark--right">22</span>
+    </div>
+
+    <div class="battle-resolution__chrome">
+        <header class="battle-resolution__topbar">
+            <div class="battle-resolution__heading">
+                <p class="battle-resolution__eyebrow">Full time</p>
+                <h2 id="battle-resolution-title" data-testid="battle-resolution-title">@OutcomeTitle</h2>
+            </div>
+            <button type="button"
+                    class="battle-resolution__close"
+                    aria-label="Close battle result"
+                    data-testid="battle-resolution-close"
+                    @onclick="HandleDismissAsync">
+                Close
+            </button>
+        </header>
+
+        <main class="battle-resolution__stage">
+            <article class="battle-resolution__side battle-resolution__side--yours" data-testid="battle-resolution-your-side">
+                <p class="battle-resolution__side-label">Your side</p>
+                <h3 data-testid="battle-resolution-your-player">@YourPlayerName</h3>
+                <p class="battle-resolution__username">@YourUsername</p>
+                <div class="battle-resolution__move" data-testid="battle-resolution-your-move">
+                    <span>Play</span>
+                    <strong>@MoveLabel(YourMove)</strong>
+                </div>
+                <p class="battle-resolution__score" data-testid="battle-resolution-your-score">Score @ScoreLabel(YourScore)</p>
+            </article>
+
+            <div class="battle-resolution__impact" data-testid="battle-resolution-impact" aria-hidden="true">
+                <span class="battle-resolution__shockwave"></span>
+                <strong>VS</strong>
+            </div>
+
+            <article class="battle-resolution__side battle-resolution__side--opponent" data-testid="battle-resolution-opponent-side">
+                <p class="battle-resolution__side-label">Opponent</p>
+                <h3 data-testid="battle-resolution-opponent-player">@OpponentPlayerName</h3>
+                <p class="battle-resolution__username">@OpponentUsername</p>
+                <div class="battle-resolution__move" data-testid="battle-resolution-opponent-move">
+                    <span>Play</span>
+                    <strong>@MoveLabel(OpponentMove)</strong>
+                </div>
+                <p class="battle-resolution__score" data-testid="battle-resolution-opponent-score">Score @ScoreLabel(OpponentScore)</p>
+            </article>
+        </main>
+
+        <section class="battle-resolution__summary" aria-live="polite">
+            <p class="battle-resolution__method" data-testid="battle-resolution-method">@Result.Method</p>
+            <div class="battle-resolution__outcome" data-testid="battle-resolution-outcome">
+                <span>@(CurrentUserWon ? "Win secured" : "Match lost")</span>
+                <strong>@OutcomeTitle</strong>
+            </div>
+        </section>
+
+        <footer class="battle-resolution__actions">
+            <button type="button"
+                    class="battle-resolution__button battle-resolution__button--secondary"
+                    data-testid="battle-resolution-dismiss"
+                    @onclick="HandleDismissAsync">
+                Dismiss
+            </button>
+            <button type="button"
+                    class="battle-resolution__button battle-resolution__button--primary"
+                    data-testid="battle-resolution-history"
+                    @onclick="HandleViewHistoryAsync">
+                View History
+            </button>
+        </footer>
+    </div>
+</div>
+
+@code {
+    private ElementReference _root;
+    private IJSObjectReference? _module;
+    private string? _lastAnimationSignature;
+
+    [Parameter, EditorRequired]
+    public BattleResult Result { get; set; } = default!;
+
+    [Parameter]
+    public string CurrentUsername { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback OnDismiss { get; set; }
+
+    [Parameter]
+    public EventCallback OnViewHistory { get; set; }
+
+    private bool CurrentUserWon =>
+        string.Equals(Result.WinnerUsername, CurrentUsername, StringComparison.OrdinalIgnoreCase);
+
+    private string Outcome => CurrentUserWon ? "victory" : "defeat";
+
+    private string OutcomeTitle => CurrentUserWon ? "Victory" : "Defeat";
+
+    private string OverlayClass => $"battle-resolution battle-resolution--{Outcome}";
+
+    private string YourUsername => CurrentUserWon ? Result.WinnerUsername : Result.LoserUsername;
+
+    private string OpponentUsername => CurrentUserWon ? Result.LoserUsername : Result.WinnerUsername;
+
+    private string YourPlayerName => CurrentUserWon ? Result.WinnerPlayerName : Result.LoserPlayerName;
+
+    private string OpponentPlayerName => CurrentUserWon ? Result.LoserPlayerName : Result.WinnerPlayerName;
+
+    private BattleMove? YourMove => CurrentUserWon ? Result.WinnerMove : Result.LoserMove;
+
+    private BattleMove? OpponentMove => CurrentUserWon ? Result.LoserMove : Result.WinnerMove;
+
+    private double? YourScore => CurrentUserWon ? Result.WinnerScore : Result.LoserScore;
+
+    private double? OpponentScore => CurrentUserWon ? Result.LoserScore : Result.WinnerScore;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var signature = $"{Result.WinnerUsername}|{Result.LoserUsername}|{Result.Method}|{Result.CreatedAt:O}";
+        if (string.Equals(_lastAnimationSignature, signature, StringComparison.Ordinal))
+            return;
+
+        _lastAnimationSignature = signature;
+
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/battle-resolution.module.js");
+            await _module.InvokeVoidAsync("playBattleResolution", _root, new { outcome = Outcome });
+        }
+        catch
+        {
+            // The overlay is fully readable without JS; animation failure must not block the result.
+        }
+    }
+
+    private Task HandleDismissAsync() => OnDismiss.InvokeAsync();
+
+    private Task HandleViewHistoryAsync() => OnViewHistory.InvokeAsync();
+
+    private static string MoveLabel(BattleMove? move) =>
+        move.HasValue ? BattleMoveDisplay.Name(move.Value) : "Selection";
+
+    private static string ScoreLabel(double? score) =>
+        score.HasValue ? score.Value.ToString("0.##") : "--";
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null)
+            return;
+
+        try
+        {
+            await _module.InvokeVoidAsync("cancelBattleResolution", _root);
+            await _module.DisposeAsync();
+        }
+        catch
+        {
+        }
+    }
+}

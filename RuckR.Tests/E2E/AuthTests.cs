@@ -104,11 +104,11 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 
         await _page.GotoAsync(_baseUrl);
         await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-        await nav.WaitForBlazorReadyAsync();
-        Assert.Contains(_baseUrl, _page.Url, StringComparison.OrdinalIgnoreCase);
+        await _page.WaitForURLAsync(
+            url => url.Contains("/Identity/Account/Login", StringComparison.OrdinalIgnoreCase),
+            new PageWaitForURLOptions { Timeout = 30_000 });
 
         var loginPage = new LoginPage(_page, _baseUrl);
-        await loginPage.GoToAsync();
         Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
 
         await loginPage.LoginAsync(username, password);
@@ -124,6 +124,35 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
 
         var (isStillLoggedIn, _) = await nav.GetAuthStateAsync();
         Assert.False(isStillLoggedIn, "User should be logged out after logout");
+    }
+
+    /// <summary>
+    /// Verifies anonymous app routes redirect to login.
+    /// </summary>
+    /// <param name="path">The client route to request.</param>
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/map")]
+    [InlineData("/catalog")]
+    [InlineData("/collection")]
+    [InlineData("/players/nearby")]
+    [InlineData("/battle")]
+    [InlineData("/battles/history")]
+    [InlineData("/profile")]
+    [InlineData("/pitches/create")]
+    [InlineData("/debug-layers")]
+    [InlineData("/debug-map")]
+    [InlineData("/debug-map/geoblazor-native")]
+    [InlineData("/notfound")]
+    public async Task AnonymousAppRoutes_RedirectToLogin(string path)
+    {
+        await _page.GotoAsync($"{_baseUrl.TrimEnd('/')}{path}");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForURLAsync(
+            url => url.Contains("/Identity/Account/Login", StringComparison.OrdinalIgnoreCase),
+            new PageWaitForURLOptions { Timeout = 30_000 });
+
+        Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

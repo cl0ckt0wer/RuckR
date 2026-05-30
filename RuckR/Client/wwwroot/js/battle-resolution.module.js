@@ -1,0 +1,148 @@
+import { createTimeline, stagger } from './vendor/anime.esm.min.js';
+
+const activeTimelines = new WeakMap();
+
+export function playBattleResolution(root, options = {}) {
+    if (!root) {
+        return;
+    }
+
+    cancelBattleResolution(root);
+
+    const reducedMotion = options.reducedMotion === true
+        || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reducedMotion) {
+        setFinalState(root);
+        return;
+    }
+
+    setInitialState(root);
+
+    const fieldLines = root.querySelectorAll('.battle-resolution__field-line');
+    const yourSide = root.querySelector('.battle-resolution__side--yours');
+    const opponentSide = root.querySelector('.battle-resolution__side--opponent');
+    const moveBadges = root.querySelectorAll('.battle-resolution__move');
+    const impact = root.querySelector('.battle-resolution__impact');
+    const shockwave = root.querySelector('.battle-resolution__shockwave');
+    const method = root.querySelector('.battle-resolution__method');
+    const outcome = root.querySelector('.battle-resolution__outcome');
+    const actions = root.querySelector('.battle-resolution__actions');
+
+    try {
+        root.focus({ preventScroll: true });
+
+        const timeline = createTimeline({
+            defaults: {
+                duration: 520,
+                ease: 'out(3)'
+            },
+            onComplete: () => {
+                root.dataset.animationState = 'complete';
+                activeTimelines.delete(root);
+            }
+        });
+
+        timeline
+            .add(root, { opacity: [0, 1], duration: 180, ease: 'out(1)' }, 0)
+            .add(fieldLines, { opacity: [0, 0.75], scaleX: [0.25, 1], delay: stagger(90), duration: 460 }, 40)
+            .add(yourSide, { opacity: [0, 1], x: ['-28vw', '0vw'], scale: [0.96, 1] }, 140)
+            .add(opponentSide, { opacity: [0, 1], x: ['28vw', '0vw'], scale: [0.96, 1] }, 220)
+            .add(moveBadges, { opacity: [0, 1], y: ['0.85rem', '0rem'], scale: [0.9, 1], delay: stagger(110), duration: 380 }, 520)
+            .add(impact, { opacity: [0, 1], scale: [0.7, 1.08, 1], rotate: ['-8deg', '0deg'], duration: 540 }, 760)
+            .add(shockwave, { opacity: [0.55, 0], scale: [0.5, 2.35], duration: 620, ease: 'out(2)' }, 820)
+            .add(method, { opacity: [0, 1], y: ['1.1rem', '0rem'], duration: 440 }, 1040)
+            .add(outcome, { opacity: [0, 1], y: ['1.2rem', '0rem'], scale: [0.94, 1], duration: 520 }, 1260)
+            .add(actions, { opacity: [0, 1], y: ['0.7rem', '0rem'], duration: 320 }, 1460);
+
+        activeTimelines.set(root, timeline);
+    } catch (error) {
+        setFinalState(root);
+        throw error;
+    }
+}
+
+export function cancelBattleResolution(root) {
+    const timeline = activeTimelines.get(root);
+    if (!timeline) {
+        return;
+    }
+
+    if (typeof timeline.cancel === 'function') {
+        timeline.cancel();
+    } else if (typeof timeline.pause === 'function') {
+        timeline.pause();
+    }
+
+    activeTimelines.delete(root);
+    setFinalState(root);
+}
+
+function setInitialState(root) {
+    root.dataset.animationState = 'running';
+    root.style.opacity = '0';
+
+    setStyles(root.querySelectorAll('.battle-resolution__field-line'), {
+        opacity: '0',
+        transform: 'scaleX(0.25)'
+    });
+    setStyles(root.querySelector('.battle-resolution__side--yours'), {
+        opacity: '0',
+        transform: 'translate3d(-28vw, 0, 0) scale(0.96)'
+    });
+    setStyles(root.querySelector('.battle-resolution__side--opponent'), {
+        opacity: '0',
+        transform: 'translate3d(28vw, 0, 0) scale(0.96)'
+    });
+    setStyles(root.querySelectorAll('.battle-resolution__move'), {
+        opacity: '0',
+        transform: 'translate3d(0, 0.85rem, 0) scale(0.9)'
+    });
+    setStyles(root.querySelector('.battle-resolution__impact'), {
+        opacity: '0',
+        transform: 'scale(0.7) rotate(-8deg)'
+    });
+    setStyles(root.querySelector('.battle-resolution__shockwave'), {
+        opacity: '0',
+        transform: 'scale(0.5)'
+    });
+    setStyles(root.querySelector('.battle-resolution__method'), {
+        opacity: '0',
+        transform: 'translate3d(0, 1.1rem, 0)'
+    });
+    setStyles(root.querySelector('.battle-resolution__outcome'), {
+        opacity: '0',
+        transform: 'translate3d(0, 1.2rem, 0) scale(0.94)'
+    });
+    setStyles(root.querySelector('.battle-resolution__actions'), {
+        opacity: '0',
+        transform: 'translate3d(0, 0.7rem, 0)'
+    });
+}
+
+function setFinalState(root) {
+    root.dataset.animationState = 'complete';
+    root.style.opacity = '1';
+
+    setStyles(root.querySelectorAll('.battle-resolution__field-line'), {
+        opacity: '',
+        transform: ''
+    });
+    setStyles(root.querySelectorAll('.battle-resolution__side, .battle-resolution__move, .battle-resolution__impact, .battle-resolution__shockwave, .battle-resolution__method, .battle-resolution__outcome, .battle-resolution__actions'), {
+        opacity: '',
+        transform: ''
+    });
+}
+
+function setStyles(targets, styles) {
+    if (!targets) {
+        return;
+    }
+
+    const elements = targets instanceof Element ? [targets] : Array.from(targets);
+    for (const element of elements) {
+        for (const [name, value] of Object.entries(styles)) {
+            element.style[name] = value;
+        }
+    }
+}
