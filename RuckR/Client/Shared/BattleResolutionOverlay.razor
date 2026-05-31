@@ -18,6 +18,30 @@
         <span class="battle-resolution__field-mark battle-resolution__field-mark--right">22</span>
     </div>
 
+    <section class="@WinningMoveIntroClass"
+             data-testid="battle-resolution-winning-move-intro"
+             data-winning-move="@WinningMoveKey"
+             aria-hidden="true">
+        <div class="battle-resolution__move-intro-spotlight">
+            <div class="battle-resolution__move-intro-field" aria-hidden="true">
+                <span class="battle-resolution__move-lane battle-resolution__move-lane--top"></span>
+                <span class="battle-resolution__move-lane battle-resolution__move-lane--middle"></span>
+                <span class="battle-resolution__move-lane battle-resolution__move-lane--bottom"></span>
+                <span class="battle-resolution__move-path battle-resolution__move-path--primary"></span>
+                <span class="battle-resolution__move-path battle-resolution__move-path--secondary"></span>
+                <span class="battle-resolution__move-token battle-resolution__move-token--attacker"></span>
+                <span class="battle-resolution__move-token battle-resolution__move-token--support"></span>
+                <span class="battle-resolution__move-token battle-resolution__move-token--defender"></span>
+                <span class="battle-resolution__move-ball"></span>
+                <span class="battle-resolution__move-burst"></span>
+            </div>
+            <div class="battle-resolution__move-intro-label">
+                <span>Winning play</span>
+                <strong>@WinningMoveLabel</strong>
+            </div>
+        </div>
+    </section>
+
     <div class="battle-resolution__chrome">
         <header class="battle-resolution__topbar">
             <div class="battle-resolution__heading">
@@ -145,7 +169,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var signature = $"{Result.WinnerUsername}|{Result.LoserUsername}|{Result.Method}|{Result.CreatedAt:O}";
+        var signature = $"{Result.WinnerUsername}|{Result.LoserUsername}|{Result.Method}|{Result.WinnerMove}|{Result.LoserMove}|{Result.CreatedAt:O}";
         if (string.Equals(_lastAnimationSignature, signature, StringComparison.Ordinal))
             return;
 
@@ -154,7 +178,7 @@
         try
         {
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/battle-resolution.module.js");
-            await _module.InvokeVoidAsync("playBattleResolution", _root, new { outcome = Outcome });
+            await _module.InvokeVoidAsync("playBattleResolution", _root, new { outcome = Outcome, winningMove = WinningMoveKey });
         }
         catch
         {
@@ -168,6 +192,15 @@
 
     private static string MoveLabel(BattleMove? move) =>
         move.HasValue ? BattleMoveDisplay.Name(move.Value) : "Selection";
+
+    private string WinningMoveIntroClass =>
+        $"battle-resolution__move-intro battle-resolution__move-intro--{WinningMoveKey}";
+
+    private string WinningMoveKey =>
+        Result.WinnerMove.HasValue ? MoveCssKey(Result.WinnerMove.Value) : "selection";
+
+    private static string MoveCssKey(BattleMove move) =>
+        move.ToString().ToLowerInvariant();
 
     private static string ScoreLabel(double? score) =>
         score.HasValue ? score.Value.ToString("0.##") : "--";

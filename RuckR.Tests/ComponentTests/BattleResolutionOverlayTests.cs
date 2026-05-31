@@ -68,6 +68,22 @@ public class BattleResolutionOverlayTests : TestContext
         Assert.DoesNotContain("battle-resolution__move--winner", cut.Find("[data-testid='battle-resolution-your-move']").GetAttribute("class"));
     }
 
+    [Theory]
+    [InlineData(BattleMove.Rock, "rock", "Crash Ball")]
+    [InlineData(BattleMove.Paper, "paper", "Cut-Out Pass")]
+    [InlineData(BattleMove.Scissors, "scissors", "Grubber Kick")]
+    [InlineData(BattleMove.Lizard, "lizard", "Sidestep")]
+    [InlineData(BattleMove.Spock, "spock", "Scrum Drive")]
+    public void WinningMoveIntro_RendersMoveSpecificStage(BattleMove move, string expectedKey, string expectedName)
+    {
+        var cut = RenderOverlay(CurrentUsername: "alice@test.com", winnerMove: move);
+        var intro = cut.Find("[data-testid='battle-resolution-winning-move-intro']");
+
+        Assert.Equal(expectedKey, intro.GetAttribute("data-winning-move"));
+        Assert.Contains($"battle-resolution__move-intro--{expectedKey}", intro.GetAttribute("class"));
+        Assert.Contains(expectedName, intro.TextContent);
+    }
+
     [Fact]
     public void CloseButton_InvokesDismissCallback()
     {
@@ -92,29 +108,30 @@ public class BattleResolutionOverlayTests : TestContext
 
     private IRenderedComponent<BattleResolutionOverlay> RenderOverlay(
         string CurrentUsername,
+        BattleMove winnerMove = BattleMove.Rock,
         Action? onDismiss = null,
         Action? onViewHistory = null)
     {
         return Render<BattleResolutionOverlay>(parameters => parameters
-            .Add(p => p.Result, Result())
+            .Add(p => p.Result, Result(winnerMove))
             .Add(p => p.CurrentUsername, CurrentUsername)
             .Add(p => p.OnDismiss, onDismiss ?? (() => { }))
             .Add(p => p.OnViewHistory, onViewHistory ?? (() => { })));
     }
 
-    private static BattleResult Result() =>
+    private static BattleResult Result(BattleMove winnerMove = BattleMove.Rock) =>
         new(
             "alice@test.com",
             "bob@test.com",
             "Captain Alice",
             "Captain Bob",
-            "Crash Ball charges down Grubber Kick",
+            BattleMoveDisplay.ResolutionMethod(winnerMove, BattleMove.Scissors),
             new DateTime(2026, 5, 30, 14, 0, 0, DateTimeKind.Utc),
-            BattleMove.Rock,
+            winnerMove,
             BattleMove.Scissors,
             91.5,
             73.25,
-            BattleMove.Rock,
+            winnerMove,
             BattleMove.Scissors,
             91.5,
             73.25);
