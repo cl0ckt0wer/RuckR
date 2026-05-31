@@ -11,6 +11,9 @@ const staticPathPrefixes = [
     '/images/',
     '/img/'
 ];
+const rootStaticAssetPaths = [
+    '/ruckr.client.styles.css'
+];
 const dynamicPathPrefixes = [
     '/api/',
     '/identity/',
@@ -37,6 +40,7 @@ const cacheableExtensions = [
     '.ttf',
     '.otf'
 ];
+let manifestCacheableUrlSet;
 
 function toUrl(url) {
     try {
@@ -48,7 +52,8 @@ function toUrl(url) {
 
 function isSameOriginStaticUrl(url) {
     return url.origin === self.location.origin
-        && staticPathPrefixes.some(prefix => url.pathname.toLowerCase().startsWith(prefix));
+        && (staticPathPrefixes.some(prefix => url.pathname.toLowerCase().startsWith(prefix))
+            || rootStaticAssetPaths.includes(url.pathname.toLowerCase()));
 }
 
 function hasCacheableExtension(pathname) {
@@ -75,14 +80,43 @@ function isExcludedStaticAsset(pathname) {
         || /^appsettings(\.[a-z0-9_-]+)?\.json$/i.test(fileName);
 }
 
-function shouldCacheAssetUrl(assetUrl) {
-    const url = toUrl(assetUrl);
-    if (!url) return false;
+function shouldCacheStaticUrl(url) {
     if (url.search) return false;
     if (!isSameOriginStaticUrl(url)) return false;
     if (isDynamicPath(url.pathname)) return false;
     if (isExcludedStaticAsset(url.pathname)) return false;
     return hasCacheableExtension(url.pathname);
+}
+
+function getManifestCacheableUrlSet() {
+    if (manifestCacheableUrlSet) {
+        return manifestCacheableUrlSet;
+    }
+
+    manifestCacheableUrlSet = new Set(self.assetsManifest.assets
+        .map(asset => toUrl(asset.url))
+        .filter(url => url && shouldCacheStaticUrl(url))
+        .map(url => url.href));
+
+    return manifestCacheableUrlSet;
+}
+
+function shouldCacheAssetUrl(assetUrl) {
+    const url = toUrl(assetUrl);
+    if (!url || !shouldCacheStaticUrl(url)) return false;
+    return getManifestCacheableUrlSet().has(url.href);
+}
+
+function shouldPrecacheAssetUrl(assetUrl) {
+    const url = toUrl(assetUrl);
+    if (!url || !shouldCacheAssetUrl(url.href)) return false;
+
+    const pathname = url.pathname.toLowerCase();
+    return pathname.startsWith('/_framework/')
+        || pathname.startsWith('/css/')
+        || pathname === '/ruckr.client.styles.css'
+        || pathname.startsWith('/_content/mudblazor/')
+        || (pathname.startsWith('/_content/dymaptic.geoblazor.core/') && pathname.endsWith('.css'));
 }
 
 function shouldHandleFetchRequestUrl(requestUrl, method = 'GET') {
@@ -104,7 +138,7 @@ self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(cacheName);
         const requests = self.assetsManifest.assets
-            .filter(asset => shouldCacheAssetUrl(asset.url))
+            .filter(asset => shouldPrecacheAssetUrl(asset.url))
             .map(asset => new Request(asset.url, {
                 integrity: asset.hash,
                 cache: 'no-cache'
