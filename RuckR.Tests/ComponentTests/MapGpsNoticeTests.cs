@@ -284,7 +284,8 @@ public class MapGpsNoticeTests
 
         Assert.Equal(MapPage.MapBasemapMode.Styled, options.BasemapMode);
         Assert.True(options.EnableArcGisWidgets);
-        Assert.True(options.EnableMapDiagnostics);
+        Assert.False(options.EnableMapDiagnostics);
+        Assert.True(options.EnableMapPerformanceSummary);
         Assert.True(options.EnableGameGraphics);
         Assert.True(options.EnableAutoGpsWatch);
     }
@@ -301,6 +302,7 @@ public class MapGpsNoticeTests
                 ["Map:BasemapMode"] = "empty",
                 ["Map:EnableArcGisWidgets"] = "true",
                 ["Map:EnableMapDiagnostics"] = "false",
+                ["Map:EnableMapPerformanceSummary"] = "false",
                 ["Map:EnableGameGraphics"] = "false",
                 ["Map:EnableAutoGpsWatch"] = "false"
             }),
@@ -309,6 +311,7 @@ public class MapGpsNoticeTests
         Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
         Assert.True(options.EnableArcGisWidgets);
         Assert.False(options.EnableMapDiagnostics);
+        Assert.False(options.EnableMapPerformanceSummary);
         Assert.False(options.EnableGameGraphics);
         Assert.False(options.EnableAutoGpsWatch);
     }
@@ -351,16 +354,34 @@ public class MapGpsNoticeTests
                 ["Map:BasemapMode"] = "styled",
                 ["Map:EnableArcGisWidgets"] = "false",
                 ["Map:EnableMapDiagnostics"] = "true",
+                ["Map:EnableMapPerformanceSummary"] = "true",
                 ["Map:EnableGameGraphics"] = "true",
                 ["Map:EnableAutoGpsWatch"] = "true"
             }),
-            "https://example.test/map?basemap=empty&arcGisWidgets=true&mapDiagnostics=false&mapGraphics=false&autoGps=false");
+            "https://example.test/map?basemap=empty&arcGisWidgets=true&mapDiagnostics=false&mapPerfSummary=false&mapGraphics=false&autoGps=false");
 
         Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
         Assert.True(options.EnableArcGisWidgets);
         Assert.False(options.EnableMapDiagnostics);
+        Assert.False(options.EnableMapPerformanceSummary);
         Assert.False(options.EnableGameGraphics);
         Assert.False(options.EnableAutoGpsWatch);
+    }
+
+    /// <summary>
+    /// Verifies deferred ArcGIS widgets render only after their delayed enable state is reached.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, true)]
+    public void ShouldRenderArcGisWidgetsForState_RequiresEnabledAndReady(
+        bool enableArcGisWidgets,
+        bool widgetsReady,
+        bool expected)
+    {
+        Assert.Equal(expected, MapPage.ShouldRenderArcGisWidgetsForState(enableArcGisWidgets, widgetsReady));
     }
 
     /// <summary>

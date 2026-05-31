@@ -109,6 +109,13 @@ namespace RuckR.Server.Controllers
                 }
 
                 if (activity is not null
+                    && entry.Category.Contains("Map", StringComparison.OrdinalIgnoreCase)
+                    && entry.Message.StartsWith("MapPerfSummary ", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddMapPerfSummaryEvent(activity, entry.Message);
+                }
+
+                if (activity is not null
                     && entry.Category.Contains("Browser", StringComparison.OrdinalIgnoreCase))
                 {
                     activity.AddEvent(new ActivityEvent("browser.console_error", tags: new ActivityTagsCollection
@@ -132,6 +139,55 @@ namespace RuckR.Server.Controllers
             }
 
             return value[..maxLength];
+        }
+
+        private static void AddMapPerfSummaryEvent(Activity activity, string message)
+        {
+            var jsonStart = message.IndexOf('{');
+            if (jsonStart < 0)
+            {
+                activity.AddEvent(new ActivityEvent("map.perf_summary"));
+                return;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(message[jsonStart..]);
+                var root = doc.RootElement;
+                var tags = new ActivityTagsCollection();
+
+                AddStringTag(tags, "map.perf.reason", root, "reason");
+                AddStringTag(tags, "map.perf.url", root, "url");
+                AddStringTag(tags, "map.perf.path", root, "route", "path");
+                AddStringTag(tags, "map.perf.search", root, "route", "search");
+                AddStringTag(tags, "map.perf.flag.map_diagnostics", root, "route", "mapDiagnostics");
+                AddStringTag(tags, "map.perf.flag.map_perf_summary", root, "route", "mapPerfSummary");
+                AddStringTag(tags, "map.perf.flag.arcgis_widgets", root, "route", "arcGisWidgets");
+                AddNumberTag(tags, "map.perf.component_first_render_ms", root, "timings", "componentFirstRenderMs");
+                AddNumberTag(tags, "map.perf.view_initialized_ms", root, "timings", "viewInitializedMs");
+                AddNumberTag(tags, "map.perf.view_rendered_ms", root, "timings", "viewRenderedMs");
+                AddNumberTag(tags, "map.perf.map_data_start_ms", root, "timings", "mapDataLoadStartMs");
+                AddNumberTag(tags, "map.perf.map_data_end_ms", root, "timings", "mapDataLoadEndMs");
+                AddNumberTag(tags, "map.perf.map_data_duration_ms", root, "timings", "mapDataLoadDurationMs");
+                AddNumberTag(tags, "map.perf.pitches_api_ms", root, "timings", "pitchesApiMs");
+                AddNumberTag(tags, "map.perf.encounters_api_ms", root, "timings", "encountersApiMs");
+                AddNumberTag(tags, "map.perf.candidate_places_api_ms", root, "timings", "candidatePlacesApiMs");
+                AddNumberTag(tags, "map.perf.arcgis_widgets_enabled_ms", root, "timings", "arcGisWidgetsEnabledMs");
+                AddNumberTag(tags, "map.perf.resources_total", root, "resources", "total");
+                AddNumberTag(tags, "map.perf.resources_arcgis_geoblazor", root, "resources", "arcGisOrGeoBlazor");
+                AddBooleanTag(tags, "map.perf.healthy", root, "health", "healthy");
+                AddBooleanTag(tags, "map.perf.arcgis_ready", root, "arcgis", "ready");
+                AddBooleanTag(tags, "map.perf.arcgis_basemap_loaded", root, "arcgis", "basemapLoaded");
+                AddNumberTag(tags, "map.perf.arcgis_layers", root, "arcgis", "layers");
+                AddNumberTag(tags, "map.perf.controls_visible", root, "controls", "visible");
+                AddNumberTag(tags, "map.perf.controls_count", root, "controls", "count");
+
+                activity.AddEvent(new ActivityEvent("map.perf_summary", tags: tags));
+            }
+            catch (JsonException)
+            {
+                activity.AddEvent(new ActivityEvent("map.perf_summary_parse_failed"));
+            }
         }
 
         private static void AddMapDiagnosticsEvent(Activity activity, string message)

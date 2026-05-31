@@ -140,7 +140,7 @@
                     }
                 }
             </Map>
-            @if (_enableArcGisWidgets)
+            @if (ShouldRenderArcGisWidgets)
             {
                 <CompassWidget Position="OverlayPosition.TopLeft" />
                 <LocateWidget Position="OverlayPosition.TopLeft" />
@@ -152,7 +152,7 @@
             }
         </MapView>
 
-        @if (_enableArcGisWidgets && !_useNativeGeoBlazorMap)
+        @if (ShouldRenderArcGisWidgets && !_useNativeGeoBlazorMap)
         {
             <div class="map-key" data-testid="map-key" aria-label="Map key">
                 <div class="map-key__title">Map key</div>
@@ -1012,6 +1012,7 @@
         MapBasemapMode BasemapMode,
         bool EnableArcGisWidgets,
         bool EnableMapDiagnostics,
+        bool EnableMapPerformanceSummary,
         bool EnableGameGraphics,
         bool EnableAutoGpsWatch);
 
@@ -1050,6 +1051,7 @@
     private const int MaxGpsNoticeRetryAttempts = 5;
     private static readonly TimeSpan InitialMapGpsCoalesceDelay = TimeSpan.FromMilliseconds(900);
     private static readonly TimeSpan CandidatePlaceDeferredLoadDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ArcGisWidgetDeferredRenderDelay = TimeSpan.FromMilliseconds(350);
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
     private readonly Dictionary<int, Graphic> _pitchGraphics = new();
@@ -1100,7 +1102,10 @@
     private bool _gpsNoticeDismissed;
     private bool _showCandidatePlaces = true;
     private bool _enableArcGisWidgets;
+    private bool _arcGisWidgetsReady;
+    private bool _arcGisWidgetEnableScheduled;
     private bool _enableMapDiagnostics;
+    private bool _enableMapPerformanceSummary;
     private bool _enableGameGraphics;
     private bool _enableAutoGpsWatch;
     private bool _enableVerboseMapDiagnostics;
@@ -1143,6 +1148,10 @@
 
     private string MapShellModeClass => _useNativeGeoBlazorMap ? "map-shell--native-geoblazor" : "map-shell--standard";
 
+    private bool ShouldUseMapTimingModule => _enableMapDiagnostics || _enableMapPerformanceSummary;
+
+    private bool ShouldRenderArcGisWidgets => ShouldRenderArcGisWidgetsForState(_enableArcGisWidgets, _arcGisWidgetsReady);
+
     protected override void OnInitialized()
     {
         _apiKey = Configuration["ArcGISApiKey"] ?? string.Empty;
@@ -1153,6 +1162,7 @@
         _basemapMode = reductionOptions.BasemapMode;
         _enableArcGisWidgets = reductionOptions.EnableArcGisWidgets;
         _enableMapDiagnostics = reductionOptions.EnableMapDiagnostics;
+        _enableMapPerformanceSummary = reductionOptions.EnableMapPerformanceSummary;
         _enableGameGraphics = reductionOptions.EnableGameGraphics;
         _enableAutoGpsWatch = reductionOptions.EnableAutoGpsWatch;
         _enableVerboseMapDiagnostics = ResolveMapFeatureFlag(Configuration, new Uri(Navigation.Uri, UriKind.Absolute), "EnableVerboseMapDiagnostics", "mapDiagnosticsVerbose", defaultValue: false);
@@ -1167,7 +1177,8 @@
         return new MapReductionOptions(
             BasemapMode: ResolveBasemapMode(configuration, uri),
             EnableArcGisWidgets: ResolveMapFeatureFlag(configuration, uri, "EnableArcGisWidgets", "arcGisWidgets", defaultValue: true),
-            EnableMapDiagnostics: ResolveMapFeatureFlag(configuration, uri, "EnableMapDiagnostics", "mapDiagnostics", defaultValue: true),
+            EnableMapDiagnostics: ResolveMapFeatureFlag(configuration, uri, "EnableMapDiagnostics", "mapDiagnostics", defaultValue: false),
+            EnableMapPerformanceSummary: ResolveMapFeatureFlag(configuration, uri, "EnableMapPerformanceSummary", "mapPerfSummary", defaultValue: true),
             EnableGameGraphics: ResolveMapFeatureFlag(configuration, uri, "EnableGameGraphics", "mapGraphics", defaultValue: true),
             EnableAutoGpsWatch: ResolveMapFeatureFlag(configuration, uri, "EnableAutoGpsWatch", "autoGps", defaultValue: true));
     }
@@ -1180,6 +1191,9 @@
 
     public static bool ShouldWaitForInitialGpsPosition(bool enableAutoGpsWatch, GeoPosition? lastKnownPosition) =>
         enableAutoGpsWatch && lastKnownPosition is null;
+
+    public static bool ShouldRenderArcGisWidgetsForState(bool enableArcGisWidgets, bool widgetsReady) =>
+        enableArcGisWidgets && widgetsReady;
 
     public static bool ShouldRefreshPitchesForState(
         GeoPosition current,
@@ -1289,10 +1303,14 @@
         if (firstRender)
         {
             await LoadOnboardingPreferenceAsync();
-            if (_enableMapDiagnostics)
+            if (ShouldUseMapTimingModule)
             {
                 _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
-                await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+                if (_enableMapDiagnostics)
+                {
+                    await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+                }
+
                 await MarkMapTimingAsync("component-first-render");
             }
 
@@ -1320,7 +1338,11 @@
             }
 
             _ = DismissStaleLoadingIndicatorAsync();
-            _ = CaptureMapDiagnosticsAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
+            _ = LogMapPerfSummaryAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
+            if (_enableMapDiagnostics)
+            {
+                _ = CaptureMapDiagnosticsAfterDelayAsync("settled-10s", TimeSpan.FromSeconds(10));
+            }
             if (_enableVerboseMapDiagnostics)
             {
                 _ = CaptureMapDiagnosticsAfterDelayAsync("first-render", TimeSpan.FromSeconds(2));
@@ -1435,7 +1457,51 @@
         if (_enableGameGraphics)
         {
             await LoadInitialPitchMarkersAsync();
+            ScheduleArcGisWidgetsEnable("after-initial-data");
         }
+        else
+        {
+            ScheduleArcGisWidgetsEnable("after-view-rendered");
+        }
+    }
+
+    private void ScheduleArcGisWidgetsEnable(string reason)
+    {
+        if (!_enableArcGisWidgets || _arcGisWidgetsReady || _arcGisWidgetEnableScheduled || _isDisposing)
+        {
+            return;
+        }
+
+        _arcGisWidgetEnableScheduled = true;
+        _ = EnableArcGisWidgetsAfterDelayAsync(reason);
+    }
+
+    private async Task EnableArcGisWidgetsAfterDelayAsync(string reason)
+    {
+        await MarkMapTimingAsync("arcgis-widgets-deferred", new
+        {
+            reason,
+            delayMs = (int)ArcGisWidgetDeferredRenderDelay.TotalMilliseconds
+        });
+
+        try
+        {
+            await Task.Delay(ArcGisWidgetDeferredRenderDelay, _diagnosticsCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_isDisposing)
+        {
+            return;
+        }
+
+        _arcGisWidgetsReady = true;
+        await MarkMapTimingAsync("arcgis-widgets-enabled", new { reason });
+        await LogMapPerfSummaryAsync("arcgis-widgets-enabled");
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadInitialPitchMarkersAsync()
@@ -1518,9 +1584,46 @@
         }
     }
 
+    private async Task LogMapPerfSummaryAfterDelayAsync(string reason, TimeSpan delay)
+    {
+        try
+        {
+            await Task.Delay(delay, _diagnosticsCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        await LogMapPerfSummaryAsync(reason);
+    }
+
+    private async Task LogMapPerfSummaryAsync(string reason)
+    {
+        if (_isDisposing || !ShouldUseMapTimingModule || _mapDiagnosticsModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var summaryJson = await _mapDiagnosticsModule.InvokeAsync<string>("collectMapPerfSummary", reason);
+            Logger.LogWarning("MapPerfSummary {Reason}: {SummaryJson}", reason, summaryJson);
+        }
+        catch (Exception ex)
+        {
+            if (IsExpectedMapDiagnosticsDisposal(ex))
+            {
+                return;
+            }
+
+            Logger.LogDebug(ex, "MapPerfSummary failed for {Reason}", reason);
+        }
+    }
+
     private async Task MarkMapTimingAsync(string name, object? detail = null)
     {
-        if (_isDisposing || !_enableMapDiagnostics || _mapDiagnosticsModule is null)
+        if (_isDisposing || !ShouldUseMapTimingModule || _mapDiagnosticsModule is null)
         {
             return;
         }
@@ -1752,6 +1855,7 @@
             await MarkMapTimingAsync(
                 "map-data-load-end",
                 new { reason, durationMs = loadStopwatch.ElapsedMilliseconds });
+            await LogMapPerfSummaryAsync("map-data-load-end");
         }
 
         if (!_isDisposing)
@@ -1814,6 +1918,7 @@
             _candidatePlaces = candidates;
             await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
             await MarkMapTimingAsync("candidate-place-graphics-synced", new { reason, count = candidates.Count });
+            await LogMapPerfSummaryAsync("candidate-places-loaded");
         }
         catch (Exception ex)
         {

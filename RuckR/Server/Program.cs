@@ -204,48 +204,45 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 // Serve client appsettings with GeoBlazor/ArcGIS key injection (before static files).
-if (!string.IsNullOrWhiteSpace(arcGisApiKey) || !string.IsNullOrWhiteSpace(arcGisPortalItemId) || !string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
+// Appsettings are runtime config, not static versioned assets, so keep them fresh.
+app.Use(async (context, next) =>
 {
-    app.Use(async (context, next) =>
+    if (IsClientAppSettingsRequest(context.Request.Path))
     {
         var path = context.Request.Path.Value ?? "";
-        if (path.StartsWith("/appsettings") && path.EndsWith(".json"))
+        var filePath = ResolveClientAppSettingsPath(app.Environment, path);
+        if (filePath is not null)
         {
-            var filePath = ResolveClientAppSettingsPath(app.Environment, path);
-            if (filePath is not null)
+            var json = await System.IO.File.ReadAllTextAsync(filePath);
+            var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
+
+            if (!string.IsNullOrWhiteSpace(arcGisApiKey))
             {
-                var json = await System.IO.File.ReadAllTextAsync(filePath);
-                var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
-
-                if (!string.IsNullOrWhiteSpace(arcGisApiKey))
-                {
-                    root["ArcGISApiKey"] = arcGisApiKey;
-                }
-
-                if (!string.IsNullOrWhiteSpace(arcGisPortalItemId))
-                {
-                    root["ArcGISPortalItemId"] = arcGisPortalItemId;
-                }
-
-                if (!string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
-                {
-                    var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
-                    geoBlazor["LicenseKey"] = geoBlazorLicenseKey;
-                    geoBlazor["RegistrationKey"] = geoBlazorLicenseKey;
-                    root["GeoBlazor"] = geoBlazor;
-                }
-
-                context.Response.ContentType = "application/json; charset=utf-8";
-                context.Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
-                context.Response.Headers["Pragma"] = "no-cache";
-                context.Response.Headers["Expires"] = "0";
-                await context.Response.WriteAsync(root.ToJsonString());
-                return;
+                root["ArcGISApiKey"] = arcGisApiKey;
             }
+
+            if (!string.IsNullOrWhiteSpace(arcGisPortalItemId))
+            {
+                root["ArcGISPortalItemId"] = arcGisPortalItemId;
+            }
+
+            if (!string.IsNullOrWhiteSpace(geoBlazorLicenseKey))
+            {
+                var geoBlazor = root["GeoBlazor"] as JsonObject ?? new JsonObject();
+                geoBlazor["LicenseKey"] = geoBlazorLicenseKey;
+                geoBlazor["RegistrationKey"] = geoBlazorLicenseKey;
+                root["GeoBlazor"] = geoBlazor;
+            }
+
+            context.Response.ContentType = "application/json; charset=utf-8";
+            ApplyNoStoreHeaders(context.Response.Headers);
+            await context.Response.WriteAsync(root.ToJsonString());
+            return;
         }
-        await next();
-    });
-}
+    }
+
+    await next();
+});
 
 static string? ResolveClientAppSettingsPath(IWebHostEnvironment environment, string requestPath)
 {
@@ -409,36 +406,18 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.UseWhen(ctx => ctx.Request.Path.Equals("/css/app.css", StringComparison.OrdinalIgnoreCase), appCss =>
-{
-    appCss.Run(async context =>
-    {
-        var appCssPath = ResolveClientStaticAssetPath(app.Environment, Path.Combine("css", "app.css"));
-        if (!File.Exists(appCssPath))
-        {
-            context.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
-
-        ApplyNoStoreHeaders(context.Response.Headers);
-        context.Response.ContentType = "text/css; charset=utf-8";
-
-        if (HttpMethods.IsHead(context.Request.Method))
-        {
-            return;
-        }
-
-        await context.Response.SendFileAsync(appCssPath);
-    });
-});
-
 app.UseBlazorFrameworkFiles();
 
-app.UseWhen(ctx => ctx.Request.Path.Equals("/service-worker.js", StringComparison.OrdinalIgnoreCase), serviceWorker =>
+app.UseWhen(ctx => IsServiceWorkerResource(ctx.Request.Path), serviceWorker =>
 {
     serviceWorker.Use(async (context, next) =>
     {
-        ApplyNoStoreHeaders(context.Response.Headers);
+        context.Response.OnStarting(() =>
+        {
+            ApplyNoStoreHeaders(context.Response.Headers);
+            return Task.CompletedTask;
+        });
+
         await next();
     });
 });
@@ -449,7 +428,12 @@ app.UseWhen(ctx => IsBlazorBootResource(ctx.Request.Path), framework =>
 {
     framework.Use(async (context, next) =>
     {
-        ApplyNoStoreHeaders(context.Response.Headers);
+        context.Response.OnStarting(() =>
+        {
+            ApplyNoStoreHeaders(context.Response.Headers);
+            return Task.CompletedTask;
+        });
+
         await next();
     });
 });
@@ -550,9 +534,23 @@ app.Run();
 
 static bool IsBlazorBootResource(PathString path)
 {
-    return path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase)
-        || path.Equals("/_framework/blazor.webassembly.js", StringComparison.OrdinalIgnoreCase)
-        || path.Equals("/_framework/dotnet.js", StringComparison.OrdinalIgnoreCase);
+    return path.Equals("/_framework/blazor.boot.json", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsClientAppSettingsRequest(PathString path)
+{
+    var value = path.Value ?? "";
+    var fileName = Path.GetFileName(value);
+    return fileName.StartsWith("appsettings", StringComparison.OrdinalIgnoreCase)
+        && fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsServiceWorkerResource(PathString path)
+{
+    var fileName = Path.GetFileName(path.Value ?? "");
+    return fileName.Equals("service-worker.js", StringComparison.OrdinalIgnoreCase)
+        || fileName.Equals("service-worker.published.js", StringComparison.OrdinalIgnoreCase)
+        || fileName.Equals("service-worker-assets.js", StringComparison.OrdinalIgnoreCase);
 }
 
 static bool IsSpaShellRequest(HttpRequest request)

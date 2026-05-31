@@ -91,6 +91,53 @@ function mapTimingSummary() {
     };
 }
 
+function mapTimingMarks() {
+    if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+        return [];
+    }
+
+    return performance.getEntriesByType('mark')
+        .filter(entry => entry.name.startsWith(mapTimingPrefix));
+}
+
+function latestMapTimingMark(name) {
+    const fullName = `${mapTimingPrefix}${name}`;
+    const marks = mapTimingMarks()
+        .filter(entry => entry.name === fullName);
+    return marks.length > 0 ? marks[marks.length - 1] : null;
+}
+
+function roundedStartTime(name) {
+    const mark = latestMapTimingMark(name);
+    return mark ? Math.round(mark.startTime) : null;
+}
+
+function roundedDurationFromDetail(name) {
+    const duration = latestMapTimingMark(name)?.detail?.durationMs;
+    return typeof duration === 'number' ? Math.round(duration) : null;
+}
+
+function resourcePath(name) {
+    try {
+        const url = new URL(name);
+        return `${url.origin === location.origin ? '' : url.origin}${url.pathname}`;
+    } catch {
+        return name;
+    }
+}
+
+function arcGisOrGeoBlazorResources() {
+    if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+        return [];
+    }
+
+    return performance.getEntriesByType('resource')
+        .filter(entry =>
+            entry.name.includes('arcgis')
+            || entry.name.includes('GeoBlazor')
+            || entry.name.includes('_content/dymaptic'));
+}
+
 function rectOf(element) {
     if (!element) return null;
     const rect = element.getBoundingClientRect();
@@ -419,6 +466,76 @@ function arcGisViewSummary() {
         } : null,
         layerViews
     };
+}
+
+export function collectMapPerfSummary(reason) {
+    const url = new URL(location.href);
+    const resources = typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function'
+        ? performance.getEntriesByType('resource')
+        : [];
+    const arcGisResources = arcGisOrGeoBlazorResources();
+    const arcgis = arcGisViewSummary();
+    const controls = [...document.querySelectorAll('.esri-ui .esri-widget, .esri-zoom, calcite-action')];
+
+    return JSON.stringify({
+        reason,
+        url: location.href,
+        route: {
+            path: location.pathname,
+            search: location.search,
+            mapDiagnostics: url.searchParams.get('mapDiagnostics'),
+            mapDiagnosticsVerbose: url.searchParams.get('mapDiagnosticsVerbose'),
+            mapPerfSummary: url.searchParams.get('mapPerfSummary'),
+            arcGisWidgets: url.searchParams.get('arcGisWidgets')
+        },
+        timings: {
+            componentFirstRenderMs: roundedStartTime('component-first-render'),
+            gpsWatchStartMs: roundedStartTime('gps-watch-start'),
+            gpsWatchStartedMs: roundedStartTime('gps-watch-started'),
+            gpsWatchUnavailableMs: roundedStartTime('gps-watch-unavailable'),
+            viewInitializedMs: roundedStartTime('view-initialized'),
+            viewRenderedMs: roundedStartTime('view-rendered'),
+            mapDataLoadStartMs: roundedStartTime('map-data-load-start'),
+            mapDataLoadEndMs: roundedStartTime('map-data-load-end'),
+            mapDataLoadDurationMs: roundedDurationFromDetail('map-data-load-end'),
+            pitchesApiMs: roundedDurationFromDetail('pitches-api-end'),
+            encountersApiMs: roundedDurationFromDetail('encounters-api-end'),
+            candidatePlacesDeferredMs: roundedStartTime('candidate-places-deferred'),
+            candidatePlacesApiMs: roundedDurationFromDetail('candidate-places-api-end'),
+            candidatePlaceGraphicsSyncedMs: roundedStartTime('candidate-place-graphics-synced'),
+            arcGisWidgetsDeferredMs: roundedStartTime('arcgis-widgets-deferred'),
+            arcGisWidgetsEnabledMs: roundedStartTime('arcgis-widgets-enabled')
+        },
+        resources: {
+            total: resources.length,
+            arcGisOrGeoBlazor: arcGisResources.length,
+            slowestArcGisOrGeoBlazor: arcGisResources
+                .sort((a, b) => b.duration - a.duration)
+                .slice(0, 3)
+                .map(entry => ({
+                    name: resourcePath(entry.name),
+                    duration: Math.round(entry.duration),
+                    transferSize: entry.transferSize
+                }))
+        },
+        health: healthSummary(),
+        arcgis: {
+            present: arcgis.present ?? false,
+            ready: arcgis.ready ?? null,
+            updating: arcgis.updating ?? null,
+            stationary: arcgis.stationary ?? null,
+            width: arcgis.width ?? null,
+            height: arcgis.height ?? null,
+            basemapLoaded: arcgis.map?.basemapLoaded ?? null,
+            layers: arcgis.map?.layers ?? null,
+            allLayers: arcgis.map?.allLayers ?? null,
+            layerViews: arcgis.layerViews ?? null
+        },
+        controls: {
+            count: controls.length,
+            visible: controls.filter(isVisible).length
+        }
+    });
 }
 
 export function collectMapDiagnostics(reason) {
