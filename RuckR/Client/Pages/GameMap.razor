@@ -1,6 +1,7 @@
 @page "/map"
 @page "/"
 @page "/debug-map/geoblazor-native"
+@using System.Diagnostics
 @using dymaptic.GeoBlazor.Core.Components
 @using dymaptic.GeoBlazor.Core.Components.Geometries
 @using dymaptic.GeoBlazor.Core.Components.Layers
@@ -1047,6 +1048,8 @@
     private const double MinPitchRefreshDistanceMeters = 50.0;
     private const double MapTapSelectionRadiusMeters = 100.0;
     private const int MaxGpsNoticeRetryAttempts = 5;
+    private static readonly TimeSpan InitialMapGpsCoalesceDelay = TimeSpan.FromMilliseconds(900);
+    private static readonly TimeSpan CandidatePlaceDeferredLoadDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan PitchRefreshInterval = TimeSpan.FromSeconds(30);
 
     private readonly Dictionary<int, Graphic> _pitchGraphics = new();
@@ -1103,6 +1106,12 @@
     private bool _enableVerboseMapDiagnostics;
     private bool _useNativeGeoBlazorMap;
     private bool _isDisposing;
+    private bool _initialMapDataLoadPending;
+    private GeoPosition? _positionReceivedDuringInitialMapDataLoad;
+    private GeoPosition? _pitchMarkerLoadInFlightPosition;
+    private DateTime _pitchMarkerLoadStartedAtUtc;
+    private int _pitchMarkerLoadRequestId;
+    private CancellationTokenSource? _candidatePlaceLoadCts;
     private readonly CancellationTokenSource _diagnosticsCts = new();
     private readonly CancellationTokenSource _spotlightClockCts = new();
     private MapBasemapMode _basemapMode = MapBasemapMode.Styled;
@@ -1167,6 +1176,32 @@
     {
         var uri = new Uri(currentUri, UriKind.Absolute);
         return uri.AbsolutePath.Equals("/debug-map/geoblazor-native", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool ShouldWaitForInitialGpsPosition(bool enableAutoGpsWatch, GeoPosition? lastKnownPosition) =>
+        enableAutoGpsWatch && lastKnownPosition is null;
+
+    public static bool ShouldRefreshPitchesForState(
+        GeoPosition current,
+        GeoPosition? lastFetchPosition,
+        DateTime lastFetchAtUtc,
+        DateTime nowUtc,
+        GeoPosition? inFlightPosition = null,
+        DateTime? inFlightStartedAtUtc = null)
+    {
+        if (inFlightPosition is not null
+            && inFlightStartedAtUtc is not null
+            && (nowUtc - inFlightStartedAtUtc.Value) < PitchRefreshInterval
+            && GeoPosition.HaversineDistance(inFlightPosition, current) < MinPitchRefreshDistanceMeters)
+        {
+            return false;
+        }
+
+        if (lastFetchPosition is null) return true;
+        if ((nowUtc - lastFetchAtUtc) >= PitchRefreshInterval) return true;
+
+        var moved = GeoPosition.HaversineDistance(lastFetchPosition, current);
+        return moved >= MinPitchRefreshDistanceMeters;
     }
 
     private static MapBasemapMode ResolveBasemapMode(IConfiguration configuration, Uri uri)
@@ -1258,6 +1293,7 @@
             {
                 _mapDiagnosticsModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/map-diagnostics.module.js");
                 await _mapDiagnosticsModule.InvokeVoidAsync("startMapDiagnosticsCapture");
+                await MarkMapTimingAsync("component-first-render");
             }
 
             GeolocationService.PositionChanged += OnPositionChanged;
@@ -1271,11 +1307,14 @@
             {
                 try
                 {
+                    await MarkMapTimingAsync("gps-watch-start");
                     await GeolocationService.StartWatchAsync();
+                    await MarkMapTimingAsync("gps-watch-started");
                 }
                 catch
                 {
                     _statusMessage = "GPS unavailable. Showing pitches near London.";
+                    await MarkMapTimingAsync("gps-watch-unavailable");
                     StateHasChanged();
                 }
             }
@@ -1348,7 +1387,7 @@
                 }
 
                 await RefreshGameProgress();
-                await LoadPitchMarkersAsync(position?.Latitude ?? _latitude, position?.Longitude ?? _longitude);
+                await LoadPitchMarkersAsync(position?.Latitude ?? _latitude, position?.Longitude ?? _longitude, "shared-recruitment");
             });
         }
         catch (Exception ex)
@@ -1360,6 +1399,7 @@
     private async Task OnViewInitializedAsync()
     {
         _viewReady = true;
+        await MarkMapTimingAsync("view-initialized");
         Logger.LogInformation("MapView initialized");
         _ = CaptureMapDiagnosticsAfterDelayAsync("view-initialized", TimeSpan.FromSeconds(1));
 
@@ -1383,6 +1423,7 @@
         }
 
         _initialLayerSyncStarted = true;
+        await MarkMapTimingAsync("view-rendered");
         Logger.LogInformation("MapView rendered, syncing initial graphics layers");
         _ = CaptureMapDiagnosticsAfterDelayAsync("view-rendered", TimeSpan.FromSeconds(1));
 
@@ -1393,7 +1434,50 @@
         }
         if (_enableGameGraphics)
         {
-            await LoadPitchMarkersAsync(_latitude, _longitude);
+            await LoadInitialPitchMarkersAsync();
+        }
+    }
+
+    private async Task LoadInitialPitchMarkersAsync()
+    {
+        if (_isDisposing)
+        {
+            return;
+        }
+
+        _initialMapDataLoadPending = true;
+        _positionReceivedDuringInitialMapDataLoad = null;
+
+        try
+        {
+            if (ShouldWaitForInitialGpsPosition(_enableAutoGpsWatch, _lastKnownPosition))
+            {
+                await MarkMapTimingAsync("initial-map-gps-wait-start", new { delayMs = (int)InitialMapGpsCoalesceDelay.TotalMilliseconds });
+                try
+                {
+                    await Task.Delay(InitialMapGpsCoalesceDelay, _diagnosticsCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                await MarkMapTimingAsync("initial-map-gps-wait-end", new { hasPosition = _lastKnownPosition is not null });
+            }
+
+            var initialPosition = _lastKnownPosition ?? new GeoPosition { Latitude = _latitude, Longitude = _longitude };
+            await LoadPitchMarkersAsync(initialPosition.Latitude, initialPosition.Longitude, "initial");
+        }
+        finally
+        {
+            _initialMapDataLoadPending = false;
+        }
+
+        var pendingPosition = _positionReceivedDuringInitialMapDataLoad;
+        _positionReceivedDuringInitialMapDataLoad = null;
+        if (!_isDisposing && pendingPosition is not null && ShouldRefreshPitches(pendingPosition))
+        {
+            await LoadPitchMarkersAsync(pendingPosition.Latitude, pendingPosition.Longitude, "gps-after-initial");
         }
     }
 
@@ -1434,6 +1518,48 @@
         }
     }
 
+    private async Task MarkMapTimingAsync(string name, object? detail = null)
+    {
+        if (_isDisposing || !_enableMapDiagnostics || _mapDiagnosticsModule is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _mapDiagnosticsModule.InvokeVoidAsync("markMapTiming", name, detail);
+        }
+        catch (Exception ex)
+        {
+            if (IsExpectedMapDiagnosticsDisposal(ex))
+            {
+                return;
+            }
+
+            Logger.LogDebug(ex, "Map timing mark failed for {Name}", name);
+        }
+    }
+
+    private async Task<T> TimedMapDataCallAsync<T>(string step, string reason, Func<Task<T>> action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        _ = MarkMapTimingAsync($"{step}-api-start", new { reason });
+        try
+        {
+            return await action();
+        }
+        finally
+        {
+            stopwatch.Stop();
+            Logger.LogInformation(
+                "MapPerf {Step} completed in {DurationMs} ms for {Reason}",
+                step,
+                stopwatch.ElapsedMilliseconds,
+                reason);
+            _ = MarkMapTimingAsync($"{step}-api-end", new { reason, durationMs = stopwatch.ElapsedMilliseconds });
+        }
+    }
+
     private async void OnPositionChanged(GeoPosition pos)
     {
         if (_isDisposing)
@@ -1464,9 +1590,13 @@
                 _homeLongitude = pos.Longitude;
             }
 
-            if (_enableGameGraphics && ShouldRefreshPitches(pos))
+            if (_initialMapDataLoadPending)
             {
-                await LoadPitchMarkersAsync(pos.Latitude, pos.Longitude);
+                _positionReceivedDuringInitialMapDataLoad = pos;
+            }
+            else if (_enableGameGraphics && ShouldRefreshPitches(pos))
+            {
+                await LoadPitchMarkersAsync(pos.Latitude, pos.Longitude, "gps");
             }
 
             if (_isAuthenticated)
@@ -1530,40 +1660,44 @@
         }
     }
 
-    private async Task LoadPitchMarkersAsync(double lat, double lng)
+    private async Task LoadPitchMarkersAsync(double lat, double lng, string reason = "refresh")
     {
         if (_isDisposing || !_enableGameGraphics || !_viewRendered || _mapView is null)
             return;
 
+        var requestId = ++_pitchMarkerLoadRequestId;
+        _pitchMarkerLoadInFlightPosition = new GeoPosition { Latitude = lat, Longitude = lng };
+        _pitchMarkerLoadStartedAtUtc = DateTime.UtcNow;
+        var loadStopwatch = Stopwatch.StartNew();
+        await MarkMapTimingAsync("map-data-load-start", new { reason, lat, lng });
+
         try
         {
-            var pitches = await ApiClient.GetNearbyPitchesAsync(lat, lng, BrowseRadiusMeters);
+            var pitchesTask = TimedMapDataCallAsync(
+                "pitches",
+                reason,
+                () => ApiClient.GetNearbyPitchesAsync(lat, lng, BrowseRadiusMeters));
+            var encountersTask = _isAuthenticated
+                ? TimedMapDataCallAsync(
+                    "encounters",
+                    reason,
+                    () => ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters))
+                : Task.FromResult(new List<PlayerEncounterDto>());
+
+            await Task.WhenAll(pitchesTask, encountersTask);
+            if (_isDisposing || requestId != _pitchMarkerLoadRequestId) return;
+
+            var pitches = await pitchesTask;
+            var encounters = await encountersTask;
             if (_isDisposing) return;
 
             Dispatcher.Dispatch(new SetPitchesAction(pitches.AsReadOnly()));
             await UpdatePitchGraphicsAsync(pitches);
-            if (_isDisposing) return;
+            await MarkMapTimingAsync("pitch-graphics-synced", new { reason, count = pitches.Count });
+            if (_isDisposing || requestId != _pitchMarkerLoadRequestId) return;
 
-            if (_showCandidatePlaces)
-            {
-                _candidatePlaces = await ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters);
-                if (_isDisposing) return;
-
-                await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
-            }
-            else
-            {
-                _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
-                _candidatePlaceGraphics.Clear();
-                await SetCandidatePlaceLayerVisibleAsync(false);
-            }
-
-            var encounters = new List<PlayerEncounterDto>();
             if (_isAuthenticated)
             {
-                encounters = await ApiClient.GetEncountersAsync(lat, lng, EncounterBrowseRadiusMeters);
-                if (_isDisposing) return;
-
                 Logger.LogInformation(
                     "Map encounters loaded: count={EncounterCount}, authenticated={Authenticated}, lat={Latitude}, lng={Longitude}, radiusMeters={RadiusMeters}",
                     encounters.Count,
@@ -1589,9 +1723,12 @@
 
             Dispatcher.Dispatch(new SetEncountersAction(encounters.AsReadOnly()));
             await UpdateEncounterGraphicsAsync(encounters);
+            await MarkMapTimingAsync("encounter-graphics-synced", new { reason, count = encounters.Count });
 
             _lastPitchFetchPosition = new GeoPosition { Latitude = lat, Longitude = lng };
             _lastPitchFetchAtUtc = DateTime.UtcNow;
+
+            ScheduleCandidatePlaceLoad(lat, lng, reason);
         }
         catch (Exception ex)
         {
@@ -1604,8 +1741,92 @@
             Logger.LogError(ex, "Failed to load pitch markers");
             _statusMessage = "Failed to load pitches. Map is still usable.";
         }
+        finally
+        {
+            loadStopwatch.Stop();
+            if (requestId == _pitchMarkerLoadRequestId)
+            {
+                _pitchMarkerLoadInFlightPosition = null;
+            }
+
+            await MarkMapTimingAsync(
+                "map-data-load-end",
+                new { reason, durationMs = loadStopwatch.ElapsedMilliseconds });
+        }
 
         if (!_isDisposing)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ScheduleCandidatePlaceLoad(double lat, double lng, string reason)
+    {
+        _candidatePlaceLoadCts?.Cancel();
+        _candidatePlaceLoadCts?.Dispose();
+        _candidatePlaceLoadCts = null;
+
+        if (!_showCandidatePlaces || _isDisposing || !_enableGameGraphics || !_viewRendered)
+        {
+            _candidatePlaces = Array.Empty<PitchCandidatePlaceDto>();
+            _ = ClearCandidatePlaceGraphicsAsync();
+            return;
+        }
+
+        _candidatePlaceLoadCts = CancellationTokenSource.CreateLinkedTokenSource(_diagnosticsCts.Token);
+        var token = _candidatePlaceLoadCts.Token;
+        _ = LoadCandidatePlacesAfterDelayAsync(lat, lng, reason, token);
+    }
+
+    private async Task LoadCandidatePlacesAfterDelayAsync(double lat, double lng, string reason, CancellationToken token)
+    {
+        await MarkMapTimingAsync(
+            "candidate-places-deferred",
+            new { reason, delayMs = (int)CandidatePlaceDeferredLoadDelay.TotalMilliseconds });
+
+        try
+        {
+            await Task.Delay(CandidatePlaceDeferredLoadDelay, token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_isDisposing || token.IsCancellationRequested)
+        {
+            return;
+        }
+
+        await LoadCandidatePlacesAsync(lat, lng, reason, token);
+    }
+
+    private async Task LoadCandidatePlacesAsync(double lat, double lng, string reason, CancellationToken token)
+    {
+        try
+        {
+            var candidates = await TimedMapDataCallAsync(
+                "candidate-places",
+                reason,
+                () => ApiClient.GetPitchCandidatePlacesAsync(lat, lng, BrowseRadiusMeters));
+            if (_isDisposing || token.IsCancellationRequested) return;
+
+            _candidatePlaces = candidates;
+            await UpdateCandidatePlaceGraphicsAsync(_candidatePlaces);
+            await MarkMapTimingAsync("candidate-place-graphics-synced", new { reason, count = candidates.Count });
+        }
+        catch (Exception ex)
+        {
+            if (IsExpectedGeoBlazorCancellation(ex) || token.IsCancellationRequested)
+            {
+                Logger.LogDebug(ex, "Candidate place load cancelled during map lifecycle transition");
+                return;
+            }
+
+            Logger.LogWarning(ex, "Failed to load candidate places");
+        }
+
+        if (!_isDisposing && !token.IsCancellationRequested)
         {
             await InvokeAsync(StateHasChanged);
         }
@@ -2926,7 +3147,7 @@
                 _recruitToastMessage = $"{result.Message} +25 XP";
                 _recruitToastClass = "success";
                 await RefreshGameProgress();
-                await LoadPitchMarkersAsync(_lastKnownPosition?.Latitude ?? _latitude, _lastKnownPosition?.Longitude ?? _longitude);
+                await LoadPitchMarkersAsync(_lastKnownPosition?.Latitude ?? _latitude, _lastKnownPosition?.Longitude ?? _longitude, "recruitment");
                 Dispatcher.Dispatch(new ClearSelectionAction());
             }
             else
@@ -2995,11 +3216,13 @@
 
     private bool ShouldRefreshPitches(GeoPosition current)
     {
-        if (_lastPitchFetchPosition is null) return true;
-        if ((DateTime.UtcNow - _lastPitchFetchAtUtc) >= PitchRefreshInterval) return true;
-
-        var moved = GeoPosition.HaversineDistance(_lastPitchFetchPosition, current);
-        return moved >= MinPitchRefreshDistanceMeters;
+        return ShouldRefreshPitchesForState(
+            current,
+            _lastPitchFetchPosition,
+            _lastPitchFetchAtUtc,
+            DateTime.UtcNow,
+            _pitchMarkerLoadInFlightPosition,
+            _pitchMarkerLoadStartedAtUtc);
     }
 
     private int CandidatePlaceCount => _showCandidatePlaces ? _candidatePlaceGraphics.Count : 0;
@@ -3096,6 +3319,12 @@
         _isDisposing = true;
         await _diagnosticsCts.CancelAsync();
         await _spotlightClockCts.CancelAsync();
+        if (_candidatePlaceLoadCts is not null)
+        {
+            await _candidatePlaceLoadCts.CancelAsync();
+            _candidatePlaceLoadCts.Dispose();
+            _candidatePlaceLoadCts = null;
+        }
 
         if (_subscriptionsActive)
         {

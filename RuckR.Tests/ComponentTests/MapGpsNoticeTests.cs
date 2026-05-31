@@ -376,6 +376,44 @@ public class MapGpsNoticeTests
         Assert.Equal(MapPage.MapBasemapMode.Empty, options.BasemapMode);
     }
 
+    /// <summary>
+    /// Verifies first map load waits briefly for GPS before falling back to the default map center.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, false)]
+    public void ShouldWaitForInitialGpsPosition_OnlyWaitsWhenAutoGpsNeedsFirstPosition(
+        bool enableAutoGpsWatch,
+        bool hasLastKnownPosition,
+        bool expected)
+    {
+        var position = hasLastKnownPosition
+            ? new GeoPosition { Latitude = 51.5074, Longitude = -0.1278 }
+            : null;
+
+        Assert.Equal(expected, MapPage.ShouldWaitForInitialGpsPosition(enableAutoGpsWatch, position));
+    }
+
+    /// <summary>
+    /// Verifies a nearby in-flight map data load suppresses duplicate GPS-triggered refreshes.
+    /// </summary>
+    [Fact]
+    public void ShouldRefreshPitchesForState_SuppressesNearbyInFlightLoad()
+    {
+        var now = new DateTime(2026, 5, 31, 12, 0, 0, DateTimeKind.Utc);
+        var current = new GeoPosition { Latitude = 51.5074, Longitude = -0.1278 };
+        var inFlight = new GeoPosition { Latitude = 51.50741, Longitude = -0.12781 };
+
+        Assert.False(MapPage.ShouldRefreshPitchesForState(
+            current,
+            lastFetchPosition: null,
+            lastFetchAtUtc: now.AddMinutes(-5),
+            nowUtc: now,
+            inFlightPosition: inFlight,
+            inFlightStartedAtUtc: now.AddSeconds(-1)));
+    }
+
     private static IConfiguration BuildConfiguration(Dictionary<string, string?>? values = null)
     {
         return new ConfigurationBuilder()

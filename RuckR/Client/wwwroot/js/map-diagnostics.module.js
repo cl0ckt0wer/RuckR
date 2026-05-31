@@ -1,4 +1,5 @@
 const recentConsole = [];
+const mapTimingPrefix = 'ruckr-map:';
 let consoleCaptureStarted = false;
 let originalConsoleWarn;
 let originalConsoleError;
@@ -48,6 +49,46 @@ export function stopMapDiagnosticsCapture() {
     console.warn = originalConsoleWarn;
     console.error = originalConsoleError;
     consoleCaptureStarted = false;
+}
+
+export function markMapTiming(name, detail = null) {
+    if (!name || typeof performance === 'undefined' || typeof performance.mark !== 'function') {
+        return;
+    }
+
+    const markName = `${mapTimingPrefix}${name}`;
+    try {
+        performance.mark(markName, detail === null ? undefined : { detail });
+    } catch {
+        performance.mark(markName);
+    }
+}
+
+function mapTimingSummary() {
+    if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+        return {
+            marks: [],
+            measures: []
+        };
+    }
+
+    const mapEntry = entry => ({
+        name: entry.name.replace(mapTimingPrefix, ''),
+        startTime: Math.round(entry.startTime),
+        duration: Math.round(entry.duration ?? 0),
+        detail: entry.detail ?? null
+    });
+
+    return {
+        marks: performance.getEntriesByType('mark')
+            .filter(entry => entry.name.startsWith(mapTimingPrefix))
+            .slice(-40)
+            .map(mapEntry),
+        measures: performance.getEntriesByType('measure')
+            .filter(entry => entry.name.startsWith(mapTimingPrefix))
+            .slice(-20)
+            .map(mapEntry)
+    };
 }
 
 function rectOf(element) {
@@ -467,6 +508,7 @@ export function collectMapDiagnostics(reason) {
                     transferSize: entry.transferSize
                 }))
         },
+        timings: mapTimingSummary(),
         visual: {
             surface: surfaceSummary(),
             canvas: readCanvasElementSummary(),

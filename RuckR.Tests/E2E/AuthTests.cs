@@ -127,6 +127,40 @@ public class AuthTests : IClassFixture<PlaywrightFixture>, IAsyncLifetime
     }
 
     /// <summary>
+    /// Verifies invalid login attempts show the generic Identity error and do not authenticate.
+    /// </summary>
+    /// <param name="userExists">Whether the submitted username exists.</param>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Login_InvalidCredentials_ShowsGenericErrorAndDoesNotAuthenticate(bool userExists)
+    {
+        var username = userExists
+            ? $"wrongpassword_{Guid.NewGuid():N}@test.com"
+            : $"missing_{Guid.NewGuid():N}@test.com";
+        var validPassword = "TestPass123!";
+        if (userExists)
+            await _factory.CreateTestUserAsync(username, validPassword);
+
+        var loginPage = new LoginPage(_page, _baseUrl);
+        await loginPage.GoToAsync();
+        await loginPage.LoginAsync(username, userExists ? "WrongPass123!" : validPassword);
+
+        Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
+        Assert.True(await loginPage.HasErrorAsync(), "Invalid credentials should show a validation summary.");
+        var errorMessage = await loginPage.GetErrorMessageAsync();
+        Assert.Contains("Invalid login attempt", errorMessage, StringComparison.OrdinalIgnoreCase);
+
+        await _page.GotoAsync($"{_baseUrl.TrimEnd('/')}/collection");
+        await _page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await _page.WaitForURLAsync(
+            url => url.Contains("/Identity/Account/Login", StringComparison.OrdinalIgnoreCase),
+            new PageWaitForURLOptions { Timeout = 30_000 });
+
+        Assert.Contains("/Identity/Account/Login", _page.Url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Verifies anonymous app routes redirect to login.
     /// </summary>
     /// <param name="path">The client route to request.</param>
