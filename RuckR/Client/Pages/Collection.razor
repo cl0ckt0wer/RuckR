@@ -83,12 +83,12 @@
                         <MudPaper Elevation="1" Class="@CollectionCardClass(isExpanded)" data-testid="collection-card">
                             <MudStack Spacing="2">
                                 <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
-                                    <div role="button" @onclick="() => ToggleExpand(item.Id)" class="collection-card__title">
-                                        <MudText Typo="Typo.h6" data-testid="collection-player-name">@player.Name</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    <button type="button" @onclick="() => ToggleExpand(item.Id)" class="collection-card__title">
+                                        <span class="collection-card__title-name" data-testid="collection-player-name">@player.Name</span>
+                                        <span class="collection-card__title-meta">
                                             Captured @item.CapturedAt.ToString("MMM dd, yyyy") at @pitchName
-                                        </MudText>
-                                    </div>
+                                        </span>
+                                    </button>
                                     <MudIconButton Icon="@(item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
                                                    Color="@(item.IsFavorite ? Color.Warning : Color.Default)"
                                                    OnClick="() => ToggleFavoriteAsync(item)"
@@ -325,7 +325,26 @@
 
     .collection-card__title {
         min-width: 0;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: inherit;
         cursor: pointer;
+        text-align: left;
+    }
+
+    .collection-card__title-name {
+        display: block;
+        font-size: 1.25rem;
+        font-weight: 500;
+        line-height: 1.6;
+    }
+
+    .collection-card__title-meta {
+        display: block;
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.75rem;
+        line-height: 1.66;
     }
 
     .collection-card__detail {

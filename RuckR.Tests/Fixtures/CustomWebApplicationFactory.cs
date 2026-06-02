@@ -318,6 +318,17 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
             }
             return Results.Ok(string.Empty);
         });
+        _kestrelApp.MapGet("/agent-info", async (HttpContext context) =>
+        {
+            var filePath = ResolveClientStaticAssetPath(_kestrelApp.Environment, "agent-info.html");
+            if (filePath is null)
+            {
+                return Results.NotFound();
+            }
+
+            var html = await System.IO.File.ReadAllTextAsync(filePath, context.RequestAborted);
+            return Results.Content(html, "text/html; charset=utf-8");
+        });
         _kestrelApp.MapFallbackToFile("index.html");
 
         // ── Start Kestrel ──
@@ -478,12 +489,18 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
     private static string? ResolveClientAppSettingsPath(IWebHostEnvironment env, string requestPath)
     {
         var relativePath = requestPath.TrimStart('/');
+        return ResolveClientStaticAssetPath(env, relativePath);
+    }
+
+    private static string? ResolveClientStaticAssetPath(IWebHostEnvironment env, string relativePath)
+    {
         var configuration = env.IsDevelopment() ? "Debug" : "Release";
         var serverAssemblyDir = Path.GetDirectoryName(typeof(Program).Assembly.Location)!;
         var candidateRoots = new[]
         {
             env.WebRootPath,
             ResolveClientWwwrootPath(serverAssemblyDir, env.EnvironmentName),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "RuckR", "Client", "wwwroot")),
             Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "bin", configuration, "net10.0", "wwwroot")),
             Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "Client", "wwwroot"))
         };
@@ -509,6 +526,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>, IAsyn
 
         var candidates = new[]
         {
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "RuckR", "Client", "bin", configuration, "net10.0", "wwwroot")),
+            Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "RuckR", "Client", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "RuckR", "Client", "bin", configuration, "net10.0", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "RuckR", "Client", "wwwroot")),
             Path.GetFullPath(Path.Combine(serverAssemblyDir, "..", "..", "..", "..", "..", "Client", "bin", configuration, "net10.0", "wwwroot")),

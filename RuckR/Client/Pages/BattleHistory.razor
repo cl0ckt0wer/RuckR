@@ -72,18 +72,18 @@
                     <MudPaper Elevation="1" Class="@HistoryCardClass(isExpanded)" data-testid="history-item">
                         <MudStack Spacing="2">
                             <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
-                                <div role="button" @onclick="() => ToggleExpand(battle.Id)" class="history-card__summary">
-                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                                        <MudChip T="string" Color="@ResultColor(result)" Variant="Variant.Filled" data-testid="result-badge">@ResultLabel(result)</MudChip>
-                                        <MudText Typo="Typo.h6">vs @opponentDisplay</MudText>
-                                    </MudStack>
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                <button type="button" @onclick="() => ToggleExpand(battle.Id)" class="history-card__summary">
+                                    <span class="history-card__summary-head">
+                                        <span class="@ResultBadgeClass(result)" data-testid="result-badge">@ResultLabel(result)</span>
+                                        <span class="history-card__opponent">vs @opponentDisplay</span>
+                                    </span>
+                                    <span class="history-card__meta">
                                         @userPlayerDisplay vs @opponentPlayerDisplay
-                                    </MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                    </span>
+                                    <span class="history-card__time">
                                         @GetRelativeTime(battle.ResolvedAt ?? battle.CreatedAt)
-                                    </MudText>
-                                </div>
+                                    </span>
+                                </button>
                                 <MudIconButton Icon="@(isExpanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
                                                OnClick="() => ToggleExpand(battle.Id)"
                                                data-testid="expand-indicator" />
@@ -262,13 +262,13 @@
         ? "game-panel history-card history-card--expanded"
         : "game-panel history-card";
 
-    private static Color ResultColor(BattleResultDisplay result) => result switch
+    private static string ResultBadgeClass(BattleResultDisplay result) => result switch
     {
-        BattleResultDisplay.Victory => Color.Success,
-        BattleResultDisplay.Defeat => Color.Error,
-        BattleResultDisplay.Expired => Color.Secondary,
-        BattleResultDisplay.Declined => Color.Secondary,
-        _ => Color.Dark
+        BattleResultDisplay.Victory => "history-card__result-badge history-card__result-badge--victory",
+        BattleResultDisplay.Defeat => "history-card__result-badge history-card__result-badge--defeat",
+        BattleResultDisplay.Expired => "history-card__result-badge history-card__result-badge--muted",
+        BattleResultDisplay.Declined => "history-card__result-badge history-card__result-badge--muted",
+        _ => "history-card__result-badge"
     };
 
     private static string ResultLabel(BattleResultDisplay result) => result switch
@@ -332,7 +332,65 @@
 
     .history-card__summary {
         min-width: 0;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: inherit;
         cursor: pointer;
+        text-align: left;
+    }
+
+    .history-card__summary-head {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .history-card__result-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.25rem 0.65rem;
+        background: #374151;
+        color: #fff;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        line-height: 1.5;
+    }
+
+    .history-card__result-badge--victory {
+        background: #2e7d32;
+    }
+
+    .history-card__result-badge--defeat {
+        background: #c62828;
+    }
+
+    .history-card__result-badge--muted {
+        background: #64748b;
+    }
+
+    .history-card__opponent {
+        font-size: 1.25rem;
+        font-weight: 500;
+        line-height: 1.6;
+    }
+
+    .history-card__meta,
+    .history-card__time {
+        display: block;
+        color: var(--mud-palette-text-secondary);
+    }
+
+    .history-card__meta {
+        font-size: 0.875rem;
+        line-height: 1.43;
+    }
+
+    .history-card__time {
+        font-size: 0.75rem;
+        line-height: 1.66;
     }
 
     .history-card__detail {

@@ -4,9 +4,13 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="description" content="Explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players in this location-based PVP game." />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval' 'unsafe-inline' https://js.arcgis.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; connect-src 'self' wss: https:; font-src 'self' data: https://js.arcgis.com; base-uri 'self'; form-action 'self';" />
     <title>RuckR</title>
     <base href="/" />
+    <link rel="canonical" href="https://ruckr.exe.xyz/" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
+    <link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt" />
     <link href="css/bootstrap/bootstrap.min.css" rel="stylesheet" />
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
@@ -18,9 +22,38 @@
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
     <script type="importmap"></script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "name": "RuckR",
+          "url": "https://ruckr.exe.xyz/",
+          "description": "RuckR is a rugby-themed, location-based creature collector."
+        },
+        {
+          "@type": "VideoGame",
+          "name": "RuckR",
+          "url": "https://ruckr.exe.xyz/",
+          "description": "Explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players in a location-based PVP game.",
+          "genre": ["Location-based game", "Sports game", "Creature collector"],
+          "applicationCategory": "Game"
+        }
+      ]
+    }
+    </script>
 </head>
 
 <body>
+    <noscript>
+        <main>
+            <h1>RuckR</h1>
+            <p>RuckR is a rugby-themed, location-based creature collector. The interactive game requires JavaScript and an authenticated player session for most gameplay features.</p>
+            <p><a href="/agent-info">Read the public agent information page.</a></p>
+        </main>
+    </noscript>
+
     <div id="app">
         <svg class="loading-progress">
             <circle r="40%" cx="50%" cy="50%" />

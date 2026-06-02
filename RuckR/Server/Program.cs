@@ -481,6 +481,18 @@ app.MapGet("/Identity/Account/UserInfo", async (HttpContext context) =>
     return Results.Ok(string.Empty);
 });
 
+app.MapGet("/agent-info", async (HttpContext context) =>
+{
+    var filePath = ResolveClientStaticAssetPath(app.Environment, "agent-info.html");
+    if (filePath is null)
+    {
+        return Results.NotFound();
+    }
+
+    var html = await System.IO.File.ReadAllTextAsync(filePath, context.RequestAborted);
+    return Results.Content(html, "text/html; charset=utf-8");
+});
+
 app.MapFallbackToFile("index.html");
 
 // Apply EF Core migrations, then seed data on startup.

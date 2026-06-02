@@ -32,6 +32,8 @@
 @inject IState<LocationState> LocationState
 @implements IAsyncDisposable
 
+<h1 class="visually-hidden">RuckR map</h1>
+
 <div class="map-shell @MapShellModeClass @(HasRecruitUi ? "map-shell--recruit-ui" : null)" data-testid="map-container">
     @if (!_hasApiKey)
     {

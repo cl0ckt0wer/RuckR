@@ -1,0 +1,21 @@
+# RuckR
+
+RuckR is a rugby-themed, location-based creature collector. Players explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players.
+
+## Public entry points
+
+- Home app: https://ruckr.exe.xyz/
+- Agent-readable overview: https://ruckr.exe.xyz/agent-info
+- Sitemap: https://ruckr.exe.xyz/sitemap.xml
+
+## Agent guidance
+
+- V1 does not expose an agent action API, OpenAPI document, or MCP server.
+- Most gameplay pages require an authenticated user session.
+- Do not attempt GPS, recruitment, pitch creation, battle, profile, avatar, privacy, or account actions without explicit user intent and authentication.
+- Do not call `/api/`, `/Identity/`, `/jaeger/`, `/debug-map`, or `/debug-layers` for discovery.
+- Public discovery pages must not trigger ArcGIS Places, GPS, battle, recruitment, or authenticated API calls.
+
+## Useful public summary
+
+Use `/agent-info` for a text-first description of the product, public boundaries, and sensitive surfaces.

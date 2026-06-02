@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="RuckR is a rugby-themed, location-based creature collector where players explore the real world, discover pitches, collect rugby player creatures, and battle other players." />
+    <link rel="canonical" href="https://ruckr.exe.xyz/agent-info" />
+    <title>RuckR Agent Information</title>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "name": "RuckR",
+          "url": "https://ruckr.exe.xyz/",
+          "description": "RuckR is a rugby-themed, location-based creature collector."
+        },
+        {
+          "@type": "VideoGame",
+          "name": "RuckR",
+          "url": "https://ruckr.exe.xyz/",
+          "description": "Explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players in a location-based PVP game.",
+          "genre": ["Location-based game", "Sports game", "Creature collector"],
+          "applicationCategory": "Game"
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <main>
+        <h1>RuckR Agent Information</h1>
+        <p>RuckR is a rugby-themed, location-based creature collector. Players explore the real world, discover rugby pitches, collect rugby player creatures, and battle other players.</p>
+
+        <h2>Public Pages</h2>
+        <ul>
+            <li><a href="https://ruckr.exe.xyz/">RuckR app shell</a></li>
+            <li><a href="https://ruckr.exe.xyz/llms.txt">LLM guidance</a></li>
+            <li><a href="https://ruckr.exe.xyz/sitemap.xml">Sitemap</a></li>
+        </ul>
+
+        <h2>Authentication Boundaries</h2>
+        <p>Most gameplay pages and API routes require an authenticated player session. Public discovery should use this page, the home URL, the sitemap, and llms.txt.</p>
+
+        <h2>Sensitive Actions</h2>
+        <p>GPS, recruitment, pitch creation, battle, profile, avatar, privacy, and account actions are user-sensitive. Agents should not perform those actions unless the user explicitly asks and authentication is available.</p>
+
+        <h2>Agent Action API</h2>
+        <p>RuckR Agent Discoverability V1 does not expose an OpenAPI document, MCP server, or other agent action API. This page is informational only.</p>
+    </main>
+</body>
+</html>

@@ -1,0 +1,28 @@
+User-agent: GPTBot
+Disallow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+Disallow: /Identity/
+Disallow: /jaeger/
+Disallow: /debug-map
+Disallow: /debug-layers
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /api/
+Disallow: /Identity/
+Disallow: /jaeger/
+Disallow: /debug-map
+Disallow: /debug-layers
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /Identity/
+Disallow: /jaeger/
+Disallow: /debug-map
+Disallow: /debug-layers
+
+Sitemap: https://ruckr.exe.xyz/sitemap.xml
