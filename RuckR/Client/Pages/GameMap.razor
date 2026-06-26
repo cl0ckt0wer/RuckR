@@ -691,7 +691,7 @@
          color: #fff;
          z-index: 10;
      }
-     .map-overlay--encounter {
+     .map-overlay.map-overlay--encounter {
           --encounter-accent: #15803d;
           --encounter-accent-strong: #166534;
           --encounter-accent-soft: #e8f7ee;
@@ -700,6 +700,8 @@
           --encounter-ink: #0f172a;
           --encounter-surface: #ffffff;
           --encounter-wash: #f8fafc;
+          height: auto;
+          max-height: calc(100dvh - 2rem);
           max-width: 420px;
           overflow: hidden auto;
           border-color: rgba(15,23,42,0.14);
@@ -1065,6 +1067,9 @@
              bottom: max(0.75rem, env(safe-area-inset-bottom));
              max-height: min(58dvh, 31rem);
              overflow-y: auto;
+         }
+         .map-overlay.map-overlay--encounter {
+             max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
          }
          .encounter-radar__target,
          .map-overlay button {
