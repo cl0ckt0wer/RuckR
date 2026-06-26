@@ -338,97 +338,101 @@
 @if (_selectedEncounter is not null && _showRecruitBoard)
 {
     <MudPaper Elevation="4" Class="@EncounterOverlayClass(_selectedEncounter)" data-testid="encounter-overlay">
-        <MudStack Spacing="2">
-            <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
-                <div>
-                    <MudText Typo="Typo.overline" Class="encounter-card__eyebrow" data-testid="encounter-kicker">
-                        @(IsSpotlightEncounter(_selectedEncounter) ? "Rare sighting" : EncounterParkName(_selectedEncounter))
-                    </MudText>
-                    <MudText Typo="Typo.h6" data-testid="encounter-name">@_selectedEncounter.Name</MudText>
-                </div>
-                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" Color="Color.Inherit" data-testid="encounter-close" OnClick="ClearEncounterSelection" aria-label="Close" />
-            </MudStack>
-            <MudChipSet T="string">
-                <MudChip T="string" Color="@EncounterRarityColor(_selectedEncounter.Rarity)" Variant="Variant.Filled">@_selectedEncounter.Rarity</MudChip>
-                <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined">Level @_selectedEncounter.Level</MudChip>
-                <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined">@_selectedEncounter.Position</MudChip>
-                <MudChip T="string" Color="@(IsSpotlightEncounter(_selectedEncounter) ? Color.Warning : Color.Info)" Variant="Variant.Filled" data-testid="spotlight-timer">@EncounterExpiresText(_selectedEncounter)</MudChip>
-            </MudChipSet>
+        <div class="encounter-card__header">
+            <div class="encounter-card__identity">
+                <MudText Typo="Typo.overline" Class="encounter-card__eyebrow" data-testid="encounter-kicker">
+                    @(IsSpotlightEncounter(_selectedEncounter) ? "Rare sighting" : EncounterParkName(_selectedEncounter))
+                </MudText>
+                <MudText Typo="Typo.h6" Class="encounter-card__name" data-testid="encounter-name">@_selectedEncounter.Name</MudText>
+            </div>
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Class="encounter-card__close" Size="Size.Small" Color="Color.Default" data-testid="encounter-close" OnClick="ClearEncounterSelection" aria-label="Close" />
+        </div>
+        <div class="encounter-card__badges">
+            <MudChip T="string" Color="@EncounterRarityColor(_selectedEncounter.Rarity)" Variant="Variant.Filled" Size="Size.Small">@_selectedEncounter.Rarity</MudChip>
+            <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small">Level @_selectedEncounter.Level</MudChip>
+            <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">@_selectedEncounter.Position</MudChip>
+            <MudChip T="string" Color="@(IsSpotlightEncounter(_selectedEncounter) ? Color.Warning : Color.Info)" Variant="Variant.Filled" Size="Size.Small" Class="spotlight-timer" data-testid="spotlight-timer">@EncounterExpiresText(_selectedEncounter)</MudChip>
+        </div>
         @if (IsSpotlightEncounter(_selectedEncounter))
         {
             <MudText Typo="Typo.body2" Class="encounter-card__spotlight-copy" data-testid="spotlight-copy">
                 Last chance at @EncounterParkName(_selectedEncounter). Close the distance and recruit before the bell.
             </MudText>
         }
-        <div class="encounter-card__route mb-2">
+        <div class="encounter-card__route">
             <span>@EncounterDistanceText(_selectedEncounter)</span>
             <strong>@EncounterRouteInstruction(_selectedEncounter)</strong>
         </div>
-        <div class="encounter-card__state mb-2 encounter-card__state--@RecruitStateCssClass" data-testid="spotlight-recruit-state">
-            @RecruitStateLabel
-        </div>
-        <div class="encounter-card__meta mb-2" data-testid="recruit-shared-state">
-            <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">@RecruitParticipantText</MudChip>
-            @if (RecruitGroupItemText is not null)
-            {
-                <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@RecruitGroupItemText</MudChip>
-            }
-            @if (CurrentUserJoinedRecruitment)
-            {
-                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">Joined</MudChip>
-            }
-        </div>
-        <div class="encounter-card__chance mb-3"
-             role="timer"
-             aria-label="Recruitment time needed"
-             data-testid="recruit-time-needed">
-            <div style="width:@RecruitTimeProgressPercent%"></div>
-            <span>@RecruitTimerText</span>
-        </div>
-        <MudSelect T="RecruitmentItemKind"
-                   Label="Use item"
-                   Variant="Variant.Outlined"
-                   Dense="true"
-                   Disabled="@(!CanChooseRecruitmentItem)"
-                   @bind-Value="_selectedRecruitItem"
-                   data-testid="recruit-item-picker">
-            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.None">No item @RecruitItemCountText(RecruitmentItemKind.None)</MudSelectItem>
-            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Chips">Chips @RecruitItemCountText(RecruitmentItemKind.Chips)</MudSelectItem>
-            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Beer">Beer @RecruitItemCountText(RecruitmentItemKind.Beer)</MudSelectItem>
-            <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Whiskey">Whiskey @RecruitItemCountText(RecruitmentItemKind.Whiskey)</MudSelectItem>
-        </MudSelect>
-        @if (_activeRecruitment?.Boosts is { Count: > 0 } boosts)
-        {
-            <div class="encounter-card__boosts mb-3" data-testid="recruit-boosts">
-                @foreach (var boost in boosts)
+        <div class="encounter-card__status-panel">
+            <div class="encounter-card__state encounter-card__state--@RecruitStateCssClass" data-testid="spotlight-recruit-state">
+                @RecruitStateLabel
+            </div>
+            <div class="encounter-card__meta" data-testid="recruit-shared-state">
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">@RecruitParticipantText</MudChip>
+                @if (RecruitGroupItemText is not null)
                 {
-                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@boost.Label</MudChip>
+                    <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@RecruitGroupItemText</MudChip>
+                }
+                @if (CurrentUserJoinedRecruitment)
+                {
+                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">Joined</MudChip>
                 }
             </div>
-        }
-        <MudButton Variant="Variant.Filled"
-                   Color="@RecruitButtonColor"
-                   StartIcon="@Icons.Material.Filled.PersonAdd"
-                   FullWidth="true"
-                   Disabled="@(!_canRecruit)"
-                   title="@_recruitBlockedReason"
-                   OnClick="AttemptRecruitment"
-                   data-testid="recruit-btn">
-            @(_isRecruiting ? "Recruiting..." : RecruitButtonText)
-        </MudButton>
-        @if (!_canRecruit)
-        {
-            <MudText Typo="Typo.caption" Color="Color.Warning">@_recruitBlockedReason</MudText>
-        }
-        @if (GpsActionHint is not null)
-        {
-            <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="recruit-gps-hint">@GpsActionHint</MudText>
-        }
-        @if (_recruitMessage is not null)
-        {
-            <MudAlert Severity="@RecruitMessageSeverity" Dense="true">@_recruitMessage</MudAlert>
-        }
-        </MudStack>
+            <div class="encounter-card__chance"
+                 role="timer"
+                 aria-label="Recruitment time needed"
+                 data-testid="recruit-time-needed">
+                <div style="width:@RecruitTimeProgressPercent%"></div>
+                <span>@RecruitTimerText</span>
+            </div>
+        </div>
+        <div class="encounter-card__action-panel">
+            <MudSelect T="RecruitmentItemKind"
+                       Label="Use item"
+                       Variant="Variant.Outlined"
+                       Dense="true"
+                       Disabled="@(!CanChooseRecruitmentItem)"
+                       Class="encounter-card__item-picker"
+                       @bind-Value="_selectedRecruitItem"
+                       data-testid="recruit-item-picker">
+                <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.None">No item @RecruitItemCountText(RecruitmentItemKind.None)</MudSelectItem>
+                <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Chips">Chips @RecruitItemCountText(RecruitmentItemKind.Chips)</MudSelectItem>
+                <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Beer">Beer @RecruitItemCountText(RecruitmentItemKind.Beer)</MudSelectItem>
+                <MudSelectItem T="RecruitmentItemKind" Value="@RecruitmentItemKind.Whiskey">Whiskey @RecruitItemCountText(RecruitmentItemKind.Whiskey)</MudSelectItem>
+            </MudSelect>
+            @if (_activeRecruitment?.Boosts is { Count: > 0 } boosts)
+            {
+                <div class="encounter-card__boosts" data-testid="recruit-boosts">
+                    @foreach (var boost in boosts)
+                    {
+                        <MudChip T="string" Color="Color.Success" Variant="Variant.Outlined" Size="Size.Small">@boost.Label</MudChip>
+                    }
+                </div>
+            }
+            <MudButton Variant="Variant.Filled"
+                       Color="@RecruitButtonColor"
+                       StartIcon="@Icons.Material.Filled.PersonAdd"
+                       FullWidth="true"
+                       Disabled="@(!_canRecruit)"
+                       Class="encounter-card__cta"
+                       title="@_recruitBlockedReason"
+                       OnClick="AttemptRecruitment"
+                       data-testid="recruit-btn">
+                @(_isRecruiting ? "Recruiting..." : RecruitButtonText)
+            </MudButton>
+            @if (!_canRecruit)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning">@_recruitBlockedReason</MudText>
+            }
+            @if (GpsActionHint is not null)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" data-testid="recruit-gps-hint">@GpsActionHint</MudText>
+            }
+            @if (_recruitMessage is not null)
+            {
+                <MudAlert Severity="@RecruitMessageSeverity" Dense="true">@_recruitMessage</MudAlert>
+            }
+        </div>
     </MudPaper>
 }
 
@@ -688,124 +692,214 @@
          z-index: 10;
      }
      .map-overlay--encounter {
-         border-color: rgba(74,222,128,0.4);
-     }
-     .map-overlay--spotlight {
-         border-color: rgba(244,201,93,0.72);
-         background:
-             linear-gradient(180deg, rgba(33,37,41,0.96), rgba(19,31,26,0.96));
-         box-shadow: 0 18px 44px rgba(0,0,0,0.4), inset 0 1px 0 rgba(244,201,93,0.18);
-     }
-     .encounter-card__eyebrow {
-         margin-bottom: 0.15rem;
-         font-size: 0.72rem;
-         font-weight: 800;
-         letter-spacing: 0.08em;
-         text-transform: uppercase;
-         color: rgba(187,247,208,0.8);
-     }
-     .map-overlay--spotlight .encounter-card__eyebrow {
-         color: #f4c95d;
-     }
-     .spotlight-timer {
-         background: rgba(244,201,93,0.94);
-         color: #1f2933;
-     }
-     .encounter-card__spotlight-copy {
-         margin: -0.1rem 0 0.55rem;
-         font-size: 0.82rem;
-         line-height: 1.35;
-         color: rgba(255,247,214,0.88);
-     }
-     .encounter-card__route {
-         display: grid;
-         grid-template-columns: auto 1fr;
-         align-items: center;
-         gap: 0.6rem;
-         border-radius: 0.45rem;
-         padding: 0.5rem 0.6rem;
-         background: rgba(34,197,94,0.1);
-     }
-     .encounter-card__route span {
-         color: #bbf7d0;
-         font-weight: 700;
-     }
-     .encounter-card__route strong {
-         min-width: 0;
-         font-size: 0.82rem;
-         color: rgba(248,250,252,0.9);
-     }
-     .encounter-card__state {
-         min-height: 2.75rem;
-         display: flex;
-         align-items: center;
-         border-radius: 0.45rem;
-         padding: 0.45rem 0.6rem;
-         font-size: 0.82rem;
-         font-weight: 900;
-         text-transform: uppercase;
-         letter-spacing: 0.04em;
-     }
-     .encounter-card__state--ready {
-         background: rgba(34,197,94,0.16);
-         color: #bbf7d0;
-     }
-     .encounter-card__state--weak,
-     .encounter-card__state--waiting {
-         background: rgba(244,201,93,0.14);
-         color: #fde68a;
-     }
-     .encounter-card__state--blocked,
-     .encounter-card__state--expired {
-         background: rgba(185,28,28,0.18);
-         color: #fecaca;
-     }
-     .encounter-card__chance {
-         position: relative;
-         height: 1.35rem;
-         overflow: hidden;
-         border-radius: 999px;
-         background: rgba(15,23,42,0.55);
-         border: 1px solid rgba(255,255,255,0.1);
-     }
-     .encounter-card__chance div {
-         height: 100%;
-         border-radius: inherit;
-         background: linear-gradient(90deg, #22c55e, #facc15);
-     }
-     .encounter-card__chance span {
-         position: absolute;
-         inset: 0;
-         display: flex;
-         align-items: center;
-         justify-content: center;
-         font-size: 0.75rem;
-         font-weight: 800;
-         color: #fff;
-         text-shadow: 0 1px 2px rgba(0,0,0,0.45);
-     }
-     .encounter-card__items select {
-         min-height: 44px;
-         border-color: rgba(255,255,255,0.18);
-         background-color: rgba(15,23,42,0.82);
-         color: #f8fafc;
-     }
-     .encounter-card__boosts {
-         display: flex;
-         flex-wrap: wrap;
-         gap: 0.35rem;
-     }
-     .encounter-card__boosts span {
-         display: inline-flex;
-         align-items: center;
-         min-height: 1.75rem;
-         border-radius: 999px;
-         padding: 0.2rem 0.55rem;
-         background: rgba(34,197,94,0.16);
-         color: #bbf7d0;
-         font-size: 0.75rem;
-         font-weight: 800;
-     }
+          --encounter-accent: #15803d;
+          --encounter-accent-strong: #166534;
+          --encounter-accent-soft: #e8f7ee;
+          --encounter-line: #d8e4dc;
+          --encounter-muted: #475569;
+          --encounter-ink: #0f172a;
+          --encounter-surface: #ffffff;
+          --encounter-wash: #f8fafc;
+          max-width: 420px;
+          overflow: hidden auto;
+          border-color: rgba(15,23,42,0.14);
+          border-radius: 0.55rem;
+          padding: 0;
+          background: var(--encounter-wash);
+          color: var(--encounter-ink);
+          box-shadow: 0 18px 42px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08);
+      }
+      .map-overlay--encounter::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 0.28rem;
+          background: linear-gradient(90deg, var(--encounter-accent), #f4c95d);
+      }
+      .map-overlay--spotlight {
+          --encounter-accent: #b7791f;
+          --encounter-accent-strong: #92400e;
+          --encounter-accent-soft: #fff7dc;
+          --encounter-line: #f3dba2;
+          --encounter-wash: #fffaf0;
+          border-color: rgba(183,121,31,0.34);
+          box-shadow: 0 20px 48px rgba(120,75,12,0.22), 0 2px 10px rgba(15,23,42,0.08);
+      }
+      .encounter-card__header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.85rem;
+          padding: 1rem 1rem 0.65rem;
+          background: linear-gradient(180deg, var(--encounter-accent-soft), rgba(255,255,255,0.72));
+          border-bottom: 1px solid var(--encounter-line);
+      }
+      .encounter-card__identity {
+          min-width: 0;
+      }
+      .encounter-card__eyebrow {
+          margin-bottom: 0.2rem;
+          font-size: 0.72rem;
+          font-weight: 800;
+          letter-spacing: 0;
+          text-transform: uppercase;
+          color: var(--encounter-accent-strong);
+      }
+      .map-overlay--spotlight .encounter-card__eyebrow {
+          color: var(--encounter-accent-strong);
+      }
+      .encounter-card__name {
+          margin: 0;
+          color: var(--encounter-ink);
+          font-size: 1.18rem;
+          line-height: 1.12;
+          font-weight: 900;
+      }
+      .encounter-card__close {
+          flex: 0 0 auto;
+          margin-top: -0.25rem;
+          margin-right: -0.35rem;
+          color: var(--encounter-muted);
+      }
+      .encounter-card__badges {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+          padding: 0.65rem 1rem 0.1rem;
+      }
+      .encounter-card__badges .mud-chip {
+          margin: 0;
+      }
+      .map-overlay--encounter .spotlight-timer {
+          background: var(--encounter-accent) !important;
+          color: #ffffff !important;
+          font-weight: 800;
+      }
+      .encounter-card__spotlight-copy {
+          margin: 0.55rem 1rem 0;
+          border: 1px solid var(--encounter-line);
+          border-radius: 0.45rem;
+          padding: 0.55rem 0.65rem;
+          background: rgba(255,255,255,0.72);
+          color: #713f12;
+          font-size: 0.86rem;
+          line-height: 1.35;
+      }
+      .encounter-card__route {
+          display: grid;
+          grid-template-columns: minmax(5.25rem, auto) minmax(0, 1fr);
+          align-items: center;
+          gap: 0.7rem;
+          margin: 0.65rem 1rem 0;
+          border-radius: 0.45rem;
+          border: 1px solid var(--encounter-line);
+          padding: 0.55rem 0.65rem;
+          background: var(--encounter-surface);
+      }
+      .encounter-card__route span {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 2rem;
+          border-radius: 999px;
+          padding: 0.2rem 0.55rem;
+          background: var(--encounter-accent-soft);
+          color: var(--encounter-accent-strong);
+          font-weight: 700;
+      }
+      .encounter-card__route strong {
+          min-width: 0;
+          font-size: 0.86rem;
+          color: var(--encounter-ink);
+          line-height: 1.3;
+      }
+      .encounter-card__status-panel {
+          display: grid;
+          gap: 0.55rem;
+          padding: 0.65rem 1rem 0.8rem;
+      }
+      .encounter-card__state {
+          min-height: 2.75rem;
+          display: flex;
+          align-items: center;
+          border-radius: 0.45rem;
+          border: 1px solid transparent;
+          padding: 0.5rem 0.65rem;
+          font-size: 0.86rem;
+          font-weight: 900;
+          letter-spacing: 0;
+          line-height: 1.25;
+      }
+      .encounter-card__state--ready {
+          border-color: rgba(22,101,52,0.18);
+          background: #dcfce7;
+          color: #166534;
+      }
+      .encounter-card__state--weak,
+      .encounter-card__state--waiting {
+          border-color: rgba(180,83,9,0.22);
+          background: #fef3c7;
+          color: #92400e;
+      }
+      .encounter-card__state--blocked,
+      .encounter-card__state--expired {
+          border-color: rgba(153,27,27,0.2);
+          background: #fee2e2;
+          color: #991b1b;
+      }
+      .encounter-card__meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+      }
+      .encounter-card__chance {
+          position: relative;
+          height: 1.45rem;
+          overflow: hidden;
+          border-radius: 999px;
+          background: #e2e8f0;
+          border: 1px solid #cbd5e1;
+      }
+      .encounter-card__chance div {
+          height: 100%;
+          border-radius: inherit;
+          background: linear-gradient(90deg, var(--encounter-accent), #f4c95d);
+      }
+      .encounter-card__chance span {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #0f172a;
+          text-shadow: 0 1px 0 rgba(255,255,255,0.72);
+      }
+      .encounter-card__action-panel {
+          display: grid;
+          gap: 0.65rem;
+          border-top: 1px solid var(--encounter-line);
+          padding: 0.8rem 1rem 1rem;
+          background: var(--encounter-surface);
+      }
+      .encounter-card__item-picker {
+          margin-top: 0;
+      }
+      .encounter-card__boosts {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.35rem;
+      }
+      .encounter-card__boosts .mud-chip {
+          margin: 0;
+      }
+      .encounter-card__cta {
+          min-height: 2.75rem;
+          font-weight: 800;
+      }
      .pitch-card {
          overflow: hidden;
          border-width: 1px 1px 1px 5px;
